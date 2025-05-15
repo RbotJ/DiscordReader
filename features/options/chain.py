@@ -365,7 +365,14 @@ def get_option_recommendations(signal_id: int) -> Dict[str, Any]:
 
 # Create blueprint for API routes
 from flask import Blueprint, request, jsonify
+
+# Blueprint for API routes
 options_routes = Blueprint('options', __name__)
+
+def register_options_routes(app):
+    """Register options routes with the Flask app."""
+    app.register_blueprint(options_routes)
+    return options_routes
 
 @options_routes.route('/api/options/chain', methods=['GET'])
 def options_chain_api():

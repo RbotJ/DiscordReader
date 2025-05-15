@@ -657,6 +657,8 @@ def register_position_routes(app):
     return position_routes
 
 # Start position update thread when app is ready
-@app.before_first_request
 def start_position_manager():
+    """Start the position manager when app is ready."""
     start_position_update_thread()
+
+# This will be called from main.py after all routes are registered

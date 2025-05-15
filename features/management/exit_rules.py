@@ -342,7 +342,9 @@ def register_exit_rules_routes(app):
     return exit_rules_routes
 
 # Start exit rules engine when app is ready
-@app.before_first_request
 def init_exit_rules_engine():
+    """Initialize exit rules engine when app is ready."""
     # Wait a bit to ensure other services are up
     threading.Timer(5.0, start_exit_rules_engine).start()
+
+# This will be called from main.py after all routes are registered
