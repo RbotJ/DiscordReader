@@ -1,305 +1,596 @@
+"""
+Strategy detector for price triggers.
+
+This module monitors market data and detects when price levels
+defined in trading setups are triggered, generating signals for execution.
+"""
+import os
 import logging
 import threading
-import json
-import time
-from datetime import datetime
-from typing import Dict, List, Any, Optional
-from flask import Blueprint, jsonify, request, current_app
-from common.models import Signal, TickerSetup, BiasDirection, ComparisonType, SignalCategory
-from common.redis_utils import RedisClient
+from typing import Dict, List, Optional, Any, Set, Tuple
+from datetime import datetime, timedelta
+from sqlalchemy import text
 
-# Configure logging
+from app import app, db
+from common.db_models import (
+    SignalModel, TickerSetupModel, PriceTriggerModel, SetupModel,
+    NotificationModel
+)
+from features.market.client import (
+    register_price_callback, initialize_clients, add_symbols_to_watchlist
+)
+
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Initialize Blueprint
-strategy_routes = Blueprint('strategy', __name__, url_prefix='/api/strategy')
+# Global variables
+detector_running = False
+detector_thread = None
+active_triggers = {}  # symbol -> list of triggers
+symbols_processed = set()
+detector_symbols = set()
 
-# Redis channels
-SETUP_CHANNEL = "aplus.setups"
-PRICE_UPDATE_CHANNEL = "aplus.market.price_update"
-TRIGGER_CHANNEL = "aplus.market.trigger"
-SIGNAL_TRIGGERED_CHANNEL = "aplus.strategy.signal_triggered"
-
-# Store active signals
-active_signals: Dict[str, List[Dict[str, Any]]] = {}
-
-# Background thread for subscription
-subscription_thread = None
-is_running = False
+# Create blueprint for API routes
+from flask import Blueprint, request, jsonify
+strategy_routes = Blueprint('strategy', __name__)
 
 
-def start_subscription_thread():
-    """Start a background thread for Redis subscription."""
-    global subscription_thread, is_running
-    
-    if subscription_thread and subscription_thread.is_alive():
-        logger.info("Subscription thread already running")
-        return
-    
-    is_running = True
-    subscription_thread = threading.Thread(target=run_subscription_listener)
-    subscription_thread.daemon = True
-    subscription_thread.start()
-    logger.info("Started subscription thread")
-
-
-def run_subscription_listener():
-    """Run the Redis subscription listener in a background thread."""
-    global is_running
-    
-    # Get Redis client
-    redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379/0')
-    redis_client = RedisClient(redis_url)
-    
-    # Subscribe to channels
-    pubsub = redis_client.subscribe([SETUP_CHANNEL, PRICE_UPDATE_CHANNEL, TRIGGER_CHANNEL])
-    
-    logger.info("Listening for Redis messages on strategy channels...")
-    
-    while is_running:
-        try:
-            message = pubsub.get_message(timeout=1.0)
-            if message and message['type'] == 'message':
-                channel = message['channel'].decode('utf-8')
-                data = json.loads(message['data'].decode('utf-8'))
-                
-                if channel == SETUP_CHANNEL:
-                    handle_setup_message(data, redis_client)
-                elif channel == PRICE_UPDATE_CHANNEL:
-                    handle_price_update(data, redis_client)
-                elif channel == TRIGGER_CHANNEL:
-                    handle_trigger_event(data, redis_client)
-            
-            time.sleep(0.01)  # Short sleep to prevent CPU hogging
-        except Exception as e:
-            logger.error(f"Error in subscription thread: {str(e)}", exc_info=True)
-            time.sleep(1)  # Longer sleep on error
-    
-    logger.info("Subscription thread stopped")
-
-
-def handle_setup_message(data: Dict[str, Any], redis_client: RedisClient):
-    """Handle an incoming setup message."""
-    global active_signals
-    
-    if 'setups' not in data:
-        return
-    
-    # Process each ticker setup
-    for setup in data['setups']:
-        symbol = setup.get('symbol')
-        if not symbol:
-            continue
-        
-        signals = setup.get('signals', [])
-        
-        # Initialize active signals for this symbol if not exists
-        if symbol not in active_signals:
-            active_signals[symbol] = []
-        
-        # Add each signal to active signals
-        for signal in signals:
-            try:
-                # Create new active signal entry
-                active_signal = {
-                    'symbol': symbol,
-                    'category': signal.get('category'),
-                    'comparison': signal.get('comparison'),
-                    'trigger': signal.get('trigger'),
-                    'targets': signal.get('targets', []),
-                    'aggressiveness': signal.get('aggressiveness', 'none'),
-                    'status': 'pending',
-                    'created_at': datetime.now().isoformat(),
-                    'id': f"signal_{symbol}_{datetime.now().timestamp()}"
-                }
-                
-                # Add to active signals
-                active_signals[symbol].append(active_signal)
-                
-                # Register price trigger
-                trigger_data = {
-                    'symbol': symbol,
-                    'comparison': active_signal['comparison'],
-                    'price': active_signal['trigger'],
-                    'id': active_signal['id']
-                }
-                
-                # Make API request to register trigger
-                import requests
-                response = requests.post(
-                    'http://localhost:5000/api/market/triggers',
-                    json=trigger_data
-                )
-                
-                if response.status_code != 200:
-                    logger.error(f"Failed to register price trigger: {response.text}")
-                
-                logger.info(f"Registered signal for {symbol}: {active_signal['category']} {active_signal['comparison']} {active_signal['trigger']}")
-                
-            except Exception as e:
-                logger.error(f"Error registering signal: {str(e)}", exc_info=True)
-
-
-def handle_price_update(data: Dict[str, Any], redis_client: RedisClient):
-    """Handle a price update."""
-    # This method can be expanded later if we need to do something with every price update
-    pass
-
-
-def handle_trigger_event(data: Dict[str, Any], redis_client: RedisClient):
-    """Handle a price trigger event."""
-    global active_signals
-    
-    symbol = data.get('symbol')
-    trigger_id = data.get('trigger_id')
-    current_price = data.get('price')
-    
-    if not symbol or not trigger_id or symbol not in active_signals:
-        return
-    
-    # Find the matching signal
-    matched_signal = None
-    for signal in active_signals[symbol]:
-        if signal.get('id') == trigger_id:
-            matched_signal = signal
-            break
-    
-    if not matched_signal:
-        return
-    
-    # Update signal status
-    matched_signal['status'] = 'triggered'
-    matched_signal['trigger_price'] = current_price
-    matched_signal['triggered_at'] = datetime.now().isoformat()
-    
-    # Publish signal triggered event
-    redis_client.publish(SIGNAL_TRIGGERED_CHANNEL, matched_signal)
-    
-    logger.info(f"Signal triggered: {symbol} {matched_signal['category']} at {current_price}")
-
-
-@strategy_routes.route('/signals', methods=['GET'])
-def get_signals():
-    """Get all active signals."""
-    global active_signals
-    
-    symbol = request.args.get('symbol')
-    status = request.args.get('status')
-    
-    result = {}
-    
-    for sym, signals in active_signals.items():
-        # Filter by symbol if specified
-        if symbol and sym.upper() != symbol.upper():
-            continue
-        
-        # Filter signals by status if specified
-        if status:
-            filtered_signals = [s for s in signals if s.get('status') == status]
-        else:
-            filtered_signals = signals
-        
-        if filtered_signals:
-            result[sym] = filtered_signals
-    
-    return jsonify({
-        "status": "success",
-        "count": sum(len(signals) for signals in result.values()),
-        "signals": result
-    })
-
-
-@strategy_routes.route('/signals/<signal_id>', methods=['GET'])
-def get_signal(signal_id):
-    """Get a specific signal by ID."""
-    global active_signals
-    
-    for symbol, signals in active_signals.items():
-        for signal in signals:
-            if signal.get('id') == signal_id:
-                return jsonify({
-                    "status": "success",
-                    "signal": signal
-                })
-    
-    return jsonify({
-        "status": "error",
-        "message": f"Signal with ID {signal_id} not found"
-    }), 404
-
-
-@strategy_routes.route('/signals/<signal_id>', methods=['DELETE'])
-def delete_signal(signal_id):
-    """Delete a specific signal by ID."""
-    global active_signals
-    
-    for symbol, signals in active_signals.items():
-        for i, signal in enumerate(signals):
-            if signal.get('id') == signal_id:
-                active_signals[symbol].pop(i)
-                return jsonify({
-                    "status": "success",
-                    "message": f"Signal {signal_id} deleted"
-                })
-    
-    return jsonify({
-        "status": "error",
-        "message": f"Signal with ID {signal_id} not found"
-    }), 404
-
-
-@strategy_routes.route('/start', methods=['POST'])
 def start_detector():
     """Start the strategy detector."""
-    try:
-        start_subscription_thread()
-        
-        return jsonify({
-            "status": "success",
-            "message": "Strategy detector started"
-        })
-        
-    except Exception as e:
-        logger.error(f"Error starting strategy detector: {str(e)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+    global detector_running, detector_thread
+    
+    # If already running, do nothing
+    if detector_running:
+        return
+    
+    # Set the running flag
+    detector_running = True
+    
+    # Initialize clients
+    initialize_clients()
+    
+    # Load active triggers from database
+    load_active_triggers()
+    
+    # Register the price callback
+    register_price_callback(process_price_update)
+    
+    # Start the watchdog thread
+    detector_thread = threading.Thread(target=detector_watchdog)
+    detector_thread.daemon = True
+    detector_thread.start()
+    
+    logger.info("Strategy detector started")
 
 
-@strategy_routes.route('/stop', methods=['POST'])
 def stop_detector():
     """Stop the strategy detector."""
-    global is_running
+    global detector_running, detector_thread
+    
+    # If not running, do nothing
+    if not detector_running:
+        return
+    
+    # Set the running flag
+    detector_running = False
+    
+    # Wait for the thread to stop
+    if detector_thread:
+        detector_thread.join(timeout=5)
+    
+    detector_thread = None
+    
+    logger.info("Strategy detector stopped")
+
+
+def detector_status():
+    """Get the status of the strategy detector."""
+    global detector_running, active_triggers, symbols_processed, detector_symbols
+    
+    return {
+        "running": detector_running,
+        "active_triggers_count": sum(len(triggers) for triggers in active_triggers.values()),
+        "active_symbols_count": len(detector_symbols),
+        "processed_symbols_count": len(symbols_processed),
+        "active_symbols": list(detector_symbols)
+    }
+
+
+def load_active_triggers():
+    """Load active triggers from the database."""
+    global active_triggers, detector_symbols
     
     try:
-        is_running = False
+        # Clear existing triggers
+        active_triggers = {}
+        detector_symbols = set()
         
-        return jsonify({
-            "status": "success",
-            "message": "Strategy detector stopping"
-        })
-        
+        with app.app_context():
+            # Query active price triggers with their signals and ticker details
+            triggers = db.session.execute(text("""
+                SELECT 
+                    pt.id, pt.symbol, pt.comparison, pt.trigger_value, 
+                    s.id as signal_id, s.category, s.aggressiveness, s.targets,
+                    ts.id as ticker_setup_id, ts.symbol as ticker_symbol, 
+                    setup.date as setup_date
+                FROM 
+                    price_triggers pt
+                JOIN 
+                    signals s ON pt.signal_id = s.id
+                JOIN 
+                    ticker_setups ts ON s.ticker_setup_id = ts.id
+                JOIN 
+                    setups setup ON ts.setup_id = setup.id
+                WHERE 
+                    pt.active = TRUE
+                ORDER BY 
+                    setup.date DESC
+            """)).fetchall()
+            
+            # Process triggers
+            for trigger in triggers:
+                symbol = trigger.symbol
+                
+                # Add to active triggers
+                if symbol not in active_triggers:
+                    active_triggers[symbol] = []
+                
+                # Add trigger details
+                trigger_details = {
+                    "id": trigger.id,
+                    "symbol": symbol,
+                    "comparison": trigger.comparison,
+                    "trigger_value": trigger.trigger_value,
+                    "signal_id": trigger.signal_id,
+                    "category": trigger.category,
+                    "aggressiveness": trigger.aggressiveness,
+                    "targets": trigger.targets,
+                    "ticker_setup_id": trigger.ticker_setup_id,
+                    "ticker_symbol": trigger.ticker_symbol,
+                    "setup_date": trigger.setup_date.isoformat() if trigger.setup_date else None
+                }
+                
+                active_triggers[symbol].append(trigger_details)
+                detector_symbols.add(symbol)
+            
+            # Add symbols to watchlist
+            if detector_symbols:
+                add_symbols_to_watchlist(list(detector_symbols))
+            
+            logger.info(f"Loaded {sum(len(triggers) for triggers in active_triggers.values())} "
+                        f"active triggers for {len(detector_symbols)} symbols")
+    
     except Exception as e:
-        logger.error(f"Error stopping strategy detector: {str(e)}", exc_info=True)
+        logger.error(f"Error loading active triggers: {e}")
+
+
+def process_price_update(symbol: str, price: float):
+    """Process a price update for a symbol."""
+    global active_triggers, symbols_processed
+    
+    # Add to processed symbols
+    symbols_processed.add(symbol)
+    
+    # Check if we have triggers for this symbol
+    if symbol not in active_triggers:
+        return
+    
+    # Check each trigger
+    triggers_to_remove = []
+    
+    for idx, trigger in enumerate(active_triggers[symbol]):
+        triggered = check_trigger(trigger, price)
+        
+        if triggered:
+            # Mark the trigger as triggered in the database
+            mark_trigger_triggered(trigger["id"])
+            
+            # Create notification
+            create_signal_notification(trigger, price)
+            
+            # Add to removal list
+            triggers_to_remove.append(idx)
+    
+    # Remove triggered triggers
+    for idx in sorted(triggers_to_remove, reverse=True):
+        active_triggers[symbol].pop(idx)
+    
+    # If no more triggers for this symbol, remove it
+    if len(active_triggers[symbol]) == 0:
+        del active_triggers[symbol]
+        # Note: We don't remove from watchlist since other components might need it
+
+
+def check_trigger(trigger: Dict[str, Any], price: float) -> bool:
+    """Check if a trigger is triggered by the current price."""
+    comparison = trigger["comparison"]
+    trigger_value = trigger["trigger_value"]
+    
+    # Convert trigger_value to list if it's not
+    if isinstance(trigger_value, (int, float)):
+        trigger_value = [float(trigger_value)]
+    elif isinstance(trigger_value, str):
+        try:
+            trigger_value = [float(trigger_value)]
+        except ValueError:
+            # Handle case where it might be a JSON string: ["123.45", "234.56"]
+            if trigger_value.startswith('[') and trigger_value.endswith(']'):
+                try:
+                    import json
+                    trigger_value = [float(v) for v in json.loads(trigger_value)]
+                except:
+                    logger.error(f"Failed to parse trigger value: {trigger_value}")
+                    return False
+    
+    # Check comparison
+    if comparison == "above" and price >= trigger_value[0]:
+        return True
+    elif comparison == "below" and price <= trigger_value[0]:
+        return True
+    elif comparison == "near" and abs(price - trigger_value[0]) <= (trigger_value[0] * 0.005):  # Within 0.5%
+        return True
+    elif comparison == "range" and len(trigger_value) >= 2:
+        return trigger_value[0] <= price <= trigger_value[1]
+    
+    return False
+
+
+def mark_trigger_triggered(trigger_id: int):
+    """Mark a trigger as triggered in the database."""
+    try:
+        with app.app_context():
+            # Update the trigger
+            db.session.execute(text("""
+                UPDATE price_triggers
+                SET 
+                    active = FALSE,
+                    triggered_at = NOW()
+                WHERE
+                    id = :trigger_id
+            """), {"trigger_id": trigger_id})
+            
+            db.session.commit()
+            
+            logger.info(f"Marked trigger {trigger_id} as triggered")
+    
+    except Exception as e:
+        logger.error(f"Error marking trigger {trigger_id} as triggered: {e}")
+
+
+def create_signal_notification(trigger: Dict[str, Any], price: float):
+    """Create a notification for a triggered signal."""
+    try:
+        symbol = trigger["symbol"]
+        category = trigger["category"]
+        
+        # Determine direction based on category
+        direction = "bullish" if category in ["breakout", "bounce"] else "bearish"
+        
+        # Create notification message
+        title = f"{symbol} {category.capitalize()} Signal Triggered"
+        message = (f"{symbol} price of ${price:.2f} has triggered a {category} signal "
+                   f"with {trigger['aggressiveness']} aggressiveness.")
+        
+        # Add target information
+        targets = trigger["targets"]
+        if targets and len(targets) > 0:
+            targets_str = ", ".join([f"${t:.2f}" for t in targets])
+            message += f" Price targets: {targets_str}"
+        
+        # Meta data for the notification
+        meta_data = {
+            "symbol": symbol,
+            "price": price,
+            "category": category,
+            "direction": direction,
+            "signal_id": trigger["signal_id"],
+            "ticker_setup_id": trigger["ticker_setup_id"],
+            "targets": targets
+        }
+        
+        with app.app_context():
+            # Create notification
+            notification = NotificationModel()
+            notification.type = "signal"
+            notification.title = title
+            notification.message = message
+            notification.meta_data = meta_data
+            notification.read = False
+            
+            db.session.add(notification)
+            db.session.commit()
+            
+            logger.info(f"Created notification for triggered signal: {title}")
+    
+    except Exception as e:
+        logger.error(f"Error creating notification for triggered signal: {e}")
+
+
+def create_price_trigger(
+    symbol: str,
+    comparison: str,
+    trigger_value: Any,
+    signal_id: int
+) -> Optional[int]:
+    """Create a new price trigger."""
+    try:
+        with app.app_context():
+            # Create the trigger
+            trigger = PriceTriggerModel()
+            trigger.symbol = symbol
+            trigger.comparison = comparison
+            trigger.trigger_value = trigger_value
+            trigger.signal_id = signal_id
+            trigger.active = True
+            
+            db.session.add(trigger)
+            db.session.commit()
+            
+            # Add to active triggers
+            load_active_triggers()
+            
+            logger.info(f"Created price trigger for {symbol} {comparison} {trigger_value}")
+            
+            return trigger.id
+    
+    except Exception as e:
+        logger.error(f"Error creating price trigger: {e}")
+        return None
+
+
+def deactivate_price_trigger(trigger_id: int) -> bool:
+    """Deactivate a price trigger."""
+    try:
+        with app.app_context():
+            # Update the trigger
+            trigger = db.session.query(PriceTriggerModel).filter_by(id=trigger_id).first()
+            
+            if not trigger:
+                logger.warning(f"Trigger {trigger_id} not found")
+                return False
+            
+            trigger.active = False
+            db.session.commit()
+            
+            # Reload active triggers
+            load_active_triggers()
+            
+            logger.info(f"Deactivated price trigger {trigger_id}")
+            
+            return True
+    
+    except Exception as e:
+        logger.error(f"Error deactivating price trigger {trigger_id}: {e}")
+        return False
+
+
+def get_active_price_triggers() -> List[Dict[str, Any]]:
+    """Get all active price triggers."""
+    try:
+        with app.app_context():
+            # Query active price triggers
+            triggers = db.session.execute(text("""
+                SELECT 
+                    pt.id, pt.symbol, pt.comparison, pt.trigger_value, 
+                    s.id as signal_id, s.category, s.aggressiveness, s.targets,
+                    ts.id as ticker_setup_id, ts.symbol as ticker_symbol, 
+                    setup.date as setup_date
+                FROM 
+                    price_triggers pt
+                JOIN 
+                    signals s ON pt.signal_id = s.id
+                JOIN 
+                    ticker_setups ts ON s.ticker_setup_id = ts.id
+                JOIN 
+                    setups setup ON ts.setup_id = setup.id
+                WHERE 
+                    pt.active = TRUE
+                ORDER BY 
+                    setup.date DESC
+            """)).fetchall()
+            
+            # Format results
+            result = []
+            for trigger in triggers:
+                trigger_dict = {
+                    "id": trigger.id,
+                    "symbol": trigger.symbol,
+                    "comparison": trigger.comparison,
+                    "trigger_value": trigger.trigger_value,
+                    "signal_id": trigger.signal_id,
+                    "category": trigger.category,
+                    "aggressiveness": trigger.aggressiveness,
+                    "targets": trigger.targets,
+                    "ticker_setup_id": trigger.ticker_setup_id,
+                    "ticker_symbol": trigger.ticker_symbol,
+                    "setup_date": trigger.setup_date.isoformat() if trigger.setup_date else None
+                }
+                result.append(trigger_dict)
+            
+            return result
+    
+    except Exception as e:
+        logger.error(f"Error getting active price triggers: {e}")
+        return []
+
+
+def detector_watchdog():
+    """Background thread to periodically check and reload triggers."""
+    global detector_running
+    
+    logger.info("Starting detector watchdog thread")
+    
+    while detector_running:
+        # Sleep for 5 minutes
+        for _ in range(30):  # 30 x 10 seconds = 5 minutes
+            if not detector_running:
+                break
+            threading.Event().wait(10)
+        
+        if not detector_running:
+            break
+        
+        try:
+            # Reload triggers to catch any new ones
+            logger.info("Reloading active triggers")
+            load_active_triggers()
+        except Exception as e:
+            logger.error(f"Error in detector watchdog: {e}")
+    
+    logger.info("Detector watchdog thread stopped")
+
+
+def generate_triggers_from_signals():
+    """Generate price triggers from existing signals."""
+    try:
+        with app.app_context():
+            # Query signals without triggers
+            signals = db.session.execute(text("""
+                SELECT 
+                    s.id, s.category, s.comparison, s.trigger_value, 
+                    ts.symbol
+                FROM 
+                    signals s
+                JOIN 
+                    ticker_setups ts ON s.ticker_setup_id = ts.id
+                LEFT JOIN 
+                    price_triggers pt ON pt.signal_id = s.id
+                WHERE 
+                    pt.id IS NULL
+                    AND s.active = TRUE
+            """)).fetchall()
+            
+            triggers_created = 0
+            
+            # Create triggers for each signal
+            for signal in signals:
+                try:
+                    # Create trigger
+                    trigger = PriceTriggerModel()
+                    trigger.symbol = signal.symbol
+                    trigger.comparison = signal.comparison
+                    trigger.trigger_value = signal.trigger_value
+                    trigger.signal_id = signal.id
+                    trigger.active = True
+                    
+                    db.session.add(trigger)
+                    triggers_created += 1
+                
+                except Exception as e:
+                    logger.error(f"Error creating trigger for signal {signal.id}: {e}")
+            
+            # Commit all changes
+            db.session.commit()
+            
+            # Reload active triggers
+            load_active_triggers()
+            
+            logger.info(f"Generated {triggers_created} price triggers from signals")
+            
+            return triggers_created
+    
+    except Exception as e:
+        logger.error(f"Error generating triggers from signals: {e}")
+        return 0
+
+
+# API endpoints
+@strategy_routes.route('/api/strategy/status', methods=['GET'])
+def get_detector_status():
+    """Get the status of the strategy detector."""
+    status = detector_status()
+    return jsonify(status)
+
+
+@strategy_routes.route('/api/strategy/control', methods=['POST'])
+def control_detector():
+    """Start or stop the strategy detector."""
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+    
+    data = request.get_json()
+    action = data.get('action', '').lower()
+    
+    if action == 'start':
+        start_detector()
         return jsonify({
-            "status": "error",
-            "message": str(e)
+            "success": True,
+            "status": "started"
+        })
+    elif action == 'stop':
+        stop_detector()
+        return jsonify({
+            "success": True,
+            "status": "stopped"
+        })
+    else:
+        return jsonify({
+            "error": "Invalid action, must be 'start' or 'stop'"
+        }), 400
+
+
+@strategy_routes.route('/api/strategy/triggers', methods=['GET'])
+def get_triggers():
+    """Get all active price triggers."""
+    triggers = get_active_price_triggers()
+    return jsonify(triggers)
+
+
+@strategy_routes.route('/api/strategy/triggers', methods=['POST'])
+def create_trigger():
+    """Create a new price trigger."""
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+    
+    data = request.get_json()
+    
+    # Validate input
+    if not all(key in data for key in ['symbol', 'comparison', 'trigger_value', 'signal_id']):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    # Create trigger
+    trigger_id = create_price_trigger(
+        data['symbol'],
+        data['comparison'],
+        data['trigger_value'],
+        data['signal_id']
+    )
+    
+    if trigger_id:
+        return jsonify({
+            "success": True,
+            "trigger_id": trigger_id
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "error": "Failed to create trigger"
         }), 500
 
 
-@strategy_routes.route('/status', methods=['GET'])
-def detector_status():
-    """Get the status of the strategy detector."""
-    global is_running, subscription_thread
+@strategy_routes.route('/api/strategy/triggers/<int:trigger_id>', methods=['DELETE'])
+def delete_trigger(trigger_id):
+    """Deactivate a price trigger."""
+    success = deactivate_price_trigger(trigger_id)
     
-    thread_alive = subscription_thread is not None and subscription_thread.is_alive()
+    if success:
+        return jsonify({
+            "success": True,
+            "message": f"Trigger {trigger_id} deactivated"
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to deactivate trigger {trigger_id}"
+        }), 500
+
+
+@strategy_routes.route('/api/strategy/generate', methods=['POST'])
+def generate_triggers():
+    """Generate price triggers from existing signals."""
+    count = generate_triggers_from_signals()
     
     return jsonify({
-        "status": "success",
-        "detector": {
-            "running": is_running and thread_alive,
-            "active_symbols": len(active_signals),
-            "active_signals": sum(len(signals) for signals in active_signals.values())
-        }
+        "success": True,
+        "triggers_created": count
     })
