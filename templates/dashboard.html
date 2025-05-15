@@ -3,231 +3,393 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trading Dashboard | A+ Options AI Platform</title>
+    <title>A+ Trading - Dashboard</title>
+    <!-- Bootstrap CSS from Replit CDN -->
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.css" rel="stylesheet">
-    <link href="/static/css/styles.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
+    <!-- Feather Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg bg-body-tertiary">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <span class="fw-bold text-primary">A+</span> Trading
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <span class="text-primary fw-bold">A+</span> Trading
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
+                <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="/">Home</a>
+                        <a class="nav-link" href="{{ url_for('index') }}">Home</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="/dashboard">Dashboard</a>
+                        <a class="nav-link active" href="{{ url_for('dashboard') }}">Dashboard</a>
                     </li>
                 </ul>
-                <div>
-                    <span class="badge bg-success me-2">Paper Trading</span>
-                </div>
             </div>
         </div>
     </nav>
 
-    <main class="container my-4">
+    <div class="container-fluid mt-3">
+        <!-- System Status Section -->
         <div class="row mb-4">
-            <div class="col-md-12">
+            <div class="col-12">
                 <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">System Status</h5>
+                        <div>
+                            <button id="startAllBtn" class="btn btn-sm btn-success me-2">
+                                <i data-feather="play"></i> Start All Services
+                            </button>
+                            <button id="stopAllBtn" class="btn btn-sm btn-danger">
+                                <i data-feather="square"></i> Stop All Services
+                            </button>
+                        </div>
+                    </div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-3 text-center">
-                                <h6 class="text-muted">Total P/L</h6>
-                                <h3 id="totalPL" class="mb-0 positive-value">$0.00</h3>
+                            <div class="col-md-4 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="text-muted mb-1">Strategy Detector</h6>
+                                                <h5 id="strategyStatus" class="card-title mb-0">
+                                                    <span class="badge bg-secondary">Not Running</span>
+                                                </h5>
+                                            </div>
+                                            <div>
+                                                <button id="startStrategyBtn" class="btn btn-sm btn-success me-1">
+                                                    <i data-feather="play" class="feather-sm"></i>
+                                                </button>
+                                                <button id="stopStrategyBtn" class="btn btn-sm btn-danger">
+                                                    <i data-feather="square" class="feather-sm"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-3 text-center">
-                                <h6 class="text-muted">Today's P/L</h6>
-                                <h3 id="todayPL" class="mb-0 positive-value">$0.00</h3>
+                            <div class="col-md-4 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="text-muted mb-1">Trade Executor</h6>
+                                                <h5 id="executorStatus" class="card-title mb-0">
+                                                    <span class="badge bg-secondary">Not Running</span>
+                                                </h5>
+                                            </div>
+                                            <div>
+                                                <button id="startExecutorBtn" class="btn btn-sm btn-success me-1">
+                                                    <i data-feather="play" class="feather-sm"></i>
+                                                </button>
+                                                <button id="stopExecutorBtn" class="btn btn-sm btn-danger">
+                                                    <i data-feather="square" class="feather-sm"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-3 text-center">
-                                <h6 class="text-muted">Win Rate</h6>
-                                <h3 id="winRate" class="mb-0">0.0%</h3>
-                            </div>
-                            <div class="col-md-3 text-center">
-                                <h6 class="text-muted">Avg. Trade</h6>
-                                <h3 id="avgTrade" class="mb-0 positive-value">$0.00</h3>
+                            <div class="col-md-4 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="text-muted mb-1">Market Data</h6>
+                                                <h5 id="marketStatus" class="card-title mb-0">
+                                                    <span class="badge bg-success">Connected</span>
+                                                </h5>
+                                            </div>
+                                            <div>
+                                                <button id="refreshDataBtn" class="btn btn-sm btn-primary">
+                                                    <i data-feather="refresh-cw" class="feather-sm"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <div class="row mb-4">
+        
+        <!-- Main Dashboard Content -->
+        <div class="row">
+            <!-- Left Column -->
             <div class="col-md-8">
-                <div class="card h-100">
+                <!-- Trading Metrics -->
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted mb-1">Active Positions</h6>
+                                <h3 id="positionCount" class="mb-0">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted mb-1">Active Signals</h6>
+                                <h3 id="signalCount" class="mb-0">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted mb-1">Today's P/L</h6>
+                                <h3 id="todayPL" class="mb-0">$0.00</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted mb-1">Total P/L</h6>
+                                <h3 id="totalPL" class="mb-0">$0.00</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Trading Chart -->
+                <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Account Equity</h5>
-                        <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-outline-secondary active" data-period="1d">1D</button>
-                            <button type="button" class="btn btn-outline-secondary" data-period="1w">1W</button>
-                            <button type="button" class="btn btn-outline-secondary" data-period="1m">1M</button>
-                            <button type="button" class="btn btn-outline-secondary" data-period="ytd">YTD</button>
+                        <h5 class="mb-0">Performance</h5>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary chart-period active" data-period="1d">1D</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary chart-period" data-period="1w">1W</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary chart-period" data-period="1m">1M</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary chart-period" data-period="3m">3M</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary chart-period" data-period="1y">1Y</button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="chart-container" style="position: relative; height: 300px;">
-                            <canvas id="equityChart"></canvas>
+                        <canvas id="performanceChart" height="300"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Positions & Orders Tab -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="positionsOrdersTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="positions-tab" data-bs-toggle="tab" data-bs-target="#positions" type="button" role="tab" aria-controls="positions" aria-selected="true">Positions</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="orders-tab" data-bs-toggle="tab" data-bs-target="#orders" type="button" role="tab" aria-controls="orders" aria-selected="false">Orders</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab" aria-controls="manual" aria-selected="false">Manual Trade</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="positionsOrdersTabContent">
+                            <!-- Positions Tab -->
+                            <div class="tab-pane fade show active" id="positions" role="tabpanel" aria-labelledby="positions-tab">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Symbol</th>
+                                                <th>Quantity</th>
+                                                <th>Entry Price</th>
+                                                <th>Current Price</th>
+                                                <th>P/L</th>
+                                                <th>P/L %</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="positionsTableBody">
+                                            <tr>
+                                                <td colspan="7" class="text-center">No positions found</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Orders Tab -->
+                            <div class="tab-pane fade" id="orders" role="tabpanel" aria-labelledby="orders-tab">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Order ID</th>
+                                                <th>Symbol</th>
+                                                <th>Type</th>
+                                                <th>Side</th>
+                                                <th>Qty</th>
+                                                <th>Status</th>
+                                                <th>Created At</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ordersTableBody">
+                                            <tr>
+                                                <td colspan="8" class="text-center">No orders found</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Manual Trade Tab -->
+                            <div class="tab-pane fade" id="manual" role="tabpanel" aria-labelledby="manual-tab">
+                                <form id="manualTradeForm">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label for="symbol" class="form-label">Symbol</label>
+                                            <input type="text" class="form-control" id="symbol" required placeholder="e.g., AAPL">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="quantity" class="form-label">Quantity</label>
+                                            <input type="number" class="form-control" id="quantity" required min="1">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="orderType" class="form-label">Order Type</label>
+                                            <select class="form-select" id="orderType" required>
+                                                <option value="market">Market</option>
+                                                <option value="limit">Limit</option>
+                                                <option value="stop">Stop</option>
+                                                <option value="stop_limit">Stop Limit</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="side" class="form-label">Side</label>
+                                            <select class="form-select" id="side" required>
+                                                <option value="buy">Buy</option>
+                                                <option value="sell">Sell</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 limit-price-div d-none">
+                                            <label for="limitPrice" class="form-label">Limit Price</label>
+                                            <input type="number" class="form-control" id="limitPrice" step="0.01">
+                                        </div>
+                                        <div class="col-md-6 stop-price-div d-none">
+                                            <label for="stopPrice" class="form-label">Stop Price</label>
+                                            <input type="number" class="form-control" id="stopPrice" step="0.01">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="timeInForce" class="form-label">Time in Force</label>
+                                            <select class="form-select" id="timeInForce" required>
+                                                <option value="day">Day</option>
+                                                <option value="gtc">Good Till Canceled</option>
+                                                <option value="opg">At The Open</option>
+                                                <option value="cls">At The Close</option>
+                                                <option value="ioc">Immediate or Cancel</option>
+                                                <option value="fok">Fill or Kill</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 mt-3">
+                                            <button type="submit" class="btn btn-primary">Submit Order</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+            
+            <!-- Right Column -->
             <div class="col-md-4">
-                <div class="card h-100">
+                <!-- Recent Setups -->
+                <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Portfolio Status</h5>
+                        <h5 class="mb-0">Recent Setups</h5>
+                        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSetupModal">
+                            <i data-feather="plus" class="feather-sm"></i> Add Setup
+                        </button>
                     </div>
                     <div class="card-body">
-                        <div class="stats-container mb-3 p-3 border rounded">
-                            <div class="d-flex justify-content-between mb-2">
-                                <span class="text-muted">Open Positions:</span>
-                                <span id="openPositionsCount" class="badge bg-primary">0</span>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span class="text-muted">Active Signals:</span>
-                                <span id="activeSignalsCount" class="badge bg-info">0</span>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span class="text-muted">Buying Power:</span>
-                                <span>$10,000.00</span>
-                            </div>
-                            <div class="d-flex justify-content-between">
-                                <span class="text-muted">Cash Balance:</span>
-                                <span>$10,000.00</span>
-                            </div>
-                        </div>
-                        <div class="asset-allocation">
-                            <h6 class="mb-3">Asset Allocation</h6>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>Cash</span>
-                                <span>100%</span>
-                            </div>
-                            <div class="progress mb-3">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: 100%"></div>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>Options</span>
-                                <span>0%</span>
-                            </div>
-                            <div class="progress">
-                                <div class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+                        <div id="setupsList" class="list-group list-group-flush">
+                            <div class="text-center py-3">
+                                <span class="text-muted">No setups found</span>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card">
+                
+                <!-- Active Signals -->
+                <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Active Signals</h5>
-                        <button id="refreshSignalsBtn" class="btn btn-sm btn-secondary">
-                            <i data-feather="refresh-cw"></i> Refresh
-                        </button>
+                        <div>
+                            <span class="badge bg-primary" id="signalCountBadge">0</span>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <div id="noSignalsMessage" class="alert alert-info">
-                            No active signals at this time.
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Symbol</th>
-                                        <th>Type</th>
-                                        <th>Condition</th>
-                                        <th>Trigger</th>
-                                        <th>Target</th>
-                                        <th>Status</th>
-                                        <th>Created</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="signalsList">
-                                    <!-- Signal items will be inserted here -->
-                                </tbody>
-                            </table>
+                        <div id="signalsList" class="list-group list-group-flush">
+                            <div class="text-center py-3">
+                                <span class="text-muted">No active signals</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <div class="row">
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Positions</h5>
-                        <button id="refreshPositionsBtn" class="btn btn-sm btn-secondary">
-                            <i data-feather="refresh-cw"></i> Refresh
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Symbol</th>
-                                        <th>Quantity</th>
-                                        <th>Entry Price</th>
-                                        <th>Current Price</th>
-                                        <th>P/L</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="positionsList">
-                                    <tr id="noPositionsRow">
-                                        <td colspan="6" class="text-center">No open positions</td>
-                                    </tr>
-                                    <!-- Positions will be inserted here -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+    </div>
+    
+    <!-- Add Setup Modal -->
+    <div class="modal fade" id="addSetupModal" tabindex="-1" aria-labelledby="addSetupModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addSetupModalLabel">Add Trading Setup</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Recent Trades</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <thead>
-                                    <tr>
-                                        <th>Symbol</th>
-                                        <th>Side</th>
-                                        <th>Qty</th>
-                                        <th>P/L</th>
-                                        <th>Date</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="recentTradesList">
-                                    <tr id="noTradesRow">
-                                        <td colspan="5" class="text-center">No recent trades</td>
-                                    </tr>
-                                    <!-- Recent trades will be inserted here -->
-                                </tbody>
-                            </table>
+                <div class="modal-body">
+                    <form id="setupForm">
+                        <div class="mb-3">
+                            <label for="setupText" class="form-label">Setup Description</label>
+                            <textarea class="form-control" id="setupText" rows="5" placeholder="Enter setup details here..."></textarea>
+                            <div class="form-text">Example: "AAPL breakout above 180, targets 185, 190, 195. Bullish bias above 178."</div>
                         </div>
-                    </div>
+                        <div class="mb-3">
+                            <label class="form-label">Source</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="setupSource" id="sourceManual" value="manual" checked>
+                                <label class="form-check-label" for="sourceManual">
+                                    Manual Entry
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="setupSource" id="sourceDiscord" value="discord">
+                                <label class="form-check-label" for="sourceDiscord">
+                                    Discord
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="setupSource" id="sourceEmail" value="email">
+                                <label class="form-check-label" for="sourceEmail">
+                                    Email
+                                </label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="submitSetup">Submit Setup</button>
                 </div>
             </div>
         </div>
-    </main>
-
+    </div>
+    
     <!-- Close Position Modal -->
-    <div class="modal fade" id="closePositionModal" tabindex="-1">
+    <div class="modal fade" id="closePositionModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
@@ -236,26 +398,44 @@
                 </div>
                 <div class="modal-body">
                     <p>Are you sure you want to close your position in <span id="closePositionSymbol" class="fw-bold"></span>?</p>
-                    <p>Current P/L: <span id="closePositionPL"></span></p>
-                    <input type="hidden" id="positionToClose">
+                    <p>Current P/L: <span id="closePositionPL" class="fw-bold"></span></p>
+                    
+                    <form id="closePositionForm">
+                        <div class="mb-3">
+                            <label for="closeType" class="form-label">Close Type</label>
+                            <select class="form-select" id="closeType">
+                                <option value="full" selected>Full Position</option>
+                                <option value="partial">Partial Position</option>
+                            </select>
+                        </div>
+                        <div id="partialCloseOptions" class="mb-3 d-none">
+                            <label for="closePercentage" class="form-label">Percentage to Close</label>
+                            <input type="range" class="form-range" id="closePercentage" min="1" max="100" value="50">
+                            <div class="d-flex justify-content-between">
+                                <small>1%</small>
+                                <small id="percentageValue">50%</small>
+                                <small>100%</small>
+                            </div>
+                        </div>
+                    </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmCloseBtn">Close Position</button>
+                    <button type="button" class="btn btn-danger" id="confirmClosePosition">Close Position</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <footer class="footer mt-auto py-3 bg-body-tertiary">
-        <div class="container text-center">
-            <span class="text-muted">A+ Trading Platform &copy; 2025</span>
-        </div>
-    </footer>
-
+    <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.0.1/dist/chart.umd.min.js"></script>
-    <script src="/static/js/dashboard.js"></script>
+    <!-- Dashboard JavaScript -->
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <!-- Initialize Feather icons -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            feather.replace();
+        });
+    </script>
 </body>
 </html>

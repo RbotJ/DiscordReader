@@ -7,7 +7,7 @@ from datetime import datetime, date
 from typing import Dict, List, Any, Optional
 from flask import Blueprint, jsonify, request, current_app
 from alpaca.trading import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest, GetOrdersRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest, GetOrdersRequest, ClosePositionRequest
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, QueryOrderStatus
 from common.models import TradeOrder, Position
 from common.utils import generate_client_order_id
@@ -371,23 +371,30 @@ def get_position(symbol):
         if not trading_client:
             return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
         
-        # Get position from Alpaca
-        position = trading_client.get_open_position(symbol)
-        
-        # Format response
-        formatted_position = {
-            "symbol": position.symbol,
-            "quantity": position.qty,
-            "side": "long" if float(position.qty) > 0 else "short",
-            "avg_entry_price": position.avg_entry_price,
-            "market_value": position.market_value,
-            "cost_basis": position.cost_basis,
-            "unrealized_pl": position.unrealized_pl,
-            "unrealized_plpc": position.unrealized_plpc,
-            "current_price": position.current_price,
-            "lastday_price": position.lastday_price,
-            "change_today": position.change_today
-        }
+        # Get position from Alpaca using the symbol
+        try:
+            position = trading_client.get_open_position(symbol_or_asset_id=symbol)
+            
+            # Format response
+            formatted_position = {
+                "symbol": position.symbol,
+                "quantity": position.qty,
+                "side": "long" if float(position.qty) > 0 else "short",
+                "avg_entry_price": position.avg_entry_price,
+                "market_value": position.market_value,
+                "cost_basis": position.cost_basis,
+                "unrealized_pl": position.unrealized_pl,
+                "unrealized_plpc": position.unrealized_plpc,
+                "current_price": position.current_price,
+                "lastday_price": position.lastday_price,
+                "change_today": position.change_today
+            }
+        except Exception as position_error:
+            logger.warning(f"No position found for symbol {symbol}: {str(position_error)}")
+            return jsonify({
+                "status": "error", 
+                "message": f"No position found for {symbol}"
+            }), 404
         
         return jsonify({
             "status": "success",
@@ -490,21 +497,43 @@ def close_position(symbol):
         if not trading_client:
             return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
         
-        # Close the position
-        response = trading_client.close_position(symbol)
+        # Get request data for optional percentage or quantity to close
+        data = request.json or {}
+        close_options = None
         
-        # Format response
-        result = {
-            "symbol": symbol,
-            "status": "closed",
-            "timestamp": datetime.now().isoformat()
-        }
+        # Check if we need to create close options
+        if data.get('percentage') or data.get('qty'):
+            close_options = ClosePositionRequest(
+                percentage=data.get('percentage'),
+                qty=data.get('qty')
+            )
         
-        return jsonify({
-            "status": "success",
-            "message": f"Position {symbol} closed",
-            "result": result
-        })
+        # Close the position using the updated API parameters
+        try:
+            response = trading_client.close_position(
+                symbol_or_asset_id=symbol,
+                close_options=close_options
+            )
+            
+            # Format response
+            result = {
+                "symbol": symbol,
+                "status": "closed",
+                "order_id": response.id if hasattr(response, 'id') else None,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            return jsonify({
+                "status": "success",
+                "message": f"Position {symbol} closed",
+                "result": result
+            })
+        except Exception as close_error:
+            logger.warning(f"Error closing position for {symbol}: {str(close_error)}")
+            return jsonify({
+                "status": "error", 
+                "message": f"Error closing position: {str(close_error)}"
+            }), 400
         
     except Exception as e:
         logger.error(f"Error closing position {symbol}: {str(e)}", exc_info=True)
