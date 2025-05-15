@@ -1,0 +1,97 @@
+/* Custom styles for A+ Trading */
+.positive-value {
+    color: #4caf50;
+}
+
+.negative-value {
+    color: #f44336;
+}
+
+.neutral-value {
+    color: inherit;
+}
+
+/* Signal list styling */
+.signal-list-item {
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.signal-list-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.signal-triggered {
+    border-left-color: #4caf50;
+}
+
+/* Card and table styling */
+.card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    margin-bottom: 1rem;
+}
+
+.card-header {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.table td, .table th {
+    vertical-align: middle;
+}
+
+/* Modal styling */
+.modal-content {
+    border: none;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card-title {
+        font-size: 1rem;
+    }
+    
+    h3 {
+        font-size: 1.5rem;
+    }
+}
+
+/* Chart container */
+.chart-container {
+    position: relative;
+    height: 300px;
+    width: 100%;
+}
+
+/* Badge styling */
+.badge {
+    font-weight: 500;
+    padding: 0.35em 0.65em;
+}
+
+/* Button styling */
+.btn-outline-secondary:not(.active):not(:hover) {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+/* Form styling */
+.form-control, .form-select {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Footer styling */
+.footer {
+    background-color: rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Stats container */
+.stats-container {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-color: rgba(255, 255, 255, 0.1) !important;
+}
