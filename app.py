@@ -2,17 +2,45 @@ import os
 import logging
 from flask import Flask, render_template, redirect, url_for
 import redis
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import DeclarativeBase
+
+# Initialize logger
+logger = logging.getLogger(__name__)
+
+# Define SQLAlchemy base class
+class Base(DeclarativeBase):
+    pass
+
+# Initialize SQLAlchemy with our base class
+db = SQLAlchemy(model_class=Base)
 
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "a_secure_temporary_secret_for_development")
 
+# Configure database
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    }
+else:
+    logger.warning("DATABASE_URL not set. Using SQLite for development.")
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///aplus_trading.db"
+
 # Configure Redis connection
 redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
-redis_client = redis.from_url(redis_url)
-
-# Initialize logger
-logger = logging.getLogger(__name__)
+try:
+    redis_client = redis.from_url(redis_url)
+    # Simple test of the Redis connection
+    redis_client.ping()
+    logger.info("Redis connection established successfully.")
+except redis.ConnectionError:
+    logger.warning(f"Could not connect to Redis at {redis_url}. Some features may not work.")
+    redis_client = None
 
 # Configure Alpaca API credentials
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
@@ -33,6 +61,9 @@ app_config = {
 
 # Add configuration to Flask app
 app.config.update(app_config)
+
+# Initialize SQLAlchemy with the app
+db.init_app(app)
 
 # Check if Alpaca API credentials are set
 if not ALPACA_API_KEY or not ALPACA_API_SECRET:
