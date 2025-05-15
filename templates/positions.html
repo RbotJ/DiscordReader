@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+
+{% block title %}Position Management - A+ Trading{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Active Positions</h5>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm" id="refresh-positions-btn">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
+                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPositionModal">
+                        <i class="fas fa-plus me-1"></i> Add Manual
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="positions-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Side</th>
+                                <th>Quantity</th>
+                                <th>Entry Price</th>
+                                <th>Current Price</th>
+                                <th>P/L</th>
+                                <th>P/L %</th>
+                                <th>Duration</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if positions %}
+                                {% for position in positions %}
+                                    <tr class="position-row {% if position.unrealized_pl > 0 %}profit{% elif position.unrealized_pl < 0 %}loss{% endif %}"
+                                        data-symbol="{{ position.symbol }}" 
+                                        data-option-symbol="{{ position.option_symbol }}" 
+                                        data-side="{{ position.side }}">
+                                        <td>{{ position.symbol }}</td>
+                                        <td>{% if position.option_symbol %}Option{% else %}Stock{% endif %}</td>
+                                        <td>{{ position.side|upper }}</td>
+                                        <td>{{ position.quantity }}</td>
+                                        <td>${{ "%.2f"|format(position.average_price) }}</td>
+                                        <td>${{ "%.2f"|format(position.current_price) }}</td>
+                                        <td class="{% if position.unrealized_pl > 0 %}text-success{% elif position.unrealized_pl < 0 %}text-danger{% endif %}">
+                                            ${{ "%.2f"|format(position.unrealized_pl) }}
+                                        </td>
+                                        <td class="{% if position.pl_percent > 0 %}text-success{% elif position.pl_percent < 0 %}text-danger{% endif %}">
+                                            {{ "%.2f"|format(position.pl_percent) }}%
+                                        </td>
+                                        <td>{{ position.duration|round(1) }} days</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-info position-info-btn" data-bs-toggle="modal" data-bs-target="#positionDetailsModal">
+                                                    <i class="fas fa-info-circle"></i>
+                                                </button>
+                                                <button class="btn btn-outline-danger close-position-btn">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="10" class="text-center py-4">
+                                        <div class="mb-3">
+                                            <i class="fas fa-wallet fa-3x text-muted"></i>
+                                        </div>
+                                        <h5>No active positions</h5>
+                                        <p class="text-muted">Positions will appear here when trades are executed.</p>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Position History</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="position-history-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Side</th>
+                                <th>Quantity</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>P/L</th>
+                                <th>P/L %</th>
+                                <th>Duration</th>
+                                <th>Exit Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if history %}
+                                {% for position in history %}
+                                    <tr class="history-row {% if position.realized_pl > 0 %}profit{% elif position.realized_pl < 0 %}loss{% endif %}">
+                                        <td>{{ position.symbol }}</td>
+                                        <td>{% if position.option_symbol %}Option{% else %}Stock{% endif %}</td>
+                                        <td>{{ position.side|upper }}</td>
+                                        <td>{{ position.quantity }}</td>
+                                        <td>${{ "%.2f"|format(position.average_price) }}</td>
+                                        <td>${{ "%.2f"|format(position.current_price) }}</td>
+                                        <td class="{% if position.realized_pl > 0 %}text-success{% elif position.realized_pl < 0 %}text-danger{% endif %}">
+                                            ${{ "%.2f"|format(position.realized_pl) }}
+                                        </td>
+                                        <td class="{% if position.pl_percent > 0 %}text-success{% elif position.pl_percent < 0 %}text-danger{% endif %}">
+                                            {{ "%.2f"|format(position.pl_percent) }}%
+                                        </td>
+                                        <td>{{ position.duration|round(1) }} days</td>
+                                        <td>
+                                            <span class="badge {% if position.exit_reason == 'target_hit' %}bg-success{% elif position.exit_reason == 'stop_loss' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                                {{ position.exit_reason }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="10" class="text-center py-4">
+                                        <p class="text-muted">No position history available.</p>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Portfolio Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="summary-stats">
+                    <div class="summary-stat-item">
+                        <div class="summary-stat-label">Active Positions</div>
+                        <div class="summary-stat-value" id="active-position-count">{{ positions|length }}</div>
+                    </div>
+                    
+                    <div class="summary-stat-item">
+                        <div class="summary-stat-label">Total Value</div>
+                        <div class="summary-stat-value" id="total-position-value">
+                            {% set total_value = 0 %}
+                            {% for position in positions %}
+                                {% set total_value = total_value + (position.current_price * position.quantity|abs) %}
+                            {% endfor %}
+                            ${{ "%.2f"|format(total_value) }}
+                        </div>
+                    </div>
+                    
+                    <div class="summary-stat-item">
+                        <div class="summary-stat-label">Unrealized P/L</div>
+                        {% set total_pl = 0 %}
+                        {% for position in positions %}
+                            {% set total_pl = total_pl + position.unrealized_pl %}
+                        {% endfor %}
+                        <div class="summary-stat-value {% if total_pl > 0 %}text-success{% elif total_pl < 0 %}text-danger{% endif %}" id="total-pl">
+                            ${{ "%.2f"|format(total_pl) }}
+                        </div>
+                    </div>
+                    
+                    <div class="summary-stat-item">
+                        <div class="summary-stat-label">Realized P/L</div>
+                        {% set total_realized_pl = 0 %}
+                        {% for position in history %}
+                            {% set total_realized_pl = total_realized_pl + position.realized_pl %}
+                        {% endfor %}
+                        <div class="summary-stat-value {% if total_realized_pl > 0 %}text-success{% elif total_realized_pl < 0 %}text-danger{% endif %}" id="total-realized-pl">
+                            ${{ "%.2f"|format(total_realized_pl) }}
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="exposure-chart-container">
+                    <h6 class="text-center mb-3">Exposure by Symbol</h6>
+                    <canvas id="exposure-chart"></canvas>
+                </div>
+                
+                <hr>
+                
+                <div class="performance-summary mt-3">
+                    <h6 class="text-center mb-3">Performance</h6>
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="stat-small">
+                                <div class="stat-small-label">Win Rate</div>
+                                <div class="stat-small-value" id="win-rate">
+                                    {% set wins = 0 %}
+                                    {% for position in history %}
+                                        {% if position.realized_pl > 0 %}
+                                            {% set wins = wins + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if history|length > 0 %}
+                                        {{ "%.1f"|format(wins / history|length * 100) }}%
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stat-small">
+                                <div class="stat-small-label">Avg Hold</div>
+                                <div class="stat-small-value" id="avg-hold">
+                                    {% set total_duration = 0 %}
+                                    {% for position in history %}
+                                        {% set total_duration = total_duration + position.duration %}
+                                    {% endfor %}
+                                    {% if history|length > 0 %}
+                                        {{ "%.1f"|format(total_duration / history|length) }} days
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <div class="stat-small">
+                                <div class="stat-small-label">Avg Win</div>
+                                <div class="stat-small-value" id="avg-win">
+                                    {% set win_total = 0 %}
+                                    {% set win_count = 0 %}
+                                    {% for position in history %}
+                                        {% if position.realized_pl > 0 %}
+                                            {% set win_total = win_total + position.realized_pl %}
+                                            {% set win_count = win_count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if win_count > 0 %}
+                                        ${{ "%.2f"|format(win_total / win_count) }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stat-small">
+                                <div class="stat-small-label">Avg Loss</div>
+                                <div class="stat-small-value" id="avg-loss">
+                                    {% set loss_total = 0 %}
+                                    {% set loss_count = 0 %}
+                                    {% for position in history %}
+                                        {% if position.realized_pl < 0 %}
+                                            {% set loss_total = loss_total + position.realized_pl %}
+                                            {% set loss_count = loss_count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if loss_count > 0 %}
+                                        ${{ "%.2f"|format(loss_total / loss_count) }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Add Exit Rules</h5>
+            </div>
+            <div class="card-body">
+                <form id="exit-rules-form">
+                    <div class="mb-3">
+                        <label for="exit-symbol" class="form-label">Symbol</label>
+                        <select class="form-select" id="exit-symbol" required>
+                            <option value="">Select a position</option>
+                            {% for position in positions %}
+                                <option value="{{ position.symbol }}" data-option="{{ position.option_symbol }}">
+                                    {{ position.symbol }} {% if position.option_symbol %}(Option){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="target-price" class="form-label">Target Price</label>
+                                <input type="number" class="form-control" id="target-price" step="0.01" placeholder="Target price">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="stop-price" class="form-label">Stop Loss</label>
+                                <input type="number" class="form-control" id="stop-price" step="0.01" placeholder="Stop price">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Add Exit Rules</button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Active Exit Rules</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="exit-rules-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Targets</th>
+                                <th>Stops</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" class="text-center py-3">
+                                    <p class="text-muted">No exit rules defined.</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Position Modal -->
+<div class="modal fade" id="addPositionModal" tabindex="-1" aria-labelledby="addPositionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addPositionModalLabel">Add Manual Position</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="manual-position-form">
+                    <div class="mb-3">
+                        <label for="manual-symbol" class="form-label">Symbol</label>
+                        <input type="text" class="form-control" id="manual-symbol" required placeholder="e.g., AAPL">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="is-option-switch">
+                            <label class="form-check-label" for="is-option-switch">Option Contract</label>
+                        </div>
+                    </div>
+                    
+                    <div id="option-container" class="mb-3" style="display: none;">
+                        <label for="option-symbol" class="form-label">Option Symbol</label>
+                        <input type="text" class="form-control" id="option-symbol" placeholder="e.g., AAPL220121C00150000">
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="position-side" class="form-label">Side</label>
+                                <select class="form-select" id="position-side" required>
+                                    <option value="buy">Buy</option>
+                                    <option value="sell">Sell</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="position-quantity" class="form-label">Quantity</label>
+                                <input type="number" class="form-control" id="position-quantity" min="1" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="entry-price" class="form-label">Entry Price</label>
+                                <input type="number" class="form-control" id="entry-price" step="0.01" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="current-price" class="form-label">Current Price</label>
+                                <input type="number" class="form-control" id="current-price" step="0.01" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="strategy-name" class="form-label">Strategy (optional)</label>
+                        <input type="text" class="form-control" id="strategy-name" placeholder="e.g., Breakout">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-position-btn">Add Position</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Position Details Modal -->
+<div class="modal fade" id="positionDetailsModal" tabindex="-1" aria-labelledby="positionDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="positionDetailsModalLabel">Position Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="position-details-container">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Close Position Modal -->
+<div class="modal fade" id="closePositionModal" tabindex="-1" aria-labelledby="closePositionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="closePositionModalLabel">Close Position</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="close-position-form">
+                    <input type="hidden" id="close-symbol">
+                    <input type="hidden" id="close-option-symbol">
+                    
+                    <div class="mb-3">
+                        <label for="close-display" class="form-label">Position</label>
+                        <input type="text" class="form-control" id="close-display" readonly>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="close-price" class="form-label">Exit Price</label>
+                        <input type="number" class="form-control" id="close-price" step="0.01" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="close-reason" class="form-label">Exit Reason</label>
+                        <select class="form-select" id="close-reason" required>
+                            <option value="target_hit">Target Hit</option>
+                            <option value="stop_loss">Stop Loss</option>
+                            <option value="bias_flip">Bias Flip</option>
+                            <option value="technical">Technical</option>
+                            <option value="manual">Manual Decision</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-close-position-btn">Close Position</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        initPositionsPage();
+    });
+</script>
+{% endblock %}
