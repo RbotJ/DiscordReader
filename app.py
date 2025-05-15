@@ -79,3 +79,8 @@ def index():
 def dashboard():
     """Render the detailed dashboard."""
     return render_template('dashboard.html')
+
+@app.route('/setup')
+def setup_form():
+    """Render the setup submission form."""
+    return render_template('setup_form.html')

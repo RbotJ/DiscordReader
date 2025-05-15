@@ -11,11 +11,10 @@ from common.db_models import (
 )
 
 # Import route registrations (try/except for each in case files don't exist yet)
-try:
-    from features.setups.api import setup_routes
-    app.register_blueprint(setup_routes)
-except ImportError:
-    logging.warning("Setup routes not found, skipping registration")
+# Import the setup routes
+from features.setups.api import setup_routes
+app.register_blueprint(setup_routes)
+logging.info("Setup routes registered")
 
 try:
     from features.market.price_monitor import market_routes

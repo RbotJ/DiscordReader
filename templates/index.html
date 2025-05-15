@@ -28,6 +28,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('setup_form') }}">Submit Setup</a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -38,9 +41,14 @@
             <div class="col-lg-8 text-center">
                 <h1 class="display-4 mb-4"><span class="text-primary fw-bold">A+</span> Trading</h1>
                 <p class="lead mb-5">An AI-driven options trading application using Alpaca paper trading with signal parsing, strategy execution, and position management.</p>
-                <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg px-5">
-                    Go to Dashboard
-                </a>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg px-5">
+                        Go to Dashboard
+                    </a>
+                    <a href="{{ url_for('setup_form') }}" class="btn btn-outline-primary btn-lg px-5">
+                        Submit Setup
+                    </a>
+                </div>
             </div>
         </div>
         

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A+ Trading - Submit Setup</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <style>
+        .setup-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .setup-header {
+            margin-bottom: 2rem;
+        }
+        .setup-footer {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--bs-secondary);
+        }
+        .results-container {
+            margin-top: 2rem;
+            padding: 1rem;
+            border-radius: 0.375rem;
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        .setup-message {
+            min-height: 200px;
+            font-family: monospace;
+        }
+        pre {
+            background-color: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 0.375rem;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body data-bs-theme="dark">
+    <div class="container my-4 setup-container">
+        <div class="setup-header">
+            <h1 class="display-4 mb-3">A+ Trading - Setup Parser</h1>
+            <p class="lead">Submit a new A+ Trading setup message for parsing and analysis.</p>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="h5 mb-0">Submit Setup Message</h2>
+            </div>
+            <div class="card-body">
+                <form id="setupForm">
+                    <div class="mb-3">
+                        <label for="setupMessage" class="form-label">Setup Message</label>
+                        <textarea class="form-control setup-message" id="setupMessage" name="message" rows="10" placeholder="Paste your A+ Trading setup message here"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="setupSource" class="form-label">Source</label>
+                        <select class="form-select" id="setupSource" name="source">
+                            <option value="manual" selected>Manual Entry</option>
+                            <option value="discord">Discord</option>
+                            <option value="email">Email</option>
+                        </select>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" id="testParseBtn" class="btn btn-secondary">Test Parse</button>
+                        <button type="button" id="submitBtn" class="btn btn-primary">Submit</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="results-container d-none" id="resultsContainer">
+            <h3>Parsing Results</h3>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <span class="badge bg-secondary" id="resultDate">Date: --</span>
+                    <span class="badge bg-secondary" id="resultTickerCount">Tickers: 0</span>
+                    <span class="badge bg-secondary" id="resultSignalCount">Signals: 0</span>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="formatToggle">
+                    <label class="form-check-label" for="formatToggle">Pretty Print</label>
+                </div>
+            </div>
+            <pre id="parseResults"></pre>
+        </div>
+
+        <div class="alert alert-danger d-none" id="errorAlert" role="alert"></div>
+
+        <div class="setup-footer">
+            <a href="/" class="btn btn-outline-secondary">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const setupForm = document.getElementById('setupForm');
+            const testParseBtn = document.getElementById('testParseBtn');
+            const submitBtn = document.getElementById('submitBtn');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const parseResults = document.getElementById('parseResults');
+            const errorAlert = document.getElementById('errorAlert');
+            const formatToggle = document.getElementById('formatToggle');
+            const resultDate = document.getElementById('resultDate');
+            const resultTickerCount = document.getElementById('resultTickerCount');
+            const resultSignalCount = document.getElementById('resultSignalCount');
+
+            let lastResult = null;
+
+            // Test parse button
+            testParseBtn.addEventListener('click', async function() {
+                const formData = new FormData(setupForm);
+                const jsonData = {
+                    message: formData.get('message'),
+                    source: formData.get('source')
+                };
+
+                try {
+                    errorAlert.classList.add('d-none');
+                    testParseBtn.disabled = true;
+                    testParseBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Parsing...';
+                    
+                    const response = await fetch('/api/parser/test', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(jsonData)
+                    });
+
+                    const result = await response.json();
+                    lastResult = result;
+                    
+                    if (response.ok) {
+                        // Display results
+                        resultsContainer.classList.remove('d-none');
+                        displayResults(result);
+                    } else {
+                        // Show error
+                        errorAlert.textContent = result.error || 'Error parsing setup message';
+                        errorAlert.classList.remove('d-none');
+                    }
+                } catch (error) {
+                    errorAlert.textContent = 'Error: ' + error.message;
+                    errorAlert.classList.remove('d-none');
+                } finally {
+                    testParseBtn.disabled = false;
+                    testParseBtn.textContent = 'Test Parse';
+                }
+            });
+
+            // Submit button
+            submitBtn.addEventListener('click', async function() {
+                const formData = new FormData(setupForm);
+                const jsonData = {
+                    message: formData.get('message'),
+                    source: formData.get('source')
+                };
+
+                try {
+                    errorAlert.classList.add('d-none');
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+                    
+                    const response = await fetch('/api/setups', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(jsonData)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        // Show success
+                        errorAlert.classList.remove('d-none');
+                        errorAlert.classList.remove('alert-danger');
+                        errorAlert.classList.add('alert-success');
+                        errorAlert.textContent = `Success! Setup saved with ${result.tickers.length} tickers and ${result.signal_count} signals.`;
+                    } else {
+                        // Show error
+                        errorAlert.textContent = result.error || 'Error submitting setup message';
+                        errorAlert.classList.add('alert-danger');
+                        errorAlert.classList.remove('alert-success');
+                        errorAlert.classList.remove('d-none');
+                    }
+                } catch (error) {
+                    errorAlert.textContent = 'Error: ' + error.message;
+                    errorAlert.classList.add('alert-danger');
+                    errorAlert.classList.remove('alert-success');
+                    errorAlert.classList.remove('d-none');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit';
+                }
+            });
+
+            // Format toggle
+            formatToggle.addEventListener('change', function() {
+                if (lastResult) {
+                    displayResults(lastResult);
+                }
+            });
+
+            // Display results
+            function displayResults(result) {
+                const indent = formatToggle.checked ? 2 : null;
+                parseResults.textContent = JSON.stringify(result, null, indent);
+                
+                // Update badges
+                resultDate.textContent = 'Date: ' + (result.date || '--');
+                resultTickerCount.textContent = 'Tickers: ' + (result.ticker_count || result.tickers?.length || 0);
+                resultSignalCount.textContent = 'Signals: ' + (result.signal_count || 0);
+            }
+        });
+    </script>
+</body>
+</html>

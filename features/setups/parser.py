@@ -6,7 +6,7 @@ about trading setups, signals, and biases.
 """
 import re
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, List, Tuple, Optional, Any, Union
 
 # Import models
@@ -40,6 +40,7 @@ TICKER_PATTERN = r"^(\d+\)?\s*)?([A-Z]+)(?:\s*$|\s+)"
 SIGNAL_PATTERN = r"(🔼|🔻|❌|🔄|🌀)\s*(.*?)(?:$|(?=\s*[🔼🔻❌🔄🌀⚠️]))"
 PRICE_PATTERN = r"([\d.]+)"
 BIAS_PATTERN = r"⚠️\s*(.*?)(?:$|(?=\s*[🔼🔻❌🔄🌀]))"
+ALT_DATE_PATTERN = r"A\+\s+Trade\s+Setups(?:\s*|\s+-\s+|\s+—\s+)(\w+)(?:\s+|$)"
 
 # Aggressiveness keywords
 AGGRESSIVE_KEYWORDS = ["aggressive", "agg"]
@@ -47,24 +48,39 @@ CONSERVATIVE_KEYWORDS = ["conservative", "con"]
 
 def parse_date(text: str) -> Optional[date]:
     """Parse date from the trade setup message header."""
+    # Try standard format first
     match = re.search(DATE_PATTERN, text, re.IGNORECASE)
-    if not match:
-        return None
+    if match:
+        day_name, month_name, day = match.groups()
+        
+        # Handle the current year
+        today = datetime.now()
+        year = today.year
+        
+        # Create a date string and parse it
+        date_str = f"{day} {month_name} {year}"
+        try:
+            parsed_date = datetime.strptime(date_str, "%d %b %Y").date()
+            return parsed_date
+        except ValueError:
+            logger.warning(f"Could not parse date with standard format: {date_str}")
     
-    day_name, month_name, day = match.groups()
+    # Try alternative format
+    alt_match = re.search(ALT_DATE_PATTERN, text, re.IGNORECASE)
+    if alt_match:
+        day_name = alt_match.group(1)
+        try:
+            # If it's a day name like "Mon", use the closest past date with that day
+            for days_ago in range(7):
+                candidate_date = datetime.now().date() - timedelta(days=days_ago)
+                if candidate_date.strftime("%a").lower().startswith(day_name.lower()):
+                    return candidate_date
+        except Exception as e:
+            logger.warning(f"Could not parse date with alternative format: {e}")
     
-    # Handle the current year
-    today = datetime.now()
-    year = today.year
-    
-    # Create a date string and parse it
-    date_str = f"{day} {month_name} {year}"
-    try:
-        parsed_date = datetime.strptime(date_str, "%d %b %Y").date()
-        return parsed_date
-    except ValueError:
-        logger.warning(f"Could not parse date: {date_str}")
-        return None
+    # If all else fails, use today's date
+    logger.warning("Could not parse date from message, using current date")
+    return datetime.now().date()
 
 def extract_tickers(text: str) -> List[Tuple[str, str]]:
     """Extract ticker symbols and their associated text blocks from the message."""
