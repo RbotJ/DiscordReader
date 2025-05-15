@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 ResponseT = Union[bytes, str, int, float, List[Any], Dict[str, Any], bool, None]
 
+# Global redis client instance
+redis_client = None
+
 def ensure_redis_is_running() -> bool:
     """Ensure Redis server is running, attempt to start it if not."""
     try:

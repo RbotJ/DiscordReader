@@ -14,6 +14,8 @@ from app import db
 from common.db_models import SetupModel, TickerSetupModel, SignalModel, BiasModel
 from common.models import TradeSetupMessage, Signal, Bias, BiasFlip
 from features.setups.parser import parse_setup_message
+from features.setups.event_publisher import publish_setup_message_created
+from features.setups.auth import require_auth
 
 logger = logging.getLogger(__name__)
 setups_blueprint = Blueprint('setups', __name__)
@@ -94,12 +96,14 @@ def create_setup_from_message(setup_message: TradeSetupMessage) -> SetupModel:
 
 
 @setups_blueprint.route('/api/setups/webhook', methods=['POST'])
+@require_auth
 def setup_webhook():
     """
     Endpoint for receiving trading setup webhook messages.
     
     Accepts webhook POST requests with raw text messages.
     Parses the message and stores in the database.
+    Requires valid authentication signature in headers.
     
     Returns:
         JSON response with status
@@ -131,13 +135,21 @@ def setup_webhook():
                 setup = create_setup_from_message(setup_message)
                 db.session.commit()
                 
+                # Publish setup message to Redis
+                publish_result = publish_setup_message_created(setup)
+                if publish_result:
+                    logger.info(f"Successfully published setup events for setup ID {setup.id}")
+                else:
+                    logger.warning(f"Failed to publish setup events for setup ID {setup.id}")
+                
                 logger.info(f"Processed setup message with {len(setup_message.setups)} tickers")
                 
                 return jsonify({
                     'status': 'success',
                     'message': f'Successfully processed setup with {len(setup_message.setups)} tickers',
                     'setup_id': setup.id,
-                    'tickers': [ticker_setup.symbol for ticker_setup in setup_message.setups]
+                    'tickers': [ticker_setup.symbol for ticker_setup in setup_message.setups],
+                    'events_published': publish_result
                 }), 201
                 
             except SQLAlchemyError as e:

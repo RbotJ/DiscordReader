@@ -202,7 +202,15 @@
                     errorAlert.classList.remove('hidden');
                     errorAlert.classList.remove('alert-danger');
                     errorAlert.classList.add('alert-success');
-                    errorAlert.textContent = `Successfully saved with ID ${data.setup_id}`;
+                    
+                    let successMessage = `Successfully saved with ID ${data.setup_id}`;
+                    if (data.events_published !== undefined) {
+                        successMessage += data.events_published 
+                            ? '. Events were published to Redis.' 
+                            : '. Note: Events could not be published to Redis.';
+                    }
+                    
+                    errorAlert.textContent = successMessage;
 
                 } catch (error) {
                     loadingAlert.classList.add('hidden');

@@ -36,7 +36,10 @@ from common.redis_utils import RedisClient, ensure_redis_is_running
 # Try to start Redis server first
 ensure_redis_is_running()
 redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
+# Initialize the global redis client
+import common.redis_utils
 redis_client = RedisClient(redis_url)
+common.redis_utils.redis_client = redis_client
 
 # Configure Alpaca API credentials
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
@@ -90,3 +93,8 @@ def trading_dashboard():
 def setup_parser():
     """Render the setup parser UI."""
     return render_template('setup_parser.html')
+
+@app.route('/webhook-tester')
+def webhook_tester():
+    """Render the webhook tester UI."""
+    return render_template('setup_webhook_tester.html')

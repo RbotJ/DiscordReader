@@ -28,6 +28,14 @@ except ImportError as e:
     logging.warning(f"Could not import setup routes: {e}")
 
 try:
+    # Import the auth routes
+    from features.setups.auth_routes import register_routes as register_auth_routes
+    register_auth_routes(app)
+    logging.info("Auth routes registered")
+except ImportError as e:
+    logging.warning(f"Could not import auth routes: {e}")
+
+try:
     # Market data routes
     from features.market.api import market_routes
     app.register_blueprint(market_routes)
