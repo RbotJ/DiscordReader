@@ -32,15 +32,9 @@ else:
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///aplus_trading.db"
 
 # Configure Redis connection
+from common.redis_utils import RedisClient
 redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
-try:
-    redis_client = redis.from_url(redis_url)
-    # Simple test of the Redis connection
-    redis_client.ping()
-    logger.info("Redis connection established successfully.")
-except redis.ConnectionError:
-    logger.warning(f"Could not connect to Redis at {redis_url}. Some features may not work.")
-    redis_client = None
+redis_client = RedisClient(redis_url)
 
 # Configure Alpaca API credentials
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")

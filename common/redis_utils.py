@@ -15,29 +15,62 @@ class DateTimeEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+class MockPubSub:
+    """Mock implementation of Redis PubSub for fallback when Redis is unavailable."""
+    def __init__(self):
+        self.channels = []
+        
+    def subscribe(self, *channels):
+        """Mock subscribe to channels."""
+        self.channels.extend(channels)
+        
+    def get_message(self, timeout=None):
+        """Mock get_message that returns None."""
+        return None
+
 class RedisClient:
     def __init__(self, redis_url: str = "redis://127.0.0.1:6379/0"):
         """Initialize Redis client with the given URL."""
-        self.redis = redis.from_url(redis_url)
-        logger.info(f"Redis client initialized with URL: {redis_url}")
+        self.redis_url = redis_url
+        self.available = False
+        
+        try:
+            self.redis = redis.from_url(redis_url)
+            # Test the connection
+            self.redis.ping()
+            self.available = True
+            logger.info(f"Redis client initialized with URL: {redis_url}")
+        except (redis.ConnectionError, redis.exceptions.RedisError) as e:
+            logger.warning(f"Could not connect to Redis at {redis_url}. Using fallback mode: {e}")
+            self.redis = None
         
     def publish(self, channel: str, message: Union[str, Dict, List]) -> int:
         """Publish a message to a Redis channel."""
         if not isinstance(message, str):
             message = json.dumps(message, cls=DateTimeEncoder)
         
+        if not self.available:
+            logger.debug(f"Redis unavailable, skipping publish to channel {channel}")
+            return 0
+            
         try:
             result = self.redis.publish(channel, message)
             logger.debug(f"Published message to channel {channel}")
             return result
         except Exception as e:
             logger.error(f"Error publishing to channel {channel}: {e}")
-            raise
+            return 0
     
     def subscribe(self, channels: Union[str, List[str]]):
         """Subscribe to one or more Redis channels."""
         if isinstance(channels, str):
             channels = [channels]
+        
+        if not self.available:
+            logger.debug(f"Redis unavailable, returning mock PubSub for channels: {channels}")
+            mock_pubsub = MockPubSub()
+            mock_pubsub.subscribe(*channels)
+            return mock_pubsub
         
         try:
             pubsub = self.redis.pubsub()
@@ -46,12 +79,18 @@ class RedisClient:
             return pubsub
         except Exception as e:
             logger.error(f"Error subscribing to channels {channels}: {e}")
-            raise
+            mock_pubsub = MockPubSub()
+            mock_pubsub.subscribe(*channels)
+            return mock_pubsub
     
     def set(self, key: str, value: Union[str, Dict, List], expiration: Optional[int] = None) -> bool:
         """Set a key-value pair in Redis with optional expiration in seconds."""
         if not isinstance(value, str):
             value = json.dumps(value, cls=DateTimeEncoder)
+        
+        if not self.available:
+            logger.debug(f"Redis unavailable, skipping set key {key}")
+            return False
         
         try:
             result = self.redis.set(key, value, ex=expiration)
@@ -59,10 +98,14 @@ class RedisClient:
             return result
         except Exception as e:
             logger.error(f"Error setting key {key} in Redis: {e}")
-            raise
+            return False
     
     def get(self, key: str, as_json: bool = False) -> Any:
         """Get a value from Redis by key, optionally parsing as JSON."""
+        if not self.available:
+            logger.debug(f"Redis unavailable, returning None for key {key}")
+            return None
+        
         try:
             value = self.redis.get(key)
             
@@ -81,22 +124,30 @@ class RedisClient:
             return value_str
         except Exception as e:
             logger.error(f"Error getting key {key} from Redis: {e}")
-            raise
+            return None
     
     def delete(self, key: str) -> int:
         """Delete a key from Redis."""
+        if not self.available:
+            logger.debug(f"Redis unavailable, skipping delete key {key}")
+            return 0
+        
         try:
             result = self.redis.delete(key)
             logger.debug(f"Deleted key {key} from Redis")
             return result
         except Exception as e:
             logger.error(f"Error deleting key {key} from Redis: {e}")
-            raise
+            return 0
     
     def list_push(self, key: str, value: Union[str, Dict, List]) -> int:
         """Push a value to a Redis list."""
         if not isinstance(value, str):
             value = json.dumps(value, cls=DateTimeEncoder)
+        
+        if not self.available:
+            logger.debug(f"Redis unavailable, skipping push to list {key}")
+            return 0
         
         try:
             result = self.redis.rpush(key, value)
@@ -104,10 +155,14 @@ class RedisClient:
             return result
         except Exception as e:
             logger.error(f"Error pushing to list {key} in Redis: {e}")
-            raise
+            return 0
     
     def list_get_all(self, key: str, as_json: bool = False) -> List:
         """Get all values from a Redis list, optionally parsing as JSON."""
+        if not self.available:
+            logger.debug(f"Redis unavailable, returning empty list for key {key}")
+            return []
+        
         try:
             values = self.redis.lrange(key, 0, -1)
             
@@ -124,4 +179,4 @@ class RedisClient:
             return [value.decode('utf-8') for value in values]
         except Exception as e:
             logger.error(f"Error getting list {key} from Redis: {e}")
-            raise
+            return []
