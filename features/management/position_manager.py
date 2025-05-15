@@ -29,6 +29,59 @@ from common.db_models import (
     OptionsContractModel, MarketDataModel
 )
 
+# Type variable for SQLAlchemy model instance
+Model = TypeVar('Model')
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
+# Utility functions
+def safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float.
+    
+    Args:
+        value: The value to convert
+        default: The default value to return if conversion fails
+        
+    Returns:
+        The converted float value or the default
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+def safe_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
+    """Safely get an attribute from an object that may be a dictionary or object.
+    
+    Args:
+        obj: The object to get the attribute from
+        attr_name: The name of the attribute to get
+        default: The default value to return if the attribute doesn't exist
+        
+    Returns:
+        The attribute value or the default
+    """
+    if obj is None:
+        return default
+    
+    # Try attribute access first (for objects)
+    if hasattr(obj, attr_name):
+        return getattr(obj, attr_name, default)
+    
+    # Try dictionary access (for dicts or dict-like objects)
+    try:
+        if isinstance(obj, dict) and attr_name in obj:
+            return obj[attr_name]
+        elif hasattr(obj, "get"):
+            return obj.get(attr_name, default)
+    except (TypeError, KeyError):
+        pass
+    
+    return default
+
 from common.redis_utils import RedisClient
 from common.utils import format_currency, calculate_risk_reward
 
@@ -127,64 +180,44 @@ def get_all_positions() -> List[Dict[str, Any]]:
             for ap in alpaca_positions:
                 # Extract required attributes safely with type checking
                 try:
-                    # Get symbol safely
-                    if hasattr(ap, 'symbol'):
-                        symbol = str(ap.symbol)
-                    elif isinstance(ap, dict) and 'symbol' in ap:
-                        symbol = str(ap['symbol'])
-                    else:
+                    # Get symbol safely using safe_attr helper
+                    symbol = safe_attr(ap, 'symbol')
+                    if not symbol:
                         logger.warning(f"Position object missing symbol attribute: {ap}")
                         continue
+                    
+                    # Convert to string
+                    symbol = str(symbol)
                         
                     if not any(p["symbol"] == symbol for p in positions):
                         # Extract and convert other attributes safely
                         try:
-                            # Extract quantity
-                            if hasattr(ap, 'qty'):
-                                qty = int(ap.qty) if ap.qty is not None else 0
-                            elif isinstance(ap, dict) and 'qty' in ap:
-                                qty = int(ap['qty']) if ap['qty'] is not None else 0
-                            else:
-                                qty = 0
+                            # Extract quantity using helper function
+                            qty_value = safe_attr(ap, 'qty')
+                            qty = int(qty_value) if qty_value is not None else 0
+                            
+                            # Extract avg_entry_price using helper function
+                            avg_entry_price = safe_float(safe_attr(ap, 'avg_entry_price'))
                                 
-                            # Extract avg_entry_price
-                            if hasattr(ap, 'avg_entry_price'):
-                                avg_entry_price = float(ap.avg_entry_price) if ap.avg_entry_price is not None else 0.0
-                            elif isinstance(ap, dict) and 'avg_entry_price' in ap:
-                                avg_entry_price = float(ap['avg_entry_price']) if ap['avg_entry_price'] is not None else 0.0
-                            else:
-                                avg_entry_price = 0.0
-                                
-                            # Extract side
-                            if hasattr(ap, 'side'):
-                                side_value = ap.side
-                            elif isinstance(ap, dict) and 'side' in ap:
-                                side_value = ap['side']
-                            else:
-                                side_value = 'long'  # Default to long
-                                
+                            # Extract side using helper function
+                            side_value = safe_attr(ap, 'side', 'long')  # Default to long
                             side = "long" if str(side_value).lower() == "long" else "short"
                                 
-                            # Extract and safely convert numeric values
-                            def safe_float(value):
-                                try:
-                                    return float(value) if value is not None else 0.0
-                                except (TypeError, ValueError):
-                                    return 0.0
+                            # Use the module-level safe_float function
                             
-                            # Build position dictionary with safe attribute access
+                            # Build position dictionary with safe attribute access using helper functions
                             position_data = {
                                 "symbol": symbol,
                                 "quantity": qty,
                                 "avg_entry_price": avg_entry_price,
                                 "side": side,
-                                "market_value": safe_float(getattr(ap, 'market_value', 0.0) if hasattr(ap, 'market_value') else ap.get('market_value', 0.0)),
-                                "cost_basis": safe_float(getattr(ap, 'cost_basis', 0.0) if hasattr(ap, 'cost_basis') else ap.get('cost_basis', 0.0)),
-                                "unrealized_pl": safe_float(getattr(ap, 'unrealized_pl', 0.0) if hasattr(ap, 'unrealized_pl') else ap.get('unrealized_pl', 0.0)),
-                                "unrealized_plpc": safe_float(getattr(ap, 'unrealized_plpc', 0.0) if hasattr(ap, 'unrealized_plpc') else ap.get('unrealized_plpc', 0.0)),
-                                "current_price": safe_float(getattr(ap, 'current_price', 0.0) if hasattr(ap, 'current_price') else ap.get('current_price', 0.0)),
-                                "lastday_price": safe_float(getattr(ap, 'lastday_price', 0.0) if hasattr(ap, 'lastday_price') else ap.get('lastday_price', 0.0)),
-                                "change_today": safe_float(getattr(ap, 'change_today', 0.0) if hasattr(ap, 'change_today') else ap.get('change_today', 0.0)),
+                                "market_value": safe_float(safe_attr(ap, 'market_value')),
+                                "cost_basis": safe_float(safe_attr(ap, 'cost_basis')),
+                                "unrealized_pl": safe_float(safe_attr(ap, 'unrealized_pl')),
+                                "unrealized_plpc": safe_float(safe_attr(ap, 'unrealized_plpc')),
+                                "current_price": safe_float(safe_attr(ap, 'current_price')),
+                                "lastday_price": safe_float(safe_attr(ap, 'lastday_price')),
+                                "change_today": safe_float(safe_attr(ap, 'change_today')),
                                 "created_at": None
                             }
                             
@@ -261,8 +294,8 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
                 # Remove from set to track remaining positions
                 db_position_symbols.remove(symbol)
             else:
-                # Create new position entry using keyword arguments
-                new_position = PositionModel(
+                # Create new position entry using helper function
+                new_position = create_model(PositionModel,
                     symbol=symbol,
                     quantity=qty,
                     avg_entry_price=avg_entry_price,
@@ -279,8 +312,8 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
                 )
                 db.session.add(new_position)
                 
-                # Create notification for new position with keyword arguments
-                notification = NotificationModel(
+                # Create notification for new position with helper function
+                notification = create_model(NotificationModel,
                     type="position",
                     title=f"New Position: {symbol}",
                     message=f"New position opened: {qty} {symbol} at {format_currency(avg_entry_price)}",
@@ -300,8 +333,8 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
             position = next(p for p in db_positions if p.symbol == symbol)
             position.closed_at = datetime.utcnow()
             
-            # Create notification for closed position using keyword arguments
-            notification = NotificationModel(
+            # Create notification for closed position using helper function
+            notification = create_model(NotificationModel,
                 type="position",
                 title=f"Position Closed: {position.symbol}",
                 message=f"Position closed: {position.quantity} {position.symbol} with P&L: {format_currency(position.unrealized_pl)} ({position.unrealized_plpc:.2f}%)",
@@ -349,38 +382,46 @@ def get_position(symbol: str) -> Optional[Dict[str, Any]]:
         try:
             alpaca_position = trading_client.get_open_position(symbol)
             if alpaca_position:
-                # Add to database
-                new_position = PositionModel(
+                # Add to database using helper function
+                # Extract data safely using helper functions
+                qty_value = safe_attr(alpaca_position, 'qty')
+                qty = int(qty_value) if qty_value is not None else 0
+                
+                side_value = safe_attr(alpaca_position, 'side', 'long')
+                side = "long" if str(side_value).lower() == "long" else "short"
+                
+                new_position = create_model(PositionModel,
                     symbol=symbol,
-                    quantity=alpaca_position.qty,
-                    avg_entry_price=float(alpaca_position.avg_entry_price),
-                    side="long" if alpaca_position.side == "long" else "short",
-                    market_value=float(alpaca_position.market_value),
-                    cost_basis=float(alpaca_position.cost_basis),
-                    unrealized_pl=float(alpaca_position.unrealized_pl),
-                    unrealized_plpc=float(alpaca_position.unrealized_plpc),
-                    current_price=float(alpaca_position.current_price),
-                    lastday_price=float(alpaca_position.lastday_price),
-                    change_today=float(alpaca_position.change_today),
+                    quantity=qty,
+                    avg_entry_price=safe_float(safe_attr(alpaca_position, 'avg_entry_price')),
+                    side=side,
+                    market_value=safe_float(safe_attr(alpaca_position, 'market_value')),
+                    cost_basis=safe_float(safe_attr(alpaca_position, 'cost_basis')),
+                    unrealized_pl=safe_float(safe_attr(alpaca_position, 'unrealized_pl')),
+                    unrealized_plpc=safe_float(safe_attr(alpaca_position, 'unrealized_plpc')),
+                    current_price=safe_float(safe_attr(alpaca_position, 'current_price')),
+                    lastday_price=safe_float(safe_attr(alpaca_position, 'lastday_price')),
+                    change_today=safe_float(safe_attr(alpaca_position, 'change_today')),
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow()
                 )
                 db.session.add(new_position)
                 db.session.commit()
                 
+                # Return position data using the same helper functions
                 return {
                     "id": new_position.id,
                     "symbol": symbol,
-                    "quantity": alpaca_position.qty,
-                    "avg_entry_price": float(alpaca_position.avg_entry_price),
-                    "side": "long" if alpaca_position.side == "long" else "short",
-                    "market_value": float(alpaca_position.market_value),
-                    "cost_basis": float(alpaca_position.cost_basis),
-                    "unrealized_pl": float(alpaca_position.unrealized_pl),
-                    "unrealized_plpc": float(alpaca_position.unrealized_plpc),
-                    "current_price": float(alpaca_position.current_price),
-                    "lastday_price": float(alpaca_position.lastday_price),
-                    "change_today": float(alpaca_position.change_today),
+                    "quantity": qty,
+                    "avg_entry_price": safe_float(safe_attr(alpaca_position, 'avg_entry_price')),
+                    "side": side,
+                    "market_value": safe_float(safe_attr(alpaca_position, 'market_value')),
+                    "cost_basis": safe_float(safe_attr(alpaca_position, 'cost_basis')),
+                    "unrealized_pl": safe_float(safe_attr(alpaca_position, 'unrealized_pl')),
+                    "unrealized_plpc": safe_float(safe_attr(alpaca_position, 'unrealized_plpc')),
+                    "current_price": safe_float(safe_attr(alpaca_position, 'current_price')),
+                    "lastday_price": safe_float(safe_attr(alpaca_position, 'lastday_price')),
+                    "change_today": safe_float(safe_attr(alpaca_position, 'change_today')),
                     "created_at": new_position.created_at.isoformat()
                 }
         except Exception as e:
@@ -406,8 +447,8 @@ def close_position(symbol: str) -> Dict[str, Any]:
             position.closed_at = datetime.utcnow()
             db.session.commit()
             
-            # Create notification
-            notification = NotificationModel(
+            # Create notification using helper function
+            notification = create_model(NotificationModel,
                 type="position",
                 title=f"Position Closed: {symbol}",
                 message=f"Position closed: {position.quantity} {symbol} with P&L: {format_currency(position.unrealized_pl)} ({position.unrealized_plpc:.2f}%)",
@@ -474,8 +515,8 @@ def close_position_partial(symbol: str, quantity: int) -> Dict[str, Any]:
                 db_position.closed_at = datetime.utcnow()
                 db.session.commit()
         
-        # Create notification
-        notification = NotificationModel(
+        # Create notification using helper function
+        notification = create_model(NotificationModel,
             type="position",
             title=f"Partial Position Closed: {symbol}",
             message=f"Closed {quantity} of {current_qty} {symbol}",
@@ -529,8 +570,8 @@ def scale_position(symbol: str, additional_quantity: int) -> Dict[str, Any]:
             time_in_force="day"
         )
         
-        # Create notification
-        notification = NotificationModel(
+        # Create notification using helper function
+        notification = create_model(NotificationModel,
             type="position",
             title=f"Position Scaled: {symbol}",
             message=f"Added {additional_quantity} to position in {symbol}",
