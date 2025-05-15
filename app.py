@@ -84,3 +84,8 @@ def dashboard():
 def setup_form():
     """Render the setup submission form."""
     return render_template('setup_form.html')
+
+@app.route('/trading')
+def trading_dashboard():
+    """Render the trading dashboard."""
+    return render_template('trading_dashboard.html')

@@ -16,29 +16,25 @@ from features.setups.api import setup_routes
 app.register_blueprint(setup_routes)
 logging.info("Setup routes registered")
 
-try:
-    from features.market.price_monitor import market_routes
-    app.register_blueprint(market_routes)
-except ImportError:
-    logging.warning("Market routes not found, skipping registration")
+# Market data routes
+from features.market.api import market_routes
+app.register_blueprint(market_routes)
+logging.info("Market routes registered")
 
-try:
-    from features.strategy.detector import strategy_routes
-    app.register_blueprint(strategy_routes)
-except ImportError:
-    logging.warning("Strategy routes not found, skipping registration")
+# Strategy detector routes
+from features.strategy.detector import strategy_routes
+app.register_blueprint(strategy_routes)
+logging.info("Strategy routes registered")
 
-try:
-    from features.options_selector.chain_fetcher import options_routes
-    app.register_blueprint(options_routes)
-except ImportError:
-    logging.warning("Options routes not found, skipping registration")
+# Options chain routes
+from features.options.chain import options_routes
+app.register_blueprint(options_routes)
+logging.info("Options routes registered")
 
-try:
-    from features.execution.executor import execution_routes
-    app.register_blueprint(execution_routes)
-except ImportError:
-    logging.warning("Execution routes not found, skipping registration")
+# Trade execution routes
+from features.execution.trader import execution_routes
+app.register_blueprint(execution_routes)
+logging.info("Execution routes registered")
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, 
