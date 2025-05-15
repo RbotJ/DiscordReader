@@ -24,16 +24,16 @@ from common.models import (
 logger = logging.getLogger(__name__)
 
 # Regular expression patterns
-DATE_PATTERN = r"A\+ Trade Setups[^\n]*(?:[—–]|\s+)(\w{3}\s+\w{3}\s+\d{1,2})"
+DATE_PATTERN = r"A\+ Trade Setups[^\n]*(?:[—–-]|\s+)(\w{3}\s+\w{3}\s+\d{1,2})"
 TICKER_PATTERN = r"(?:\d+\)\s+|—{2,}[\r\n]+)([A-Z]+)"
-BREAKOUT_PATTERN = r"🔼\s+(?:Breakout|Breakout Entry|Breakout Entries)\s+(?:(Aggressive|Conservative))?\s*(?:Above|Over)\s+(\d+\.\d+)"
-BREAKDOWN_PATTERN = r"🔻\s+(?:Breakdown|Breakdown Entry|Breakdown Entries)\s+(?:(Aggressive|Conservative))?\s*(?:Below|Under)\s+(\d+\.\d+)"
-REJECTION_PATTERN = r"❌\s+(?:Rejection|Rejection Short|Rejection Short Zone|Rejection Short Zones|Rejection Levels)(?:\s+Near)?\s+(\d+\.\d+)"
+BREAKOUT_PATTERN = r"🔼\s+(?:(Aggressive|Conservative)\s+(?:Long|Breakout)|Breakout|Breakout Entry|Breakout Entries)\s+(?:Above|Over)\s+(\d+\.\d+)"
+BREAKDOWN_PATTERN = r"🔻\s+(?:(Aggressive|Conservative)\s+(?:Short|Breakdown)|Breakdown|Breakdown Entry|Breakdown Entries)\s+(?:Below|Under)\s+(\d+\.\d+)|🔻\s+(?:Breakdown|Breakdown Entry|Breakdown Entries)\s+(?:(Aggressive|Conservative))?\s*(?:Below|Under)\s+(\d+\.\d+)"
+REJECTION_PATTERN = r"❌\s+(?:Rejection|Rejection Short|Rejection Short Zone|Rejection Short Zones|Rejection Levels)(?:\s+(?:Near|at|levels|level))?\s+(\d+\.\d+)"
 BOUNCE_PATTERN = r"🔄\s+(?:Bounce|Bounce From|Bounce Entry|Bounce Long Zones|Bounce Zone)\s+(?:From|Near)?\s+(\d+\.\d+)"
-BOUNCE_ZONE_PATTERN = r"🌀\s+(?:Bounce Zone|Bounce Long Zones)\s+(?:Near)?\s+(?:(\d+\.\d+)[-–](\d+\.\d+)|(\d+\.\d+))"
-TARGET_PATTERN = r"(?:🔼|🔻)\s+(?:Targets|Target)?:?\s*(?:(\d+\.\d+)(?:,\s*|-)?)+"
-BIAS_PATTERN = r"⚠️\s+(?:Bias\s+)?(Bullish|Bearish)[^0-9.,\n]*(?:above|below|under|over|while holding above|while holding below)\s+(\d+\.\d+)"
-BIAS_FLIP_PATTERN = r"(?:flips|flip to) (bullish|bearish)(?:[^0-9.,\n]*)(?:on|if|when|above|below|over|under)[^0-9.,\n]*(\d+\.\d+)"
+BOUNCE_ZONE_PATTERN = r"🌀\s+(?:Bounce Zone|Bounce Long Zones)(?:\s+Near)?\s+(?:(\d+\.\d+)[-–](\d+\.\d+)|(\d+\.\d+))"
+TARGET_PATTERN = r"(?:🔼|🔻|Targets:|Target:)\s*(?:(\d+\.\d+)(?:,\s*|-)?)+"
+BIAS_PATTERN = r"⚠️.*?(Bullish|Bearish)[^0-9.,\n]*(?:above|below|under|over|while holding above|while holding below|holds?|holding|momentum)\s+(\d+\.\d+)"
+BIAS_FLIP_PATTERN = r"(?:flips|flip to|flips?) (bullish|bearish)(?:[^0-9.,\n]*)(?:on|if|when|above|below|over|under|cross|breaks?|only)[^0-9.,\n]*(\d+\.\d+)"
 
 # Month name mapping
 MONTH_MAP = {
@@ -109,12 +109,16 @@ def extract_signals(text: str, symbol: str) -> List[Signal]:
     for line in ticker_text.split('\n'):
         breakout_match = re.search(BREAKOUT_PATTERN, line)
         if breakout_match:
+            # Handle aggressiveness indicator if present
             aggressiveness_str = breakout_match.group(1) if breakout_match.group(1) else "none"
-            aggressiveness = (Aggressiveness.AGGRESSIVE if aggressiveness_str.lower() == "aggressive" else
-                             Aggressiveness.CONSERVATIVE if aggressiveness_str.lower() == "conservative" else
+            
+            # Get the trigger price (always group 2 in the simplified pattern)
+            trigger_price = float(breakout_match.group(2))
+            
+            aggressiveness = (Aggressiveness.AGGRESSIVE if aggressiveness_str and aggressiveness_str.lower() == "aggressive" else
+                             Aggressiveness.CONSERVATIVE if aggressiveness_str and aggressiveness_str.lower() == "conservative" else
                              Aggressiveness.NONE)
             
-            trigger_price = float(breakout_match.group(2))
             targets = extract_targets(ticker_text, line)
             
             signals.append(Signal(
@@ -129,12 +133,24 @@ def extract_signals(text: str, symbol: str) -> List[Signal]:
     for line in ticker_text.split('\n'):
         breakdown_match = re.search(BREAKDOWN_PATTERN, line)
         if breakdown_match:
-            aggressiveness_str = breakdown_match.group(1) if breakdown_match.group(1) else "none"
-            aggressiveness = (Aggressiveness.AGGRESSIVE if aggressiveness_str.lower() == "aggressive" else
-                             Aggressiveness.CONSERVATIVE if aggressiveness_str.lower() == "conservative" else
+            # We have two different pattern formats possible:
+            # 1. "Aggressive Short Below XX.XX"
+            # 2. "Breakdown Below XX.XX"
+            
+            # Check which format matched
+            if breakdown_match.group(1) and breakdown_match.group(2):
+                # Format: "Aggressive Short Below XX.XX"
+                aggressiveness_str = breakdown_match.group(1)
+                trigger_price = float(breakdown_match.group(2))
+            else:
+                # Format: "Breakdown (Aggressive) Below XX.XX"
+                aggressiveness_str = breakdown_match.group(3) if breakdown_match.group(3) else "none"
+                trigger_price = float(breakdown_match.group(4) or 0)
+            
+            aggressiveness = (Aggressiveness.AGGRESSIVE if aggressiveness_str and aggressiveness_str.lower() == "aggressive" else
+                             Aggressiveness.CONSERVATIVE if aggressiveness_str and aggressiveness_str.lower() == "conservative" else
                              Aggressiveness.NONE)
             
-            trigger_price = float(breakdown_match.group(2))
             targets = extract_targets(ticker_text, line)
             
             signals.append(Signal(
@@ -198,6 +214,53 @@ def extract_signals(text: str, symbol: str) -> List[Signal]:
                 targets=targets
             ))
     
+    # Fallback for bounce zone pattern with simpler regex if no signals found
+    if not signals:
+        # Look for "bounce zone" text with nearby numbers
+        bounce_lines = [line for line in ticker_text.split('\n') if 'bounce zone' in line.lower() or 'bounce from' in line.lower()]
+        for line in bounce_lines:
+            numbers = extract_numbers(line)
+            if numbers:
+                if len(numbers) >= 2:
+                    # Multiple numbers may indicate a range
+                    signals.append(Signal(
+                        category=SignalCategory.BOUNCE,
+                        aggressiveness=Aggressiveness.NONE,
+                        comparison=ComparisonType.RANGE,
+                        trigger=[numbers[0], numbers[1]],
+                        targets=numbers[2:] if len(numbers) > 2 else []
+                    ))
+                else:
+                    signals.append(Signal(
+                        category=SignalCategory.BOUNCE,
+                        aggressiveness=Aggressiveness.NONE,
+                        comparison=ComparisonType.NEAR,
+                        trigger=numbers[0],
+                        targets=[]
+                    ))
+    
+    # Check for Aggressive Long or Aggressive Short as fallback patterns
+    if not signals:
+        aggressive_long = re.search(r"(?i)aggressive\s+long.*?(\d+\.\d+)", ticker_text)
+        if aggressive_long:
+            signals.append(Signal(
+                category=SignalCategory.BREAKOUT,
+                aggressiveness=Aggressiveness.AGGRESSIVE,
+                comparison=ComparisonType.ABOVE,
+                trigger=float(aggressive_long.group(1)),
+                targets=extract_numbers(ticker_text)
+            ))
+        
+        aggressive_short = re.search(r"(?i)aggressive\s+short.*?(\d+\.\d+)", ticker_text)
+        if aggressive_short:
+            signals.append(Signal(
+                category=SignalCategory.BREAKDOWN,
+                aggressiveness=Aggressiveness.AGGRESSIVE,
+                comparison=ComparisonType.BELOW,
+                trigger=float(aggressive_short.group(1)),
+                targets=extract_numbers(ticker_text)
+            ))
+    
     return signals
 
 
@@ -228,8 +291,53 @@ def extract_bias(text: str, symbol: str) -> Optional[Bias]:
     
     ticker_text = "\n".join(lines[start_idx:end_idx])
     
-    # Extract bias
+    # Extract bias - first try with specific pattern
     bias_match = re.search(BIAS_PATTERN, ticker_text)
+    
+    # If that fails, try with a more lenient pattern
+    if not bias_match:
+        # Look for any line containing bullish/bearish
+        lenient_pattern = r"(?i)(bullish|bearish)[^0-9.]*?(\d+\.\d+)"
+        bias_match = re.search(lenient_pattern, ticker_text)
+        
+        if not bias_match:
+            # Even more lenient, just look for the words
+            for line in ticker_text.split('\n'):
+                if 'bullish' in line.lower() and re.search(r"\d+\.\d+", line):
+                    numbers = extract_numbers(line)
+                    if numbers:
+                        # Create a custom match object with a group method
+                        class MockMatch:
+                            def group(self, n):
+                                if n == 0:
+                                    return line
+                                elif n == 1:
+                                    return 'bullish'
+                                elif n == 2:
+                                    return str(numbers[0])
+                                else:
+                                    return None
+                        
+                        bias_match = MockMatch()
+                        break
+                elif 'bearish' in line.lower() and re.search(r"\d+\.\d+", line):
+                    numbers = extract_numbers(line)
+                    if numbers:
+                        # Create a custom match object with a group method
+                        class MockMatch:
+                            def group(self, n):
+                                if n == 0:
+                                    return line
+                                elif n == 1:
+                                    return 'bearish'
+                                elif n == 2:
+                                    return str(numbers[0])
+                                else:
+                                    return None
+                        
+                        bias_match = MockMatch()
+                        break
+    
     if not bias_match:
         return None
     
