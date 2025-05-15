@@ -108,8 +108,13 @@ def get_all_positions() -> List[Dict[str, Any]]:
     
     return positions
 
-def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
-    """Sync positions from Alpaca to our local database."""
+def sync_positions_from_alpaca(alpaca_positions: List) -> None:
+    """Sync positions from Alpaca to our local database.
+    
+    Args:
+        alpaca_positions: List of position objects from Alpaca API.
+            Each position object has attributes like symbol, qty, avg_entry_price, etc.
+    """
     try:
         # Get current positions from our database
         db_positions = PositionModel.query.filter_by(closed_at=None).all()
@@ -139,37 +144,35 @@ def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
                 db_position_symbols.remove(symbol)
             else:
                 # Create new position entry
-                new_position = PositionModel(
-                    symbol=symbol,
-                    quantity=ap.qty,
-                    avg_entry_price=float(ap.avg_entry_price),
-                    side="long" if ap.side == "long" else "short",
-                    market_value=float(ap.market_value),
-                    cost_basis=float(ap.cost_basis),
-                    unrealized_pl=float(ap.unrealized_pl),
-                    unrealized_plpc=float(ap.unrealized_plpc),
-                    current_price=float(ap.current_price),
-                    lastday_price=float(ap.lastday_price),
-                    change_today=float(ap.change_today),
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
-                )
+                new_position = PositionModel()
+                new_position.symbol = symbol
+                new_position.quantity = ap.qty
+                new_position.avg_entry_price = float(ap.avg_entry_price)
+                new_position.side = "long" if ap.side == "long" else "short"
+                new_position.market_value = float(ap.market_value)
+                new_position.cost_basis = float(ap.cost_basis)
+                new_position.unrealized_pl = float(ap.unrealized_pl)
+                new_position.unrealized_plpc = float(ap.unrealized_plpc)
+                new_position.current_price = float(ap.current_price)
+                new_position.lastday_price = float(ap.lastday_price)
+                new_position.change_today = float(ap.change_today)
+                new_position.created_at = datetime.utcnow()
+                new_position.updated_at = datetime.utcnow()
                 db.session.add(new_position)
                 
                 # Create notification for new position
-                notification = NotificationModel(
-                    type="position",
-                    title=f"New Position: {symbol}",
-                    message=f"New position opened: {ap.qty} {symbol} at {format_currency(float(ap.avg_entry_price))}",
-                    meta_data=json.dumps({
-                        "symbol": symbol,
-                        "quantity": ap.qty,
-                        "price": float(ap.avg_entry_price),
-                        "side": "long" if ap.side == "long" else "short"
-                    }),
-                    read=False,
-                    created_at=datetime.utcnow()
-                )
+                notification = NotificationModel()
+                notification.type = "position"
+                notification.title = f"New Position: {symbol}"
+                notification.message = f"New position opened: {ap.qty} {symbol} at {format_currency(float(ap.avg_entry_price))}"
+                notification.meta_data = json.dumps({
+                    "symbol": symbol,
+                    "quantity": ap.qty,
+                    "price": float(ap.avg_entry_price),
+                    "side": "long" if ap.side == "long" else "short"
+                })
+                notification.read = False
+                notification.created_at = datetime.utcnow()
                 db.session.add(notification)
         
         # Mark positions not in Alpaca as closed
@@ -178,19 +181,18 @@ def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
             position.closed_at = datetime.utcnow()
             
             # Create notification for closed position
-            notification = NotificationModel(
-                type="position",
-                title=f"Position Closed: {position.symbol}",
-                message=f"Position closed: {position.quantity} {position.symbol} with P&L: {format_currency(position.unrealized_pl)} ({position.unrealized_plpc:.2f}%)",
-                meta_data=json.dumps({
-                    "symbol": position.symbol,
-                    "quantity": position.quantity,
-                    "pnl": position.unrealized_pl,
-                    "pnl_percent": position.unrealized_plpc
-                }),
-                read=False,
-                created_at=datetime.utcnow()
-            )
+            notification = NotificationModel()
+            notification.type = "position"
+            notification.title = f"Position Closed: {position.symbol}"
+            notification.message = f"Position closed: {position.quantity} {position.symbol} with P&L: {format_currency(position.unrealized_pl)} ({position.unrealized_plpc:.2f}%)"
+            notification.meta_data = json.dumps({
+                "symbol": position.symbol,
+                "quantity": position.quantity,
+                "pnl": position.unrealized_pl,
+                "pnl_percent": position.unrealized_plpc
+            })
+            notification.read = False
+            notification.created_at = datetime.utcnow()
             db.session.add(notification)
         
         # Commit all changes

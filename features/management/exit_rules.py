@@ -214,19 +214,18 @@ class ExitRulesEngine:
                 
                 if result["success"]:
                     # Log exit in database and notify
-                    notification = NotificationModel(
-                        type="exit",
-                        title=f"Automatic Exit: {position['symbol']}",
-                        message=f"Position automatically closed: {position['symbol']} due to: {combined_reason}",
-                        meta_data=json.dumps({
-                            "symbol": position["symbol"],
-                            "reason": combined_reason,
-                            "unrealized_pl": position.get("unrealized_pl", 0),
-                            "unrealized_plpc": position.get("unrealized_plpc", 0)
-                        }),
-                        read=False,
-                        created_at=datetime.utcnow()
-                    )
+                    notification = NotificationModel()
+                    notification.type = "exit"
+                    notification.title = f"Automatic Exit: {position['symbol']}"
+                    notification.message = f"Position automatically closed: {position['symbol']} due to: {combined_reason}"
+                    notification.meta_data = json.dumps({
+                        "symbol": position["symbol"],
+                        "reason": combined_reason,
+                        "unrealized_pl": position.get("unrealized_pl", 0),
+                        "unrealized_plpc": position.get("unrealized_plpc", 0)
+                    })
+                    notification.read = False
+                    notification.created_at = datetime.utcnow()
                     db.session.add(notification)
                     db.session.commit()
                     
