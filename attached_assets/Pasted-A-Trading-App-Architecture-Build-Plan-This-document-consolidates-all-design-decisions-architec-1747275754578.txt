@@ -1,0 +1,148 @@
+A+ Trading App: Architecture & Build Plan
+
+This document consolidates all design decisions, architecture diagrams, data models, and a phased roadmap for building your AI-driven options trading application using Alpaca paper trading. Share this with your team as the single source of truth.
+
+⸻
+
+1. System Context (C4 Level 1)
+
+Diagram (Mermaid Sequence):
+
+flowchart LR
+  subgraph External
+    A[Discord / Email Webhook] --> B[Ingestion Service]
+    G[Alpaca Paper API]
+  end
+  subgraph App
+    B --> C[Setup Parser]
+    C --> D[Signal Store]
+    D --> E[Strategy Engine]
+    E --> F[Options Selector]
+    F --> H[Execution Layer]
+    H --> G
+    H --> I[Position Manager]
+    I --> J[Exit Rules Engine]
+    J --> H
+    H --> K[Notification & Dashboard]
+  end
+
+Key Containers:
+	•	Ingestion Service: Receives raw A+ Setup messages.
+	•	Setup Parser: Extracts signals, targets, biases.
+	•	Signal Store: Persists parsed setups.
+	•	Strategy Engine: Monitors underlying prices, triggers signals.
+	•	Options Selector: Fetches chains, computes Greeks, filters contracts.
+	•	Execution Layer: Places paper trades via Alpaca.
+	•	Position Manager: Tracks fills, Greeks exposure.
+	•	Exit Rules Engine: Applies targets and bias flips.
+	•	Notification & Dashboard: Slack/Discord alerts, Grafana metrics.
+
+⸻
+
+2. Architectural Decisions & ADRs
+	•	Vertical-Slice chosen for feature isolation and token efficiency.
+	•	Atomic Modules for shared utilities (models, config, logging).
+	•	Single-File Agents for prototyping specific features rapidly.
+	•	Alpaca-py as primary broker SDK; fallback to Polygon for missing data.
+	•	Redis Pub/Sub for event orchestration (decouples ingestion from processing).
+
+Store detailed ADRs in docs/adr/ with context, options, decision, trade-offs.
+
+⸻
+
+3. Data Model
+
+Pydantic Schemas (common/models.py)
+
+class Signal(BaseModel):
+    category: SignalCategory  # breakout, breakdown, rejection, bounce
+    aggressiveness: Aggressiveness = NONE
+    comparison: ComparisonType  # above, below, near, range
+    trigger: Union[float, List[float]]
+    targets: List[float]
+
+class Bias(BaseModel):
+    direction: str             # bullish/bearish
+    condition: ComparisonType  # above/below
+    price: float
+    flip: Optional[BiasFlip]
+
+class TickerSetup(BaseModel):
+    symbol: str
+    signals: List[Signal]
+    bias: Optional[Bias]
+
+class TradeSetupMessage(BaseModel):
+    date: date
+    raw_text: str
+    setups: List[TickerSetup]
+
+Relational Tables (PostgreSQL)
+
+-- setup_messages, ticker_setups, signals, signal_targets, biases
+
+(See docs/schema.sql for full DDL.)
+
+⸻
+
+4. Code Organization (Vertical-Slice)
+
+/  
+├── features/
+│   ├── setups/           # ingestion, parsing, storage
+│   ├── market/           # underlying price subscriptions
+│   ├── options_selector/ # chain_fetcher, greeks, filters, risk
+│   ├── strategy/         # detect triggers, map to signals
+│   ├── execution/        # place orders, simulate
+│   ├── management/       # positions, exit rules
+│   └── notifications/    # Slack, dashboards
+├── common/
+│   ├── models.py         # Pydantic / SQLAlchemy definitions
+│   └── utils.py          # logging, config loader
+├── docs/
+│   ├── adr/              # ADR Markdown files
+│   ├── schema.sql        # relational schema
+│   └── architecture.md   # this document
+├── .github/workflows/    # CI for docs & code checks
+└── README.md             # high-level overview & quickstart
+
+Each slice has its own README.md for purpose, inputs/outputs, tests.
+
+⸻
+
+5. Phased Build Roadmap
+
+Phase	Description & Deliverables
+0. Repo Scaffolding	- Initialize Git repo, add folder structure above.
+
+	•	Setup CI: linting, ADR lint, Mermaid validation.
+| 1. Ingestion & Parsing | - features/setups/api.py, parser.py, DB migrations.
+	•	Unit tests for parsing various message formats.
+| 2. Market Feed & Detection | - features/market/ with real-time via Alpaca WebSocket.
+	•	features/strategy/detector.py triggers on levels.
+| 2b. Options Chain Service | - options_selector/chain_fetcher.py & caching.
+	•	CLI utility to inspect chains.
+| 3. Greeks & Contract Filtering | - greeks_calculator.py, contract_filter.py.
+	•	Tests for Δ/Vega/IV screens.
+| 4. Risk Sizing & Order Execution | - risk_assessor.py, execution/executor.py.
+	•	Integration tests placing paper trades.
+| 5. Position & Exit Management | - management/positions.py, exit_engine.py.
+	•	Backfill script for missing fills.
+| 6. Notifications & Dashboard | - Slack/webhook alerts, Grafana metrics & dashboards.
+	•	Exporters in notifications/.
+| 7. Hardening & Scale | - Retry & fallback logic, rate-limits, Sentry.
+	•	Stress tests, load tests.
+| 8. Advanced Strategies | - Spreads, hedges, multi-leg orders.
+	•	UI tweaks & reporting.
+
+⸻
+
+6. Next Steps & Recommendations
+	1.	Scaffold the repo with the prescribed structure and add initial CI checks.
+	2.	Tackle Phase 1 immediately: ingestion/parsing gives you confidence to iterate on real data.
+	3.	After parsing is tested, move in parallel on market feed and options chain service (Phases 2 & 2b).
+	4.	Leverage vertical-slice AI prompts to scaffold each feature folder automatically.
+	5.	Keep your ADR directory up to date—capture every major trade-off.
+	6.	Schedule a weekly sync to review progress, update docs, and refine the roadmap.
+
+Feel free to iterate on this doc with the team. Once everyone aligns, we’ll start coding—beginning with the repo scaffold and Phase 1.
