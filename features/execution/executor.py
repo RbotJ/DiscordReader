@@ -7,8 +7,8 @@ from datetime import datetime, date
 from typing import Dict, List, Any, Optional
 from flask import Blueprint, jsonify, request, current_app
 from alpaca.trading import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest
-from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest, GetOrdersRequest
+from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, QueryOrderStatus
 from common.models import TradeOrder, Position
 from common.utils import generate_client_order_id
 from common.redis_utils import RedisClient
@@ -221,20 +221,35 @@ def get_orders():
             return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
         
         # Get query parameters
-        status = request.args.get('status')
+        status_param = request.args.get('status')
         limit = int(request.args.get('limit', 50))
+        
+        # Create order filter based on parameters
+        order_filter = None
+        if status_param:
+            # Map string status to QueryOrderStatus enum
+            if status_param == 'open':
+                status = QueryOrderStatus.OPEN
+            elif status_param == 'closed':
+                status = QueryOrderStatus.CLOSED
+            else:
+                status = QueryOrderStatus.ALL
+                
+            # Create the request filter
+            order_filter = GetOrdersRequest(
+                status=status,
+                limit=limit
+            )
+        else:
+            # Default filter with limit only
+            order_filter = GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,  # Default to open orders
+                limit=limit
+            )
         
         # Get orders from Alpaca with proper API parameters
         try:
-            # First try without any parameters
-            orders = trading_client.get_orders()
-            
-            # Filter orders based on status if provided
-            if status:
-                orders = [order for order in orders if order.status == status]
-                
-            # Limit the number of orders to return
-            orders = orders[:limit]
+            orders = trading_client.get_orders(filter=order_filter)
         except Exception as e:
             logger.error(f"Error retrieving orders: {str(e)}")
             return jsonify({"status": "error", "message": str(e)}), 500
