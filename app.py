@@ -8,7 +8,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "a_secure_temporary_secret_for_development")
 
 # Configure Redis connection
-redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
 redis_client = redis.from_url(redis_url)
 
 # Initialize logger

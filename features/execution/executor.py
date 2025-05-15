@@ -224,11 +224,20 @@ def get_orders():
         status = request.args.get('status')
         limit = int(request.args.get('limit', 50))
         
-        # Get orders from Alpaca
-        if status:
-            orders = trading_client.get_orders(status=status, limit=limit)
-        else:
-            orders = trading_client.get_orders(limit=limit)
+        # Get orders from Alpaca - using list_orders() instead of get_orders() with updated parameters
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            # For newer versions of alpaca-py
+            params = {"limit": limit}
+            if status:
+                params["status"] = status
+            orders = trading_client.get_orders(**params)
+        except (TypeError, AttributeError):
+            # Fall back to list_orders() for compatibility
+            if status:
+                orders = trading_client.list_orders(status=status, limit=limit)
+            else:
+                orders = trading_client.list_orders(limit=limit)
         
         # Format response
         formatted_orders = []

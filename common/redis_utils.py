@@ -16,7 +16,7 @@ class DateTimeEncoder(json.JSONEncoder):
 
 
 class RedisClient:
-    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
+    def __init__(self, redis_url: str = "redis://127.0.0.1:6379/0"):
         """Initialize Redis client with the given URL."""
         self.redis = redis.from_url(redis_url)
         logger.info(f"Redis client initialized with URL: {redis_url}")
