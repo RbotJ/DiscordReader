@@ -9,7 +9,14 @@ managing portfolio exposure.
 import os
 import logging
 import json
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Dict, List, Optional, Any, Union, Tuple, TypeVar, cast, Type
+from alpaca.trading.models import Position
+from alpaca.common.types import RawData
+from sqlalchemy.orm import declarative_base, Session
+from sqlalchemy.orm.attributes import set_attribute
+from sqlalchemy.orm.decl_api import DeclarativeMeta
+from sqlalchemy.ext.declarative import declared_attr
+from sqlalchemy.sql.schema import Column
 from datetime import datetime, timedelta
 import time
 import math
@@ -21,8 +28,39 @@ from common.db_models import (
     PositionModel, OrderModel, SignalModel, NotificationModel,
     OptionsContractModel, MarketDataModel
 )
+
 from common.redis_utils import RedisClient
 from common.utils import format_currency, calculate_risk_reward
+
+# Type alias for SQLAlchemy models
+Model = TypeVar('Model')
+
+def create_model(model_class: Type[Model], **kwargs) -> Model:
+    """Safely create a SQLAlchemy model instance with keyword arguments.
+    
+    This helper function works around type checking issues with SQLAlchemy models.
+    
+    Args:
+        model_class: The SQLAlchemy model class to instantiate
+        **kwargs: Keyword arguments to pass to the model constructor
+        
+    Returns:
+        A new instance of the model
+    """
+    # Using type ignore because SQLAlchemy models have special keyword handling
+    return model_class(**kwargs)  # type: ignore
+
+def update_model_attr(model: Any, attr_name: str, value: Any) -> None:
+    """Safely update a SQLAlchemy model attribute.
+    
+    This helper function works around type checking issues with SQLAlchemy models.
+    
+    Args:
+        model: The SQLAlchemy model instance to update
+        attr_name: The name of the attribute to update
+        value: The new value for the attribute
+    """
+    setattr(model, attr_name, value)
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -87,32 +125,84 @@ def get_all_positions() -> List[Dict[str, Any]]:
             
             # Add any positions from Alpaca that are not in our list
             for ap in alpaca_positions:
-                symbol = ap.symbol
-                if not any(p["symbol"] == symbol for p in positions):
-                    positions.append({
-                        "symbol": symbol,
-                        "quantity": ap.qty,
-                        "avg_entry_price": float(ap.avg_entry_price),
-                        "side": "long" if ap.side == "long" else "short",
-                        "market_value": float(ap.market_value),
-                        "cost_basis": float(ap.cost_basis),
-                        "unrealized_pl": float(ap.unrealized_pl),
-                        "unrealized_plpc": float(ap.unrealized_plpc),
-                        "current_price": float(ap.current_price),
-                        "lastday_price": float(ap.lastday_price),
-                        "change_today": float(ap.change_today),
-                        "created_at": None
-                    })
+                # Extract required attributes safely with type checking
+                try:
+                    # Get symbol safely
+                    if hasattr(ap, 'symbol'):
+                        symbol = str(ap.symbol)
+                    elif isinstance(ap, dict) and 'symbol' in ap:
+                        symbol = str(ap['symbol'])
+                    else:
+                        logger.warning(f"Position object missing symbol attribute: {ap}")
+                        continue
+                        
+                    if not any(p["symbol"] == symbol for p in positions):
+                        # Extract and convert other attributes safely
+                        try:
+                            # Extract quantity
+                            if hasattr(ap, 'qty'):
+                                qty = int(ap.qty) if ap.qty is not None else 0
+                            elif isinstance(ap, dict) and 'qty' in ap:
+                                qty = int(ap['qty']) if ap['qty'] is not None else 0
+                            else:
+                                qty = 0
+                                
+                            # Extract avg_entry_price
+                            if hasattr(ap, 'avg_entry_price'):
+                                avg_entry_price = float(ap.avg_entry_price) if ap.avg_entry_price is not None else 0.0
+                            elif isinstance(ap, dict) and 'avg_entry_price' in ap:
+                                avg_entry_price = float(ap['avg_entry_price']) if ap['avg_entry_price'] is not None else 0.0
+                            else:
+                                avg_entry_price = 0.0
+                                
+                            # Extract side
+                            if hasattr(ap, 'side'):
+                                side_value = ap.side
+                            elif isinstance(ap, dict) and 'side' in ap:
+                                side_value = ap['side']
+                            else:
+                                side_value = 'long'  # Default to long
+                                
+                            side = "long" if str(side_value).lower() == "long" else "short"
+                                
+                            # Extract and safely convert numeric values
+                            def safe_float(value):
+                                try:
+                                    return float(value) if value is not None else 0.0
+                                except (TypeError, ValueError):
+                                    return 0.0
+                            
+                            # Build position dictionary with safe attribute access
+                            position_data = {
+                                "symbol": symbol,
+                                "quantity": qty,
+                                "avg_entry_price": avg_entry_price,
+                                "side": side,
+                                "market_value": safe_float(getattr(ap, 'market_value', 0.0) if hasattr(ap, 'market_value') else ap.get('market_value', 0.0)),
+                                "cost_basis": safe_float(getattr(ap, 'cost_basis', 0.0) if hasattr(ap, 'cost_basis') else ap.get('cost_basis', 0.0)),
+                                "unrealized_pl": safe_float(getattr(ap, 'unrealized_pl', 0.0) if hasattr(ap, 'unrealized_pl') else ap.get('unrealized_pl', 0.0)),
+                                "unrealized_plpc": safe_float(getattr(ap, 'unrealized_plpc', 0.0) if hasattr(ap, 'unrealized_plpc') else ap.get('unrealized_plpc', 0.0)),
+                                "current_price": safe_float(getattr(ap, 'current_price', 0.0) if hasattr(ap, 'current_price') else ap.get('current_price', 0.0)),
+                                "lastday_price": safe_float(getattr(ap, 'lastday_price', 0.0) if hasattr(ap, 'lastday_price') else ap.get('lastday_price', 0.0)),
+                                "change_today": safe_float(getattr(ap, 'change_today', 0.0) if hasattr(ap, 'change_today') else ap.get('change_today', 0.0)),
+                                "created_at": None
+                            }
+                            
+                            positions.append(position_data)
+                        except Exception as e:
+                            logger.error(f"Error processing position {symbol}: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error extracting data from Alpaca position: {str(e)}")
         except Exception as e:
             logger.error(f"Error fetching positions from Alpaca: {str(e)}")
     
     return positions
 
-def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
+def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, List[Any]]) -> None:
     """Sync positions from Alpaca to our local database.
     
     Args:
-        alpaca_positions: List of position objects from Alpaca API.
+        alpaca_positions: List of position objects from Alpaca API or raw data.
             Each position object has attributes like symbol, qty, avg_entry_price, etc.
     """
     try:
@@ -155,51 +245,54 @@ def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
             if symbol in db_position_symbols:
                 # Update existing position
                 position = next(p for p in db_positions if p.symbol == symbol)
-                position.quantity = qty
-                position.avg_entry_price = avg_entry_price
-                position.side = side
-                position.market_value = market_value
-                position.cost_basis = cost_basis
-                position.unrealized_pl = unrealized_pl
-                position.unrealized_plpc = unrealized_plpc
-                position.current_price = current_price
-                position.lastday_price = lastday_price
-                position.change_today = change_today
-                position.updated_at = datetime.utcnow()
+                # Use setattr for SQLAlchemy models to avoid type checking issues
+                setattr(position, 'quantity', qty)
+                setattr(position, 'avg_entry_price', avg_entry_price)
+                setattr(position, 'side', side)
+                setattr(position, 'market_value', market_value)
+                setattr(position, 'cost_basis', cost_basis)
+                setattr(position, 'unrealized_pl', unrealized_pl)
+                setattr(position, 'unrealized_plpc', unrealized_plpc)
+                setattr(position, 'current_price', current_price)
+                setattr(position, 'lastday_price', lastday_price)
+                setattr(position, 'change_today', change_today)
+                setattr(position, 'updated_at', datetime.utcnow())
                 
                 # Remove from set to track remaining positions
                 db_position_symbols.remove(symbol)
             else:
-                # Create new position entry
-                new_position = PositionModel()
-                new_position.symbol = symbol
-                new_position.quantity = qty
-                new_position.avg_entry_price = avg_entry_price
-                new_position.side = side
-                new_position.market_value = market_value
-                new_position.cost_basis = cost_basis
-                new_position.unrealized_pl = unrealized_pl
-                new_position.unrealized_plpc = unrealized_plpc
-                new_position.current_price = current_price
-                new_position.lastday_price = lastday_price
-                new_position.change_today = change_today
-                new_position.created_at = datetime.utcnow()
-                new_position.updated_at = datetime.utcnow()
+                # Create new position entry using keyword arguments
+                new_position = PositionModel(
+                    symbol=symbol,
+                    quantity=qty,
+                    avg_entry_price=avg_entry_price,
+                    side=side,
+                    market_value=market_value,
+                    cost_basis=cost_basis,
+                    unrealized_pl=unrealized_pl,
+                    unrealized_plpc=unrealized_plpc,
+                    current_price=current_price,
+                    lastday_price=lastday_price,
+                    change_today=change_today,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
                 db.session.add(new_position)
                 
-                # Create notification for new position
-                notification = NotificationModel()
-                notification.type = "position"
-                notification.title = f"New Position: {symbol}"
-                notification.message = f"New position opened: {qty} {symbol} at {format_currency(avg_entry_price)}"
-                notification.meta_data = json.dumps({
-                    "symbol": symbol,
-                    "quantity": qty,
-                    "price": avg_entry_price,
-                    "side": side
-                })
-                notification.read = False
-                notification.created_at = datetime.utcnow()
+                # Create notification for new position with keyword arguments
+                notification = NotificationModel(
+                    type="position",
+                    title=f"New Position: {symbol}",
+                    message=f"New position opened: {qty} {symbol} at {format_currency(avg_entry_price)}",
+                    meta_data=json.dumps({
+                        "symbol": symbol,
+                        "quantity": qty,
+                        "price": avg_entry_price,
+                        "side": side
+                    }),
+                    read=False,
+                    created_at=datetime.utcnow()
+                )
                 db.session.add(notification)
         
         # Mark positions not in Alpaca as closed
@@ -207,19 +300,20 @@ def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
             position = next(p for p in db_positions if p.symbol == symbol)
             position.closed_at = datetime.utcnow()
             
-            # Create notification for closed position
-            notification = NotificationModel()
-            notification.type = "position"
-            notification.title = f"Position Closed: {position.symbol}"
-            notification.message = f"Position closed: {position.quantity} {position.symbol} with P&L: {format_currency(position.unrealized_pl)} ({position.unrealized_plpc:.2f}%)"
-            notification.meta_data = json.dumps({
-                "symbol": position.symbol,
-                "quantity": position.quantity,
-                "pnl": position.unrealized_pl,
-                "pnl_percent": position.unrealized_plpc
-            })
-            notification.read = False
-            notification.created_at = datetime.utcnow()
+            # Create notification for closed position using keyword arguments
+            notification = NotificationModel(
+                type="position",
+                title=f"Position Closed: {position.symbol}",
+                message=f"Position closed: {position.quantity} {position.symbol} with P&L: {format_currency(position.unrealized_pl)} ({position.unrealized_plpc:.2f}%)",
+                meta_data=json.dumps({
+                    "symbol": position.symbol,
+                    "quantity": position.quantity,
+                    "pnl": position.unrealized_pl,
+                    "pnl_percent": position.unrealized_plpc
+                }),
+                read=False,
+                created_at=datetime.utcnow()
+            )
             db.session.add(notification)
         
         # Commit all changes
