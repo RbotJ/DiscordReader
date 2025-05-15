@@ -32,7 +32,9 @@ else:
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///aplus_trading.db"
 
 # Configure Redis connection
-from common.redis_utils import RedisClient
+from common.redis_utils import RedisClient, ensure_redis_is_running
+# Try to start Redis server first
+ensure_redis_is_running()
 redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
 redis_client = RedisClient(redis_url)
 

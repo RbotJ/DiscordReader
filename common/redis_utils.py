@@ -78,6 +78,13 @@ class RedisClient:
         self.redis_url = redis_url
         self.available = False
         
+        # Try to ensure Redis is running before connecting
+        try:
+            self._attempt_to_start_redis()
+        except Exception as e:
+            logger.warning(f"Failed to start Redis server: {e}")
+        
+        # Now try to connect
         try:
             self.redis = redis.from_url(redis_url)
             # Test the connection
@@ -87,6 +94,10 @@ class RedisClient:
         except (redis.ConnectionError, redis.exceptions.RedisError) as e:
             logger.warning(f"Could not connect to Redis at {redis_url}. Using fallback mode: {e}")
             self.redis = None
+    
+    def _attempt_to_start_redis(self):
+        """Attempt to start Redis server if not already running."""
+        ensure_redis_is_running()
         
     def publish(self, channel: str, message: Union[str, Dict, List]) -> int:
         """Publish a message to a Redis channel."""
