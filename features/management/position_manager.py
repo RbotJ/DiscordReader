@@ -557,14 +557,20 @@ def get_position_history(days: int = 30) -> List[Dict[str, Any]]:
 
 def start_position_update_thread():
     """Start a background thread to update positions periodically."""
+    # Import Flask app here to avoid circular imports
+    from app import app
+    
     def update_positions_job():
+        """Run position updates with Flask application context."""
         while True:
             try:
-                # Sync positions from Alpaca
-                if trading_client:
-                    alpaca_positions = trading_client.get_all_positions()
-                    sync_positions_from_alpaca(alpaca_positions)
-                    logger.debug(f"Updated {len(alpaca_positions)} positions from Alpaca")
+                # Use Flask application context for database operations
+                with app.app_context():
+                    # Sync positions from Alpaca
+                    if trading_client:
+                        alpaca_positions = trading_client.get_all_positions()
+                        sync_positions_from_alpaca(alpaca_positions)
+                        logger.debug(f"Updated {len(alpaca_positions)} positions from Alpaca")
             except Exception as e:
                 logger.error(f"Error in position update thread: {str(e)}")
             

@@ -241,9 +241,14 @@ class ExitRulesEngine:
     
     def run_exit_rules_job(self):
         """Run the exit rules job continuously."""
+        # Import Flask app here to avoid circular imports
+        from app import app
+        
         while self.running:
             try:
-                self.process_exits()
+                # Use Flask application context for database operations
+                with app.app_context():
+                    self.process_exits()
             except Exception as e:
                 logger.error(f"Error in exit rules job: {str(e)}")
             
