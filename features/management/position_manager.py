@@ -108,7 +108,7 @@ def get_all_positions() -> List[Dict[str, Any]]:
     
     return positions
 
-def sync_positions_from_alpaca(alpaca_positions: List) -> None:
+def sync_positions_from_alpaca(alpaca_positions: List[Any]) -> None:
     """Sync positions from Alpaca to our local database.
     
     Args:
@@ -120,24 +120,51 @@ def sync_positions_from_alpaca(alpaca_positions: List) -> None:
         db_positions = PositionModel.query.filter_by(closed_at=None).all()
         db_position_symbols = {p.symbol for p in db_positions}
         
+        # Initialize list of alpaca symbols for tracking closed positions
+        alpaca_symbols = set()
+        
         # Process Alpaca positions
         for ap in alpaca_positions:
-            symbol = ap.symbol
+            # Type validation - ensure ap is a proper Alpaca position object
+            if not hasattr(ap, 'symbol'):
+                logger.warning(f"Skipping invalid position object: {ap}")
+                continue
+                
+            # Get position symbol and add to our tracking set
+            symbol = str(ap.symbol)
+            alpaca_symbols.add(symbol)
+            
+            # Type-safe attribute access with defaults
+            try:
+                qty = int(ap.qty) if hasattr(ap, 'qty') else 0
+                avg_entry_price = float(ap.avg_entry_price) if hasattr(ap, 'avg_entry_price') else 0.0
+                side_value = str(ap.side) if hasattr(ap, 'side') else "long"
+                side = "long" if side_value == "long" else "short"
+                market_value = float(ap.market_value) if hasattr(ap, 'market_value') else 0.0
+                cost_basis = float(ap.cost_basis) if hasattr(ap, 'cost_basis') else 0.0
+                unrealized_pl = float(ap.unrealized_pl) if hasattr(ap, 'unrealized_pl') else 0.0
+                unrealized_plpc = float(ap.unrealized_plpc) if hasattr(ap, 'unrealized_plpc') else 0.0
+                current_price = float(ap.current_price) if hasattr(ap, 'current_price') else 0.0
+                lastday_price = float(ap.lastday_price) if hasattr(ap, 'lastday_price') else 0.0
+                change_today = float(ap.change_today) if hasattr(ap, 'change_today') else 0.0
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error parsing position data for {symbol}: {str(e)}")
+                continue
             
             # Check if we already have this position in our DB
             if symbol in db_position_symbols:
                 # Update existing position
                 position = next(p for p in db_positions if p.symbol == symbol)
-                position.quantity = ap.qty
-                position.avg_entry_price = float(ap.avg_entry_price)
-                position.side = "long" if ap.side == "long" else "short"
-                position.market_value = float(ap.market_value)
-                position.cost_basis = float(ap.cost_basis)
-                position.unrealized_pl = float(ap.unrealized_pl)
-                position.unrealized_plpc = float(ap.unrealized_plpc)
-                position.current_price = float(ap.current_price)
-                position.lastday_price = float(ap.lastday_price)
-                position.change_today = float(ap.change_today)
+                position.quantity = qty
+                position.avg_entry_price = avg_entry_price
+                position.side = side
+                position.market_value = market_value
+                position.cost_basis = cost_basis
+                position.unrealized_pl = unrealized_pl
+                position.unrealized_plpc = unrealized_plpc
+                position.current_price = current_price
+                position.lastday_price = lastday_price
+                position.change_today = change_today
                 position.updated_at = datetime.utcnow()
                 
                 # Remove from set to track remaining positions
@@ -146,16 +173,16 @@ def sync_positions_from_alpaca(alpaca_positions: List) -> None:
                 # Create new position entry
                 new_position = PositionModel()
                 new_position.symbol = symbol
-                new_position.quantity = ap.qty
-                new_position.avg_entry_price = float(ap.avg_entry_price)
-                new_position.side = "long" if ap.side == "long" else "short"
-                new_position.market_value = float(ap.market_value)
-                new_position.cost_basis = float(ap.cost_basis)
-                new_position.unrealized_pl = float(ap.unrealized_pl)
-                new_position.unrealized_plpc = float(ap.unrealized_plpc)
-                new_position.current_price = float(ap.current_price)
-                new_position.lastday_price = float(ap.lastday_price)
-                new_position.change_today = float(ap.change_today)
+                new_position.quantity = qty
+                new_position.avg_entry_price = avg_entry_price
+                new_position.side = side
+                new_position.market_value = market_value
+                new_position.cost_basis = cost_basis
+                new_position.unrealized_pl = unrealized_pl
+                new_position.unrealized_plpc = unrealized_plpc
+                new_position.current_price = current_price
+                new_position.lastday_price = lastday_price
+                new_position.change_today = change_today
                 new_position.created_at = datetime.utcnow()
                 new_position.updated_at = datetime.utcnow()
                 db.session.add(new_position)
@@ -164,12 +191,12 @@ def sync_positions_from_alpaca(alpaca_positions: List) -> None:
                 notification = NotificationModel()
                 notification.type = "position"
                 notification.title = f"New Position: {symbol}"
-                notification.message = f"New position opened: {ap.qty} {symbol} at {format_currency(float(ap.avg_entry_price))}"
+                notification.message = f"New position opened: {qty} {symbol} at {format_currency(avg_entry_price)}"
                 notification.meta_data = json.dumps({
                     "symbol": symbol,
-                    "quantity": ap.qty,
-                    "price": float(ap.avg_entry_price),
-                    "side": "long" if ap.side == "long" else "short"
+                    "quantity": qty,
+                    "price": avg_entry_price,
+                    "side": side
                 })
                 notification.read = False
                 notification.created_at = datetime.utcnow()

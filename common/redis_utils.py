@@ -2,12 +2,16 @@ import json
 import logging
 import subprocess
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, TypeVar, cast, Awaitable
 import redis
 from datetime import datetime, date
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Type variables for return values
+T = TypeVar('T')
+ResponseT = Union[bytes, str, int, float, List[Any], Dict[str, Any], bool, None]
 
 def ensure_redis_is_running() -> bool:
     """Ensure Redis server is running, attempt to start it if not."""
@@ -17,7 +21,7 @@ def ensure_redis_is_running() -> bool:
         client.ping()
         logger.info("Redis server is already running")
         return True
-    except (redis.ConnectionError, redis.exceptions.RedisError):
+    except (redis.ConnectionError, redis.RedisError):
         logger.info("Redis not running, attempting to start it...")
         
         try:
@@ -42,7 +46,7 @@ def ensure_redis_is_running() -> bool:
                     client.ping()
                     logger.info("Successfully started Redis server")
                     return True
-                except (redis.ConnectionError, redis.exceptions.RedisError):
+                except (redis.ConnectionError, redis.RedisError):
                     pass
             
             logger.error("Failed to start Redis server after multiple attempts")
@@ -53,10 +57,10 @@ def ensure_redis_is_running() -> bool:
 
 # Custom JSON encoder for serializing datetime and date objects
 class DateTimeEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        return super().default(obj)
+    def default(self, o: Any) -> Any:
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
 
 
 class MockPubSub:
@@ -91,7 +95,7 @@ class RedisClient:
             self.redis.ping()
             self.available = True
             logger.info(f"Redis client initialized with URL: {redis_url}")
-        except (redis.ConnectionError, redis.exceptions.RedisError) as e:
+        except (redis.ConnectionError, redis.RedisError) as e:
             logger.warning(f"Could not connect to Redis at {redis_url}. Using fallback mode: {e}")
             self.redis = None
     
@@ -109,9 +113,13 @@ class RedisClient:
             return 0
             
         try:
+            if self.redis is None:
+                logger.debug(f"Redis client is None, skipping publish to channel {channel}")
+                return 0
+                
             result = self.redis.publish(channel, message)
             logger.debug(f"Published message to channel {channel}")
-            return result
+            return int(result) if result is not None else 0
         except Exception as e:
             logger.error(f"Error publishing to channel {channel}: {e}")
             return 0
@@ -121,7 +129,7 @@ class RedisClient:
         if isinstance(channels, str):
             channels = [channels]
         
-        if not self.available:
+        if not self.available or self.redis is None:
             logger.debug(f"Redis unavailable, returning mock PubSub for channels: {channels}")
             mock_pubsub = MockPubSub()
             mock_pubsub.subscribe(*channels)
@@ -143,21 +151,21 @@ class RedisClient:
         if not isinstance(value, str):
             value = json.dumps(value, cls=DateTimeEncoder)
         
-        if not self.available:
+        if not self.available or self.redis is None:
             logger.debug(f"Redis unavailable, skipping set key {key}")
             return False
         
         try:
             result = self.redis.set(key, value, ex=expiration)
             logger.debug(f"Set key {key} in Redis")
-            return result
+            return bool(result) if result is not None else False
         except Exception as e:
             logger.error(f"Error setting key {key} in Redis: {e}")
             return False
     
     def get(self, key: str, as_json: bool = False) -> Any:
         """Get a value from Redis by key, optionally parsing as JSON."""
-        if not self.available:
+        if not self.available or self.redis is None:
             logger.debug(f"Redis unavailable, returning None for key {key}")
             return None
         
@@ -167,7 +175,15 @@ class RedisClient:
             if value is None:
                 return None
             
-            value_str = value.decode('utf-8')
+            # Handle both Redis values and async Redis values
+            if isinstance(value, bytes):
+                value_str = value.decode('utf-8')
+            elif hasattr(value, 'decode'):
+                value_str = value.decode('utf-8')
+            else:
+                # Handle potential non-string values returned by some Redis clients
+                logger.warning(f"Unexpected Redis value type: {type(value)}")
+                value_str = str(value)
             
             if as_json:
                 try:
@@ -183,14 +199,14 @@ class RedisClient:
     
     def delete(self, key: str) -> int:
         """Delete a key from Redis."""
-        if not self.available:
+        if not self.available or self.redis is None:
             logger.debug(f"Redis unavailable, skipping delete key {key}")
             return 0
         
         try:
             result = self.redis.delete(key)
             logger.debug(f"Deleted key {key} from Redis")
-            return result
+            return int(result) if result is not None else 0
         except Exception as e:
             logger.error(f"Error deleting key {key} from Redis: {e}")
             return 0
@@ -200,38 +216,75 @@ class RedisClient:
         if not isinstance(value, str):
             value = json.dumps(value, cls=DateTimeEncoder)
         
-        if not self.available:
+        if not self.available or self.redis is None:
             logger.debug(f"Redis unavailable, skipping push to list {key}")
             return 0
         
         try:
             result = self.redis.rpush(key, value)
             logger.debug(f"Pushed value to list {key} in Redis")
-            return result
+            return int(result) if result is not None else 0
         except Exception as e:
             logger.error(f"Error pushing to list {key} in Redis: {e}")
             return 0
     
     def list_get_all(self, key: str, as_json: bool = False) -> List:
         """Get all values from a Redis list, optionally parsing as JSON."""
-        if not self.available:
+        if not self.available or self.redis is None:
             logger.debug(f"Redis unavailable, returning empty list for key {key}")
             return []
         
         try:
             values = self.redis.lrange(key, 0, -1)
             
+            # Handle the case where values might be an awaitable
+            if hasattr(values, '__await__'):
+                logger.warning(f"Received awaitable for lrange on key {key}, returning empty list")
+                return []
+                
+            if not values:
+                return []
+                
             if as_json:
                 result = []
                 for value in values:
+                    if value is None:
+                        continue
+                        
                     try:
-                        result.append(json.loads(value.decode('utf-8')))
+                        # Handle both bytes and string values
+                        if isinstance(value, bytes):
+                            decoded_value = value.decode('utf-8')
+                        elif hasattr(value, 'decode'):
+                            decoded_value = value.decode('utf-8')
+                        else:
+                            decoded_value = str(value)
+                            
+                        result.append(json.loads(decoded_value))
                     except json.JSONDecodeError:
                         logger.error(f"Failed to parse Redis list value as JSON: {value}")
-                        result.append(value.decode('utf-8'))
+                        if isinstance(value, bytes):
+                            result.append(value.decode('utf-8'))
+                        elif hasattr(value, 'decode'):
+                            result.append(value.decode('utf-8'))
+                        else:
+                            result.append(str(value))
                 return result
             
-            return [value.decode('utf-8') for value in values]
+            # Handle both bytes and string values for non-JSON return
+            result = []
+            for value in values:
+                if value is None:
+                    continue
+                    
+                if isinstance(value, bytes):
+                    result.append(value.decode('utf-8'))
+                elif hasattr(value, 'decode'):
+                    result.append(value.decode('utf-8'))
+                else:
+                    result.append(str(value))
+            return result
+            
         except Exception as e:
             logger.error(f"Error getting list {key} from Redis: {e}")
             return []
