@@ -1,6 +1,6 @@
 """
-Trade setups package initialization.
-"""
-from features.setups.api import setup_routes
+Setups Module
 
-__all__ = ["setup_routes"]
+This module is responsible for ingesting, parsing, and storing trading setup messages.
+It provides functionality to convert raw text into structured trading signals.
+"""

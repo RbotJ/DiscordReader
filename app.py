@@ -85,3 +85,8 @@ def setup_form():
 def trading_dashboard():
     """Render the trading dashboard."""
     return render_template('trading_dashboard.html')
+
+@app.route('/parser')
+def setup_parser():
+    """Render the setup parser UI."""
+    return render_template('setup_parser.html')

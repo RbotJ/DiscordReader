@@ -21,8 +21,8 @@ from common.db_models import (
 # Import route registrations (try/except for each in case files don't exist yet)
 try:
     # Import the setup routes
-    from features.setups.api import setup_routes
-    app.register_blueprint(setup_routes)
+    from features.setups.api import register_routes as register_setup_routes
+    register_setup_routes(app)
     logging.info("Setup routes registered")
 except ImportError as e:
     logging.warning(f"Could not import setup routes: {e}")
