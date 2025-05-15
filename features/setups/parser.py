@@ -1,197 +1,348 @@
+"""
+Parser module for A+ Trading setups.
+
+This module handles parsing raw setup messages to extract structured data
+about trading setups, signals, and biases.
+"""
 import re
 import logging
-from typing import List, Optional, Dict, Any, Union
-from common.models import TickerSetup, Signal, Bias, SignalCategory, ComparisonType, Aggressiveness, BiasDirection
+from datetime import datetime, date
+from typing import Dict, List, Tuple, Optional, Any, Union
 
-# Configure logging
+# Import models
+from common.models import (
+    TradeSetupMessage, 
+    TickerSetup, 
+    Signal, 
+    Bias, 
+    BiasFlip,
+    SignalCategory, 
+    ComparisonType, 
+    Aggressiveness,
+    BiasDirection
+)
+
+# Configure logger
 logger = logging.getLogger(__name__)
 
-class SetupParser:
-    """
-    Parser for A+ Trading setup messages.
-    Extracts symbols, signals, targets, and biases from raw text.
-    """
+# Emoji mappings
+EMOJI_MAP = {
+    "🔼": SignalCategory.BREAKOUT,
+    "🔻": SignalCategory.BREAKDOWN,
+    "❌": SignalCategory.REJECTION,
+    "🔄": SignalCategory.BOUNCE,
+    "🌀": SignalCategory.BOUNCE,
+}
+
+# Regular expressions for parsing
+DATE_PATTERN = r"A\+\s+Trade\s+Setups\s+(?:—|-)?\s*(\w+)\s+(\w+)\s+(\d+)"
+TICKER_PATTERN = r"^(\d+\)?\s*)?([A-Z]+)(?:\s*$|\s+)"
+SIGNAL_PATTERN = r"(🔼|🔻|❌|🔄|🌀)\s*(.*?)(?:$|(?=\s*[🔼🔻❌🔄🌀⚠️]))"
+PRICE_PATTERN = r"([\d.]+)"
+BIAS_PATTERN = r"⚠️\s*(.*?)(?:$|(?=\s*[🔼🔻❌🔄🌀]))"
+
+# Aggressiveness keywords
+AGGRESSIVE_KEYWORDS = ["aggressive", "agg"]
+CONSERVATIVE_KEYWORDS = ["conservative", "con"]
+
+def parse_date(text: str) -> Optional[date]:
+    """Parse date from the trade setup message header."""
+    match = re.search(DATE_PATTERN, text, re.IGNORECASE)
+    if not match:
+        return None
     
-    def __init__(self):
-        self.ticker_pattern = r'\$([A-Z]+)'
-        self.price_pattern = r'(\$?\d+\.?\d*)'
-        self.bias_pattern = r'(bullish|bearish)\s+(above|below)\s+' + self.price_pattern
-        self.breakout_pattern = r'breakout\s+(above|over)\s+' + self.price_pattern
-        self.breakdown_pattern = r'breakdown\s+(below|under)\s+' + self.price_pattern
-        self.rejection_pattern = r'rejection\s+(at|near)\s+' + self.price_pattern
-        self.bounce_pattern = r'bounce\s+(from|at|near)\s+' + self.price_pattern
-        self.targets_pattern = r'target(?:s)?\s+(?:is|are|:)?\s+(' + self.price_pattern + r'(?:\s*,\s*' + self.price_pattern + r')*)'
-        self.aggressiveness_pattern = r'(low|medium|high)\s+aggression'
-        self.bias_flip_pattern = r'flip\s+(bullish|bearish)\s+(above|below)\s+' + self.price_pattern
+    day_name, month_name, day = match.groups()
     
-    def parse_raw_setup(self, raw_text: str) -> List[TickerSetup]:
-        """
-        Parse raw setup text and extract ticker setups.
-        
-        Args:
-            raw_text: The raw text from Discord/Email containing setup information
-            
-        Returns:
-            List of parsed TickerSetup objects
-        """
-        logger.debug(f"Parsing raw setup text: {raw_text[:100]}...")
-        
-        # Split the text by lines or paragraphs
-        sections = [section.strip() for section in re.split(r'\n\s*\n|\r\n\s*\r\n', raw_text) if section.strip()]
-        
-        ticker_setups = []
-        
-        for section in sections:
-            # Extract ticker symbol
-            ticker_match = re.search(self.ticker_pattern, section)
-            if not ticker_match:
-                logger.debug(f"No ticker found in section: {section[:50]}...")
-                continue
-                
-            symbol = ticker_match.group(1)
-            logger.debug(f"Found ticker: {symbol}")
-            
-            # Extract signals
-            signals = []
-            
-            # Look for breakout signals
-            breakout_matches = re.finditer(self.breakout_pattern, section, re.IGNORECASE)
-            for match in breakout_matches:
-                comparison = ComparisonType.ABOVE if match.group(1).lower() in ("above", "over") else ComparisonType.ABOVE
-                trigger = float(match.group(2).replace('$', ''))
-                signals.append(Signal(
-                    category=SignalCategory.BREAKOUT,
-                    comparison=comparison,
-                    trigger=trigger,
-                    targets=self._extract_targets(section)
-                ))
-                logger.debug(f"Found breakout signal: {comparison} {trigger}")
-            
-            # Look for breakdown signals
-            breakdown_matches = re.finditer(self.breakdown_pattern, section, re.IGNORECASE)
-            for match in breakdown_matches:
-                comparison = ComparisonType.BELOW if match.group(1).lower() in ("below", "under") else ComparisonType.BELOW
-                trigger = float(match.group(2).replace('$', ''))
-                signals.append(Signal(
-                    category=SignalCategory.BREAKDOWN,
-                    comparison=comparison,
-                    trigger=trigger,
-                    targets=self._extract_targets(section)
-                ))
-                logger.debug(f"Found breakdown signal: {comparison} {trigger}")
-            
-            # Look for rejection signals
-            rejection_matches = re.finditer(self.rejection_pattern, section, re.IGNORECASE)
-            for match in rejection_matches:
-                comparison = ComparisonType.NEAR
-                trigger = float(match.group(2).replace('$', ''))
-                signals.append(Signal(
-                    category=SignalCategory.REJECTION,
-                    comparison=comparison,
-                    trigger=trigger,
-                    targets=self._extract_targets(section)
-                ))
-                logger.debug(f"Found rejection signal: {comparison} {trigger}")
-            
-            # Look for bounce signals
-            bounce_matches = re.finditer(self.bounce_pattern, section, re.IGNORECASE)
-            for match in bounce_matches:
-                comparison = ComparisonType.NEAR
-                trigger = float(match.group(2).replace('$', ''))
-                signals.append(Signal(
-                    category=SignalCategory.BOUNCE,
-                    comparison=comparison,
-                    trigger=trigger,
-                    targets=self._extract_targets(section)
-                ))
-                logger.debug(f"Found bounce signal: {comparison} {trigger}")
-            
-            # Extract bias if available
-            bias = self._extract_bias(section)
-            if bias:
-                logger.debug(f"Found bias: {bias.direction} {bias.condition} {bias.price}")
-            
-            # Extract aggressiveness
-            aggressiveness = self._extract_aggressiveness(section)
-            
-            # Apply aggressiveness to all signals
-            for signal in signals:
-                signal.aggressiveness = aggressiveness
-            
-            # Create ticker setup if we have at least one signal
-            if signals:
-                ticker_setup = TickerSetup(
-                    symbol=symbol,
-                    signals=signals,
-                    bias=bias
-                )
-                ticker_setups.append(ticker_setup)
-                logger.info(f"Created setup for {symbol} with {len(signals)} signals")
-        
-        return ticker_setups
+    # Handle the current year
+    today = datetime.now()
+    year = today.year
     
-    def _extract_targets(self, text: str) -> List[float]:
-        """Extract price targets from text."""
-        targets = []
-        targets_match = re.search(self.targets_pattern, text, re.IGNORECASE)
-        
-        if targets_match:
-            targets_text = targets_match.group(1)
-            # Split by commas and convert to floats
-            for target in re.findall(self.price_pattern, targets_text):
-                try:
-                    targets.append(float(target.replace('$', '')))
-                except ValueError:
-                    pass
-        
-        return targets
+    # Create a date string and parse it
+    date_str = f"{day} {month_name} {year}"
+    try:
+        parsed_date = datetime.strptime(date_str, "%d %b %Y").date()
+        return parsed_date
+    except ValueError:
+        logger.warning(f"Could not parse date: {date_str}")
+        return None
+
+def extract_tickers(text: str) -> List[Tuple[str, str]]:
+    """Extract ticker symbols and their associated text blocks from the message."""
+    lines = text.split('\n')
+    tickers = []
+    current_ticker = None
+    current_text = []
     
-    def _extract_bias(self, text: str) -> Optional[Bias]:
-        """Extract bias information from text."""
-        bias_match = re.search(self.bias_pattern, text, re.IGNORECASE)
-        
-        if not bias_match:
-            return None
-        
-        direction = BiasDirection.BULLISH if bias_match.group(1).lower() == "bullish" else BiasDirection.BEARISH
-        condition = ComparisonType.ABOVE if bias_match.group(2).lower() == "above" else ComparisonType.BELOW
-        price = float(bias_match.group(3).replace('$', ''))
-        
-        # Look for bias flip
-        flip = None
-        flip_match = re.search(self.bias_flip_pattern, text, re.IGNORECASE)
-        
-        if flip_match:
-            flip_direction = BiasDirection.BULLISH if flip_match.group(1).lower() == "bullish" else BiasDirection.BEARISH
-            flip_price = float(flip_match.group(3).replace('$', ''))
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
             
-            from common.models import BiasFlip
+        # Check for a new ticker
+        ticker_match = re.match(TICKER_PATTERN, line)
+        if ticker_match and not line.startswith(("—", "-")):
+            # If we already have a ticker, save it
+            if current_ticker:
+                tickers.append((current_ticker, '\n'.join(current_text)))
+                current_text = []
+            
+            # Extract the new ticker
+            current_ticker = ticker_match.group(2)
+            current_text.append(line)
+        elif current_ticker:
+            # Continue with the current ticker
+            current_text.append(line)
+    
+    # Add the last ticker
+    if current_ticker and current_text:
+        tickers.append((current_ticker, '\n'.join(current_text)))
+    
+    return tickers
+
+def parse_signal(signal_text: str) -> Optional[Signal]:
+    """Parse a signal from text."""
+    # Extract emoji and rest of the text
+    emoji = signal_text[0] if signal_text else None
+    if not emoji or emoji not in EMOJI_MAP:
+        return None
+    
+    category = EMOJI_MAP[emoji]
+    remaining_text = signal_text[1:].strip()
+    
+    # Check for aggressiveness
+    aggressiveness = Aggressiveness.NONE
+    for aggressive in AGGRESSIVE_KEYWORDS:
+        if aggressive.lower() in remaining_text.lower():
+            aggressiveness = Aggressiveness.AGGRESSIVE
+            break
+            
+    for conservative in CONSERVATIVE_KEYWORDS:
+        if conservative.lower() in remaining_text.lower():
+            aggressiveness = Aggressiveness.CONSERVATIVE
+            break
+    
+    # Extract price levels
+    price_matches = re.findall(PRICE_PATTERN, remaining_text)
+    if not price_matches:
+        return None
+    
+    prices = [float(p) for p in price_matches]
+    
+    # Determine comparison type and trigger value
+    comparison = ComparisonType.NEAR  # Default
+    if "above" in remaining_text.lower():
+        comparison = ComparisonType.ABOVE
+    elif "below" in remaining_text.lower():
+        comparison = ComparisonType.BELOW
+    elif "from" in remaining_text.lower() or "zone" in remaining_text.lower():
+        comparison = ComparisonType.RANGE
+        if len(prices) < 2:
+            # Not enough prices for a range
+            comparison = ComparisonType.NEAR
+    
+    # Extract trigger and targets
+    if comparison == ComparisonType.RANGE and len(prices) >= 2:
+        # For bounce zones, the first two prices represent the range
+        trigger = [prices[0], prices[1]]
+        targets = prices[2:] if len(prices) > 2 else []
+    else:
+        # For other signals, the first price is the trigger
+        trigger = prices[0]
+        targets = prices[1:] if len(prices) > 1 else []
+    
+    # Create the signal object
+    return Signal(
+        category=category,
+        aggressiveness=aggressiveness,
+        comparison=comparison,
+        trigger=trigger,
+        targets=targets
+    )
+
+def parse_bias(bias_text: str) -> Optional[Bias]:
+    """Parse a bias from text."""
+    if not bias_text or not bias_text.strip():
+        return None
+    
+    text = bias_text.lower()
+    
+    # Determine direction
+    direction = BiasDirection.BULLISH if "bullish" in text else BiasDirection.BEARISH
+    
+    # Extract price level
+    price_matches = re.findall(PRICE_PATTERN, bias_text)
+    if not price_matches:
+        return None
+    
+    price = float(price_matches[0])
+    
+    # Determine condition
+    condition = ComparisonType.ABOVE
+    if "below" in text or "under" in text:
+        condition = ComparisonType.BELOW
+    
+    # Check for bias flip
+    flip = None
+    if "flip" in text or "flips" in text:
+        flip_direction = BiasDirection.BULLISH if "bullish" in text[text.find("flip"):] else BiasDirection.BEARISH
+        
+        # Find additional price level for flip
+        if len(price_matches) > 1:
+            flip_price = float(price_matches[1])
+            
             flip = BiasFlip(
                 direction=flip_direction,
                 price_level=flip_price
             )
-        
-        return Bias(
-            direction=direction,
-            condition=condition,
-            price=price,
-            flip=flip
-        )
     
-    def _extract_aggressiveness(self, text: str) -> Aggressiveness:
-        """Extract aggressiveness level from text."""
-        aggression_match = re.search(self.aggressiveness_pattern, text, re.IGNORECASE)
+    # Create the bias object
+    return Bias(
+        direction=direction,
+        condition=condition,
+        price=price,
+        flip=flip
+    )
+
+def parse_ticker_setup(ticker: str, text: str) -> TickerSetup:
+    """Parse a ticker setup from text."""
+    signals = []
+    bias = None
+    
+    # Extract signals
+    signal_matches = re.findall(SIGNAL_PATTERN, text, re.DOTALL)
+    for emoji, signal_text in signal_matches:
+        full_signal_text = emoji + signal_text
+        signal = parse_signal(full_signal_text)
+        if signal:
+            signals.append(signal)
+    
+    # Extract bias
+    bias_match = re.search(BIAS_PATTERN, text, re.DOTALL)
+    if bias_match:
+        bias_text = bias_match.group(1)
+        bias = parse_bias(bias_text)
+    
+    # Create the ticker setup
+    return TickerSetup(
+        symbol=ticker,
+        signals=signals,
+        bias=bias
+    )
+
+def parse_setup_message(message: str, source: str = "manual") -> TradeSetupMessage:
+    """Parse a full trade setup message."""
+    # Parse the date
+    setup_date = parse_date(message) or datetime.now().date()
+    
+    # Extract ticker setups
+    ticker_blocks = extract_tickers(message)
+    setups = []
+    
+    for ticker, text in ticker_blocks:
+        ticker_setup = parse_ticker_setup(ticker, text)
+        setups.append(ticker_setup)
+    
+    # Create the trade setup message
+    return TradeSetupMessage(
+        date=setup_date,
+        raw_text=message,
+        setups=setups,
+        source=source
+    )
+
+def save_setup_to_db(setup: TradeSetupMessage) -> bool:
+    """Save a parsed setup to the database."""
+    from common.db_models import SetupModel, TickerSetupModel, SignalModel, BiasModel
+    from app import db
+    from sqlalchemy.sql import insert
+    
+    try:
+        # Create setup message using core insert
+        setup_stmt = insert(SetupModel).values(
+            date=setup.date,
+            raw_text=setup.raw_text,
+            source=setup.source
+        ).returning(SetupModel.id)
         
-        if not aggression_match:
-            return Aggressiveness.NONE
+        setup_id = db.session.execute(setup_stmt).scalar_one()
         
-        aggression_text = aggression_match.group(1).lower()
+        # Create ticker setups
+        for ticker_setup in setup.setups:
+            # Insert ticker setup
+            ticker_stmt = insert(TickerSetupModel).values(
+                setup_id=setup_id,
+                symbol=ticker_setup.symbol
+            ).returning(TickerSetupModel.id)
+            
+            ticker_id = db.session.execute(ticker_stmt).scalar_one()
+            
+            # Create signals
+            for signal in ticker_setup.signals:
+                # Use core insert for signals
+                signal_stmt = insert(SignalModel).values(
+                    ticker_setup_id=ticker_id,
+                    category=signal.category.value,
+                    aggressiveness=signal.aggressiveness.value,
+                    comparison=signal.comparison.value,
+                    trigger_value=signal.trigger if isinstance(signal.trigger, float) else signal.trigger,
+                    targets=signal.targets
+                )
+                db.session.execute(signal_stmt)
+            
+            # Create bias if it exists
+            if ticker_setup.bias:
+                flip_direction = None
+                flip_price = None
+                
+                if ticker_setup.bias.flip:
+                    flip_direction = ticker_setup.bias.flip.direction.value
+                    flip_price = ticker_setup.bias.flip.price_level
+                
+                # Use core insert for bias
+                bias_stmt = insert(BiasModel).values(
+                    ticker_setup_id=ticker_id,
+                    direction=ticker_setup.bias.direction.value,
+                    condition=ticker_setup.bias.condition.value,
+                    price=ticker_setup.bias.price,
+                    flip_direction=flip_direction,
+                    flip_price_level=flip_price
+                )
+                db.session.execute(bias_stmt)
         
-        if aggression_text == "low":
-            return Aggressiveness.LOW
-        elif aggression_text == "medium":
-            return Aggressiveness.MEDIUM
-        elif aggression_text == "high":
-            return Aggressiveness.HIGH
+        # Commit the transaction
+        db.session.commit()
+        return True
+    
+    except Exception as e:
+        logger.error(f"Error saving setup to database: {e}")
+        db.session.rollback()
+        return False
+
+def process_setup_message(message: str, source: str = "manual") -> Dict[str, Any]:
+    """Process a trade setup message and save it to the database."""
+    try:
+        # Parse the message
+        setup = parse_setup_message(message, source)
         
-        return Aggressiveness.NONE
+        # Save to database
+        success = save_setup_to_db(setup)
+        
+        if success:
+            return {
+                "success": True,
+                "setup_date": setup.date,
+                "tickers": [s.symbol for s in setup.setups],
+                "signal_count": sum(len(s.signals) for s in setup.setups)
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Failed to save setup to database"
+            }
+    
+    except Exception as e:
+        logger.error(f"Error processing setup message: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }

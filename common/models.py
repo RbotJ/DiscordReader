@@ -16,6 +16,8 @@ class Aggressiveness(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    AGGRESSIVE = "aggressive"
+    CONSERVATIVE = "conservative"
 
 
 class ComparisonType(str, Enum):
