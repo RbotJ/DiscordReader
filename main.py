@@ -1,9 +1,57 @@
 import logging
 import os
+import subprocess
+import time
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Try to start Redis server if not already running
+def ensure_redis_is_running():
+    """Ensure Redis server is running before starting the application."""
+    try:
+        # Check if Redis is already running
+        result = subprocess.run(['redis-cli', 'ping'], 
+                              capture_output=True, 
+                              text=True, 
+                              check=False)
+        
+        if 'PONG' in result.stdout:
+            logging.info("Redis server is already running")
+            return True
+            
+        # Start Redis server
+        logging.info("Starting Redis server...")
+        subprocess.run(['pkill', '-f', 'redis-server'], 
+                      stderr=subprocess.DEVNULL, 
+                      check=False)
+        
+        # Start Redis in background
+        subprocess.Popen(['redis-server', '--daemonize', 'yes', '--protected-mode', 'no'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL)
+        
+        # Wait for Redis to start
+        for i in range(10):
+            time.sleep(0.5)
+            result = subprocess.run(['redis-cli', 'ping'], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  check=False)
+            if 'PONG' in result.stdout:
+                logging.info("Redis server started successfully")
+                return True
+                
+        logging.error("Failed to start Redis server after multiple attempts")
+        return False
+    except Exception as e:
+        logging.error(f"Error starting Redis server: {e}")
+        return False
+
+# Start Redis server
+ensure_redis_is_running()
 
 from app import app, db
 from flask import jsonify

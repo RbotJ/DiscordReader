@@ -1,11 +1,55 @@
 import json
 import logging
+import subprocess
+import time
 from typing import Any, Dict, List, Optional, Union
 import redis
 from datetime import datetime, date
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+def ensure_redis_is_running() -> bool:
+    """Ensure Redis server is running, attempt to start it if not."""
+    try:
+        # Try to check if Redis is already running
+        client = redis.Redis(host='127.0.0.1', port=6379)
+        client.ping()
+        logger.info("Redis server is already running")
+        return True
+    except (redis.ConnectionError, redis.exceptions.RedisError):
+        logger.info("Redis not running, attempting to start it...")
+        
+        try:
+            # Attempt to kill any existing Redis processes
+            subprocess.run(['pkill', '-f', 'redis-server'], 
+                          stderr=subprocess.DEVNULL, 
+                          check=False)
+            
+            # Start Redis server with suitable configuration
+            subprocess.Popen(
+                ['redis-server', '--daemonize', 'yes', '--protected-mode', 'no', 
+                 '--maxmemory', '100mb', '--maxmemory-policy', 'allkeys-lru'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            
+            # Wait for Redis to start
+            for i in range(10):
+                time.sleep(0.5)
+                try:
+                    client = redis.Redis(host='127.0.0.1', port=6379)
+                    client.ping()
+                    logger.info("Successfully started Redis server")
+                    return True
+                except (redis.ConnectionError, redis.exceptions.RedisError):
+                    pass
+            
+            logger.error("Failed to start Redis server after multiple attempts")
+            return False
+        except Exception as e:
+            logger.error(f"Error starting Redis server: {e}")
+            return False
 
 # Custom JSON encoder for serializing datetime and date objects
 class DateTimeEncoder(json.JSONEncoder):
