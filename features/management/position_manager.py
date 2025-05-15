@@ -619,7 +619,14 @@ def register_position_routes(app):
         quantity = request.json.get('quantity')
         
         if quantity:
-            result = close_position_partial(symbol, quantity)
+            try:
+                quantity = int(quantity)  # Ensure quantity is an integer
+                result = close_position_partial(symbol, quantity)
+            except (ValueError, TypeError):
+                return jsonify({
+                    "success": False,
+                    "message": "Quantity must be a valid integer"
+                }), 400
         else:
             result = close_position(symbol)
         
@@ -639,7 +646,14 @@ def register_position_routes(app):
                 "message": "Quantity is required"
             }), 400
         
-        result = scale_position(symbol, quantity)
+        try:
+            quantity = int(quantity)  # Ensure quantity is an integer
+            result = scale_position(symbol, quantity)
+        except (ValueError, TypeError):
+            return jsonify({
+                "success": False,
+                "message": "Quantity must be a valid integer"
+            }), 400
         
         if result["success"]:
             return jsonify(result)

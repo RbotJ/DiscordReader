@@ -87,6 +87,12 @@ function initializeCharts() {
     const ctx = document.getElementById('performanceChart');
     if (!ctx) return;
     
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js is not loaded. Performance chart will not be initialized.');
+        return;
+    }
+    
     // Sample data - will be replaced by actual data
     const labels = Array.from({length: 7}, (_, i) => {
         const d = new Date();
@@ -94,48 +100,52 @@ function initializeCharts() {
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
     
-    window.performanceChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'P/L',
-                data: [0, 0, 0, 0, 0, 0, 0],
-                borderColor: 'rgba(75, 192, 192, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                tension: 0.1,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    display: false
+    try {
+        window.performanceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'P/L',
+                    data: [0, 0, 0, 0, 0, 0, 0],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `P/L: $${context.raw.toFixed(2)}`;
+                            }
+                        }
+                    }
                 },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `P/L: $${context.raw.toFixed(2)}`;
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
                         }
                     }
                 }
-            },
-            scales: {
-                y: {
-                    beginAtZero: false,
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.05)'
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
-                }
             }
-        }
-    });
+        });
+    } catch (error) {
+        console.error('Error initializing chart:', error);
+    }
 }
 
 // Update chart based on selected time period
@@ -153,28 +163,45 @@ function updateChartForPeriod(period) {
     // Get data for the selected period or use 1d as fallback
     const data = dataPoints[period] || dataPoints['1d'];
     
-    // Update chart data
-    if (window.performanceChart) {
-        window.performanceChart.data.datasets[0].data = data;
-        window.performanceChart.update();
+    try {
+        // Update chart data if chart exists
+        if (window.performanceChart) {
+            window.performanceChart.data.datasets[0].data = data;
+            window.performanceChart.update();
+        } else {
+            console.warn('Performance chart not initialized. Cannot update chart data.');
+        }
+        
+        // Fetch actual performance data for the selected period
+        fetchPerformanceData(period);
+    } catch (error) {
+        console.error('Error updating chart:', error);
     }
-    
-    // Fetch actual performance data for the selected period
-    fetchPerformanceData(period);
 }
 
 // Fetch positions from the API
 function fetchPositions() {
     fetch('/api/execution/positions')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with status ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data.status === 'success' && Array.isArray(data.positions)) {
                 displayPositions(data.positions);
                 updatePositionCount(data.positions.length);
+            } else {
+                console.warn('Positions data not in expected format:', data);
+                displayPositions([]);
+                updatePositionCount(0);
             }
         })
         .catch(error => {
             console.error('Error fetching positions:', error);
+            displayPositions([]);
+            updatePositionCount(0);
         });
 }
 
@@ -217,15 +244,26 @@ function displayPositions(positions) {
 // Fetch signals from the API
 function fetchSignals() {
     fetch('/api/strategy/signals')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with status ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
+            if (data.status === 'success' && Array.isArray(data.signals)) {
                 displaySignals(data.signals);
                 updateSignalCount(data.signals.length);
+            } else {
+                console.warn('Signals data not in expected format:', data);
+                displaySignals([]);
+                updateSignalCount(0);
             }
         })
         .catch(error => {
             console.error('Error fetching signals:', error);
+            displaySignals([]);
+            updateSignalCount(0);
         });
 }
 
@@ -366,35 +404,69 @@ function fetchPerformanceData(period = '1d') {
     // This would fetch actual performance data from the API
     // For now, we'll use the sample data from updateChartForPeriod
     
-    // Also update the P/L display with sample values
-    document.getElementById('todayPL')?.textContent = '$' + (Math.random() * 100 - 50).toFixed(2);
-    document.getElementById('totalPL')?.textContent = '$' + (Math.random() * 1000).toFixed(2);
+    try {
+        // In a production environment, this would be an API call:
+        // fetch('/api/execution/performance?period=' + period)
+        //   .then(response => {...})
+        
+        // For now, update the P/L display with sample values
+        const todayPLElement = document.getElementById('todayPL');
+        const totalPLElement = document.getElementById('totalPL');
+        
+        if (todayPLElement) {
+            todayPLElement.textContent = '$' + (Math.random() * 100 - 50).toFixed(2);
+        }
+        
+        if (totalPLElement) {
+            totalPLElement.textContent = '$' + (Math.random() * 1000).toFixed(2);
+        }
+    } catch (error) {
+        console.error('Error updating performance data:', error);
+    }
 }
 
 // Fetch system status
 function fetchSystemStatus() {
     // Fetch strategy status
     fetch('/api/strategy/status')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with status ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.status === 'success') {
-                updateStrategyStatus(data.detector.running);
+                updateStrategyStatus(data.detector?.running || false);
+            } else {
+                console.warn('Strategy status response not successful:', data);
+                updateStrategyStatus(false);
             }
         })
         .catch(error => {
             console.error('Error fetching strategy status:', error);
+            updateStrategyStatus(false);
         });
     
     // Fetch executor status
     fetch('/api/execution/status')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with status ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.status === 'success') {
-                updateExecutorStatus(data.executor.running);
+                updateExecutorStatus(data.executor?.running || false);
+            } else {
+                console.warn('Executor status response not successful:', data);
+                updateExecutorStatus(false);
             }
         })
         .catch(error => {
             console.error('Error fetching executor status:', error);
+            updateExecutorStatus(false);
         });
 }
 
@@ -512,15 +584,22 @@ function deleteSignal(signalId) {
     fetch(`/api/strategy/signals/${signalId}`, { 
         method: 'DELETE' 
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`Server responded with status ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.status === 'success') {
             fetchSignals();
         } else {
-            alert(`Error: ${data.message}`);
+            console.warn('Failed to delete signal:', data);
+            alert(`Error: ${data.message || 'Could not delete signal'}`);
         }
     })
     .catch(error => {
         console.error('Error deleting signal:', error);
+        alert('An error occurred while deleting the signal. Please try again.');
     });
 }
