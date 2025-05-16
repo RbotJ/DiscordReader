@@ -3,11 +3,11 @@
  * 
  * Displays a scrollable log of market events, trades, and system messages
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 
 const MAX_LOG_ENTRIES = 100;
 
-const EventLog = () => {
+const EventLog = forwardRef((props, ref) => {
   const [logs, setLogs] = useState([]);
   const logEndRef = useRef(null);
   
@@ -86,13 +86,10 @@ const EventLog = () => {
   };
   
   // Expose methods to parent components
-  React.useImperativeHandle(
-    React.useRef(),
-    () => ({
-      addLog,
-      clearLog
-    })
-  );
+  useImperativeHandle(ref, () => ({
+    addLog,
+    clearLog
+  }));
   
   // Add test logs on initial render
   useEffect(() => {
