@@ -30,43 +30,80 @@ def extract_setup_date(message_content: str, message_timestamp: datetime) -> dat
     Returns:
         date: The extracted date
     """
-    # Try to extract date from message format: "A+ Trade Setups (Wed, May 14)"
-    date_pattern = r"A\+ Trade Setups \(([A-Za-z]+),\s+([A-Za-z]+)\s+(\d{1,2})\)"
-    match = re.search(date_pattern, message_content)
+    today = datetime.now().date()
     
-    if match:
-        try:
-            # Extract day, month, and day of month
-            day_name = match.group(1)
-            month_name = match.group(2)
-            day_of_month = int(match.group(3))
-            
-            # Get the current year from the message timestamp
-            current_year = message_timestamp.year
-            
-            # Parse the date
-            date_str = f"{day_of_month} {month_name} {current_year}"
-            setup_date = datetime.strptime(date_str, "%d %b %Y").date()
-            
-            # If the extracted date is more than 30 days in the future,
-            # it's likely from the previous year (e.g., for messages in January
-            # referring to December setups)
-            today = datetime.now().date()
-            if (setup_date - today).days > 30:
-                setup_date = datetime.strptime(f"{day_of_month} {month_name} {current_year-1}", 
-                                             "%d %b %Y").date()
-            
-            # Verify the date is reasonable (not in the future)
-            if setup_date > today:
-                logger.warning(f"Extracted date {setup_date} is in the future, using message date instead")
-                return message_timestamp.date()
+    # Try multiple date patterns to handle different formats
+    patterns = [
+        # "A+ Trade Setups (Wed, May 14)" - Classic format with day name, comma
+        r"A\+\s+Trade\s+Setups\s+\(([A-Za-z]+),\s+([A-Za-z]+)\s+(\d{1,2})\)",
+        
+        # "A+ Trade Setups (Thu May 16)" - Format without comma
+        r"A\+\s+Trade\s+Setups\s+\(([A-Za-z]+)\s+([A-Za-z]+)\s+(\d{1,2})\)",
+        
+        # "A+ Trade Setups (May 16)" - Format without day name
+        r"A\+\s+Trade\s+Setups\s+\(([A-Za-z]+)\s+(\d{1,2})\)",
+        
+        # "A+ Setups (Thu, May 16, 2025)" - Format with year
+        r"A\+\s+(?:Trade\s+)?Setups\s+\((?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2})(?:,\s+(\d{4}))?\)"
+    ]
+    
+    # Try each pattern until one matches
+    for pattern in patterns:
+        match = re.search(pattern, message_content, re.IGNORECASE)
+        if match:
+            try:
+                groups = match.groups()
+                current_year = message_timestamp.year
                 
-            return setup_date
-        except Exception as e:
-            logger.error(f"Error parsing setup date: {e}")
-            return message_timestamp.date()
+                if len(groups) == 3 and groups[2] and groups[2].isdigit() and len(groups[2]) == 4:
+                    # Pattern with explicit year
+                    month_name = groups[0]
+                    day_of_month = int(groups[1])
+                    year = int(groups[2])
+                    date_str = f"{day_of_month} {month_name} {year}"
+                    format_str = "%d %b %Y"
+                elif len(groups) == 3:
+                    # Pattern with day name, month, day
+                    day_name = groups[0]
+                    month_name = groups[1]
+                    day_of_month = int(groups[2])
+                    date_str = f"{day_of_month} {month_name} {current_year}"
+                    format_str = "%d %b %Y"
+                elif len(groups) == 2:
+                    # Pattern with just month, day
+                    month_name = groups[0]
+                    day_of_month = int(groups[1])
+                    date_str = f"{day_of_month} {month_name} {current_year}"
+                    format_str = "%d %b %Y"
+                else:
+                    continue
+                
+                logger.debug(f"Attempting to parse date: {date_str} with format {format_str}")
+                setup_date = datetime.strptime(date_str, format_str).date()
+                
+                # Adjust year if the date seems too far in the future or past
+                if (setup_date - today).days > 30:
+                    setup_date = datetime.strptime(date_str.replace(str(current_year), str(current_year-1)), format_str).date()
+                    logger.debug(f"Date appears to be from previous year, adjusted to: {setup_date}")
+                    
+                # Verify the date is reasonable (not in the future)
+                if setup_date > today:
+                    logger.warning(f"Extracted date {setup_date} is in the future, using message date instead")
+                    return message_timestamp.date()
+                    
+                # Check if the date is too old (more than 10 days)
+                if (today - setup_date).days > 10:
+                    logger.warning(f"Extracted date {setup_date} is too old (>10 days), using message date instead")
+                    return message_timestamp.date()
+                
+                logger.info(f"Successfully extracted setup date: {setup_date}")
+                return setup_date
+            except Exception as e:
+                logger.error(f"Error parsing setup date with pattern {pattern}: {e}")
+                continue
     
-    # If no date found, use the message timestamp
+    # If no patterns matched or all parsing attempts failed, use the message timestamp
+    logger.warning(f"Could not extract date from message, using message timestamp: {message_timestamp.date()}")
     return message_timestamp.date()
 
 def is_relevant_for_today(setup_date: date) -> bool:
@@ -83,19 +120,35 @@ def is_relevant_for_today(setup_date: date) -> bool:
     
     # If setup is from today, it's relevant
     if setup_date == today:
+        logger.info(f"Setup is from today ({setup_date}), it's relevant")
         return True
         
     # If setup is from yesterday and today is a market day, it's relevant
     if (today - setup_date).days == 1:
         # Check if today is a weekday (simple check, ignoring holidays)
         if today.weekday() < 5:  # 0-4 are Monday to Friday
+            logger.info(f"Setup is from yesterday ({setup_date}) and today is a market day, it's relevant")
             return True
     
-    # If setup is from Friday and today is Monday, it's relevant
+    # If setup is from Friday and today is Monday, it's relevant (weekend case)
     if setup_date.weekday() == 4 and today.weekday() == 0 and (today - setup_date).days <= 3:
+        logger.info(f"Setup is from Friday ({setup_date}) and today is Monday, it's relevant")
         return True
-        
+    
+    # Special case for holidays: if setup is from the last market day before a holiday
+    # and today is the first market day after that holiday, it's relevant
+    # (We're using a simple day difference check as a proxy for detecting holidays)
+    days_diff = (today - setup_date).days
+    if 1 < days_diff <= 4 and is_weekday(setup_date) and is_weekday(today):
+        logger.info(f"Setup is from {days_diff} days ago ({setup_date}) which may be the last trading day before a holiday, considering it relevant")
+        return True
+    
+    logger.info(f"Setup from {setup_date} is not relevant for today's market ({today})")
     return False
+
+def is_weekday(check_date: date) -> bool:
+    """Simple helper to check if a date is a weekday (Monday-Friday)."""
+    return check_date.weekday() < 5  # 0-4 are Monday to Friday
 
 def extract_price_levels(ticker_text: str) -> Dict[str, Union[float, List[float]]]:
     """
