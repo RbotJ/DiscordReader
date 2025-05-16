@@ -28,6 +28,22 @@ except ImportError as e:
     logging.warning(f"Could not import setup routes: {e}")
 
 try:
+    # Import the adapter setup routes with multi-ticker support
+    from features.setups.api_adapter import register_routes as register_adapter_setup_routes
+    register_adapter_setup_routes(app)
+    logging.info("Adapter setup routes registered")
+except ImportError as e:
+    logging.warning(f"Could not import adapter setup routes: {e}")
+
+try:
+    # Import the webhook routes for handling multi-ticker setup messages
+    from features.setups.api_webhook import register_routes as register_webhook_routes
+    register_webhook_routes(app)
+    logging.info("Setup webhook routes registered")
+except ImportError as e:
+    logging.warning(f"Could not import setup webhook routes: {e}")
+
+try:
     # Import the auth routes
     from features.setups.auth_routes import register_routes as register_auth_routes
     register_auth_routes(app)

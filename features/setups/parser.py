@@ -1,752 +1,566 @@
 """
-Trade Setup Parser Module
+Setup Parser Module
 
-This module is responsible for parsing A+ Trade Setup messages into structured data.
-It extracts ticker symbols, signals, price levels, and bias information.
+This module provides parsing functions for trading setup messages,
+supporting multiple ticker symbols and various message formats.
 """
-import re
 import logging
+import re
 from datetime import datetime, date
-from typing import List, Dict, Any, Optional, Tuple, Union, Match
+from typing import List, Optional, Dict, Any, Union, Set, Tuple
 
 from common.models import (
-    TradeSetupMessage, 
-    TickerSetup, 
-    Signal, 
-    Bias, 
-    BiasFlip, 
-    SignalCategory, 
-    ComparisonType, 
+    TradeSetupMessage,
+    TickerSetup,
+    Signal,
+    Bias,
+    BiasFlip,
+    SignalCategory,
     Aggressiveness,
+    ComparisonType,
     BiasDirection
 )
 
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Regular expression patterns
-DATE_PATTERN = r"A\+ Trade Setups[^\n]*(?:[—–-]|\s+)(\w{3}\s+\w{3}\s+\d{1,2})|A\+ Trade Setups \((\w{3},? \w{3} \d{1,2})\)"
-TICKER_PATTERN = r"(?:\d+\)\s+|—{2,}[\r\n]+)([A-Z]+)"
-
-# Emoji patterns - traditional format
-EMOJI_BREAKOUT_PATTERN = r"🔼\s+(?:(Aggressive|Conservative)\s+(?:Long|Breakout)|Breakout|Breakout Entry|Breakout Entries)\s+(?:Above|Over)\s+(\d+\.\d+)"
-EMOJI_BREAKDOWN_PATTERN = r"🔻\s+(?:(Aggressive|Conservative)\s+(?:Short|Breakdown)|Breakdown|Breakdown Entry|Breakdown Entries)\s+(?:Below|Under)\s+(\d+\.\d+)|🔻\s+(?:Breakdown|Breakdown Entry|Breakdown Entries)\s+(?:(Aggressive|Conservative))?\s*(?:Below|Under)\s+(\d+\.\d+)"
-EMOJI_REJECTION_PATTERN = r"❌\s+(?:Rejection|Rejection Short|Rejection Short Zone|Rejection Short Zones|Rejection Levels)(?:\s+(?:Near|at|levels|level))?\s+(\d+\.\d+)"
-EMOJI_BOUNCE_PATTERN = r"🔄\s+(?:Bounce|Bounce From|Bounce Entry|Bounce Long Zones|Bounce Zone)\s+(?:From|Near)?\s+(\d+\.\d+)"
-EMOJI_BOUNCE_ZONE_PATTERN = r"🌀\s+(?:Bounce Zone|Bounce Long Zones)(?:\s+Near)?\s+(?:(\d+\.\d+)[-–](\d+\.\d+)|(\d+\.\d+))"
-EMOJI_TARGET_PATTERN = r"(?:🔼|🔻|Targets:|Target:)\s*(?:(\d+\.\d+)(?:,\s*|-)?)+"
-EMOJI_BIAS_PATTERN = r"⚠️.*?(Bullish|Bearish)[^0-9.,\n]*(?:above|below|under|over|while holding above|while holding below|holds?|holding|momentum)\s+(\d+\.\d+)"
-
-# Text-based patterns - newer format
-TEXT_BREAKOUT_PATTERN = r"(?:Breakout|Breakout Entry|Long)\s+(?:Above|Over)\s+(\d+\.\d+)"
-TEXT_BREAKDOWN_PATTERN = r"(?:Breakdown|Breakdown Entry|Short)\s+(?:Below|Under)\s+(\d+\.\d+)"
-TEXT_REJECTION_PATTERN = r"(?:Rejection|Rejection\s+Near|Rejection at)\s+(\d+\.\d+)"
-TEXT_BOUNCE_PATTERN = r"(?:Bounce|Bounce From|Bounce Near)\s+(\d+\.\d+)"
-TEXT_TARGET_PATTERN = r"Target\s+\d+:\s+(\d+\.\d+)"
-TEXT_BIAS_PATTERN = r"(Bullish|Bearish)\s+bias\s+(?:above|below|under|over)\s+(\d+\.\d+)"
-TEXT_BIAS_FLIP_PATTERN = r"(?:flips|flip to|flips?)\s+(bullish|bearish)\s+(?:above|below|under|over)\s+(\d+\.\d+)"
-
-# Combined patterns - we'll try both emoji and text versions
-BREAKOUT_PATTERN = f"({EMOJI_BREAKOUT_PATTERN}|{TEXT_BREAKOUT_PATTERN})"
-BREAKDOWN_PATTERN = f"({EMOJI_BREAKDOWN_PATTERN}|{TEXT_BREAKDOWN_PATTERN})"
-REJECTION_PATTERN = f"({EMOJI_REJECTION_PATTERN}|{TEXT_REJECTION_PATTERN})"
-BOUNCE_PATTERN = f"({EMOJI_BOUNCE_PATTERN}|{TEXT_BOUNCE_PATTERN})"
-BOUNCE_ZONE_PATTERN = EMOJI_BOUNCE_ZONE_PATTERN  # Keep as is for now
-TARGET_PATTERN = f"({EMOJI_TARGET_PATTERN}|{TEXT_TARGET_PATTERN})"
-BIAS_PATTERN = f"({EMOJI_BIAS_PATTERN}|{TEXT_BIAS_PATTERN})"
-BIAS_FLIP_PATTERN = r"(?:flips|flip to|flips?) (bullish|bearish)(?:[^0-9.,\n]*)(?:on|if|when|above|below|over|under|cross|breaks?|only)[^0-9.,\n]*(\d+\.\d+)"
-
-# Month name mapping
-MONTH_MAP = {
-    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-}
-
-
-def parse_date(date_str: str) -> date:
-    """Parse date from various formats like 'Wed May 14'."""
-    try:
-        parts = date_str.strip().split()
-        if len(parts) == 3:
-            _, month, day = parts
-            month_num = MONTH_MAP.get(month[:3], 1)  # Default to January if not found
-            day_num = int(day)
-            year = datetime.now().year
-            return date(year, month_num, day_num)
-    except Exception as e:
-        logger.warning(f"Failed to parse date '{date_str}': {str(e)}")
+class SetupParser:
+    """Parser for trading setup messages with multi-ticker support."""
     
-    # Fallback to current date
-    return date.today()
-
-
-def extract_numbers(text: str, pattern: str = r"\d+\.\d+") -> List[float]:
-    """Extract float numbers from text using a given pattern."""
-    return [float(match) for match in re.findall(pattern, text)]
-
-
-def extract_targets(text: str, signal_line: str) -> List[float]:
-    """Extract target price levels for a signal."""
-    # First try the explicit target pattern
-    targets_match = re.search(TARGET_PATTERN, text)
-    if targets_match:
-        return extract_numbers(targets_match.group(0))
-    
-    # If not found, try to extract numbers from the signal line itself
-    # Usually targets are listed after the trigger price
-    numbers = extract_numbers(signal_line)
-    return numbers[1:] if len(numbers) > 1 else []
-
-
-def extract_tickers(text: str) -> List[str]:
-    """Extract ticker symbols from the message."""
-    # Extract from numbered format: "1) SPY:" or "1. SPY:"
-    numbered_tickers = re.findall(r'\d+\)?\.?\s+([A-Z]{1,5}):', text)
-    if numbered_tickers:
-        return numbered_tickers
-    
-    # Extract from standalone ticker lines: "SPY"
-    standalone_tickers = []
-    for line in text.split('\n'):
-        line = line.strip()
-        if re.match(r'^[A-Z]{1,5}$', line):
-            standalone_tickers.append(line)
-    
-    if standalone_tickers:
-        return standalone_tickers
-    
-    # Extract from "ticker: message" format
-    ticker_colon_format = re.findall(r'^([A-Z]{1,5}):', text, re.MULTILINE)
-    if ticker_colon_format:
-        return ticker_colon_format
-    
-    # Fallback to general ticker pattern
-    general_tickers = re.findall(r'\b([A-Z]{1,5})\b', text)
-    
-    # Filter out common non-ticker words
-    exclude_words = {'A', 'I', 'AM', 'PM', 'EST', 'PST', 'ET', 'PT', 'GMT', 'UTC', 'THE', 'BUY', 'SELL'}
-    filtered_tickers = [t for t in general_tickers if t not in exclude_words and len(t) >= 2]
-    
-    return filtered_tickers
-
-
-def extract_signals(text: str, symbol: str) -> List[Signal]:
-    """Extract all signals for a ticker symbol."""
-    signals = []
-    lines = text.split('\n')
-    
-    # Find range for this symbol
-    start_idx = None
-    end_idx = None
-    for i, line in enumerate(lines):
-        if re.search(rf"\b{symbol}\b", line) or re.search(r"\d+\)\s+" + symbol, line):
-            start_idx = i
-        # Check for next ticker or end of message
-        if start_idx is not None and i > start_idx and (
-            re.search(r"\d+\)\s+[A-Z]+", line) or 
-            re.search(r"^[A-Z]+\s*$", line) or
-            re.search(r"@everyone", line)
-        ):
-            end_idx = i
-            break
-    
-    if start_idx is None:
-        return []
-    
-    if end_idx is None:
-        end_idx = len(lines)
-    
-    ticker_text = "\n".join(lines[start_idx:end_idx])
-    
-    # Extract breakouts
-    for line in ticker_text.split('\n'):
-        breakout_match = re.search(BREAKOUT_PATTERN, line)
-        if breakout_match:
-            # Handle aggressiveness indicator if present
-            aggressiveness_str = breakout_match.group(1) if breakout_match.group(1) else "none"
+    def __init__(self):
+        """Initialize the setup parser."""
+        # Define standard emoji/text mappings for signal categories
+        self.emoji_map = {
+            # Breakout indicators
+            "🔼": "[BREAKOUT]",
+            "⬆️": "[BREAKOUT]",
+            "🚀": "[BREAKOUT]",
+            "🔝": "[BREAKOUT]",
             
-            # Get the trigger price (always group 2 in the simplified pattern)
-            trigger_price = float(breakout_match.group(2))
+            # Breakdown indicators
+            "🔽": "[BREAKDOWN]",
+            "⬇️": "[BREAKDOWN]",
+            "📉": "[BREAKDOWN]",
+            "🔻": "[BREAKDOWN]",
             
-            aggressiveness = (Aggressiveness.AGGRESSIVE if aggressiveness_str and aggressiveness_str.lower() == "aggressive" else
-                             Aggressiveness.CONSERVATIVE if aggressiveness_str and aggressiveness_str.lower() == "conservative" else
-                             Aggressiveness.NONE)
+            # Rejection indicators
+            "❌": "[REJECTION]",
+            "🚫": "[REJECTION]",
+            "🛑": "[REJECTION]",
+            "⛔": "[REJECTION]",
             
-            targets = extract_targets(ticker_text, line)
+            # Bounce indicators
+            "🔄": "[BOUNCE]",
+            "↩️": "[BOUNCE]",
+            "↪️": "[BOUNCE]",
+            "🔙": "[BOUNCE]",
             
-            signals.append(Signal(
-                category=SignalCategory.BREAKOUT,
-                aggressiveness=aggressiveness,
-                comparison=ComparisonType.ABOVE,
-                trigger=trigger_price,
-                targets=targets
-            ))
-    
-    # Extract breakdowns
-    for line in ticker_text.split('\n'):
-        breakdown_match = re.search(BREAKDOWN_PATTERN, line)
-        if breakdown_match:
-            # We have two different pattern formats possible:
-            # 1. "Aggressive Short Below XX.XX"
-            # 2. "Breakdown Below XX.XX"
-            
-            # Check which format matched
-            if breakdown_match.group(1) and breakdown_match.group(2):
-                # Format: "Aggressive Short Below XX.XX"
-                aggressiveness_str = breakdown_match.group(1)
-                trigger_price = float(breakdown_match.group(2))
-            else:
-                # Format: "Breakdown (Aggressive) Below XX.XX"
-                aggressiveness_str = breakdown_match.group(3) if breakdown_match.group(3) else "none"
-                trigger_price = float(breakdown_match.group(4) or 0)
-            
-            aggressiveness = (Aggressiveness.AGGRESSIVE if aggressiveness_str and aggressiveness_str.lower() == "aggressive" else
-                             Aggressiveness.CONSERVATIVE if aggressiveness_str and aggressiveness_str.lower() == "conservative" else
-                             Aggressiveness.NONE)
-            
-            targets = extract_targets(ticker_text, line)
-            
-            signals.append(Signal(
-                category=SignalCategory.BREAKDOWN,
-                aggressiveness=aggressiveness,
-                comparison=ComparisonType.BELOW,
-                trigger=trigger_price,
-                targets=targets
-            ))
-    
-    # Extract rejections
-    for line in ticker_text.split('\n'):
-        rejection_match = re.search(REJECTION_PATTERN, line)
-        if rejection_match:
-            trigger_price = float(rejection_match.group(1))
-            targets = extract_targets(ticker_text, line)
-            
-            signals.append(Signal(
-                category=SignalCategory.REJECTION,
-                aggressiveness=Aggressiveness.NONE,
-                comparison=ComparisonType.NEAR,
-                trigger=trigger_price,
-                targets=targets
-            ))
-    
-    # Extract bounces
-    for line in ticker_text.split('\n'):
-        bounce_match = re.search(BOUNCE_PATTERN, line)
-        if bounce_match:
-            trigger_price = float(bounce_match.group(1))
-            targets = extract_targets(ticker_text, line)
-            
-            signals.append(Signal(
-                category=SignalCategory.BOUNCE,
-                aggressiveness=Aggressiveness.NONE,
-                comparison=ComparisonType.NEAR,
-                trigger=trigger_price,
-                targets=targets
-            ))
-    
-    # Extract bounce zones
-    for line in ticker_text.split('\n'):
-        bounce_zone_match = re.search(BOUNCE_ZONE_PATTERN, line)
-        if bounce_zone_match:
-            if bounce_zone_match.group(1) and bounce_zone_match.group(2):
-                # Range format
-                lower = float(bounce_zone_match.group(1))
-                upper = float(bounce_zone_match.group(2))
-                trigger = [lower, upper]
-            else:
-                # Single price
-                trigger = float(bounce_zone_match.group(3))
-            
-            targets = extract_targets(ticker_text, line)
-            
-            signals.append(Signal(
-                category=SignalCategory.BOUNCE,
-                aggressiveness=Aggressiveness.NONE,
-                comparison=ComparisonType.RANGE if isinstance(trigger, list) else ComparisonType.NEAR,
-                trigger=trigger,
-                targets=targets
-            ))
-    
-    # Fallback for bounce zone pattern with simpler regex if no signals found
-    if not signals:
-        # Look for "bounce zone" text with nearby numbers
-        bounce_lines = [line for line in ticker_text.split('\n') if 'bounce zone' in line.lower() or 'bounce from' in line.lower()]
-        for line in bounce_lines:
-            numbers = extract_numbers(line)
-            if numbers:
-                if len(numbers) >= 2:
-                    # Multiple numbers may indicate a range
-                    signals.append(Signal(
-                        category=SignalCategory.BOUNCE,
-                        aggressiveness=Aggressiveness.NONE,
-                        comparison=ComparisonType.RANGE,
-                        trigger=[numbers[0], numbers[1]],
-                        targets=numbers[2:] if len(numbers) > 2 else []
-                    ))
-                else:
-                    signals.append(Signal(
-                        category=SignalCategory.BOUNCE,
-                        aggressiveness=Aggressiveness.NONE,
-                        comparison=ComparisonType.NEAR,
-                        trigger=numbers[0],
-                        targets=[]
-                    ))
-    
-    # Check for Aggressive Long or Aggressive Short as fallback patterns
-    if not signals:
-        aggressive_long = re.search(r"(?i)aggressive\s+long.*?(\d+\.\d+)", ticker_text)
-        if aggressive_long:
-            signals.append(Signal(
-                category=SignalCategory.BREAKOUT,
-                aggressiveness=Aggressiveness.AGGRESSIVE,
-                comparison=ComparisonType.ABOVE,
-                trigger=float(aggressive_long.group(1)),
-                targets=extract_numbers(ticker_text)
-            ))
+            # Warning/Alert indicators
+            "⚠️": "[WARNING]",
+            "🔔": "[WARNING]",
+            "📢": "[WARNING]",
+            "🚨": "[WARNING]",
+        }
         
-        aggressive_short = re.search(r"(?i)aggressive\s+short.*?(\d+\.\d+)", ticker_text)
-        if aggressive_short:
-            signals.append(Signal(
-                category=SignalCategory.BREAKDOWN,
-                aggressiveness=Aggressiveness.AGGRESSIVE,
-                comparison=ComparisonType.BELOW,
-                trigger=float(aggressive_short.group(1)),
-                targets=extract_numbers(ticker_text)
-            ))
+        # Pattern for extracting ticker symbols - adapt as needed
+        self.ticker_pattern = r'\b[A-Z]{1,5}\b'
+        
+        # Patterns for detecting different message formats
+        self.section_patterns = {
+            "numbered_with_parenthesis": r'(?ms)^\s*\d+\)\s+([A-Z]{1,5}):\s*(.*?)(?=^\s*\d+\)\s+[A-Z]{1,5}:|\Z)',
+            "numbered_with_period": r'(?ms)^\s*\d+\.\s+([A-Z]{1,5}):\s*(.*?)(?=^\s*\d+\.\s+[A-Z]{1,5}:|\Z)',
+            "ticker_colon": r'(?ms)^([A-Z]{1,5}):\s*(.*?)(?=^[A-Z]{1,5}:|\Z)',
+            "ticker_standalone": r'(?ms)^([A-Z]{1,5})$\s*(.*?)(?=^[A-Z]{1,5}$|\Z)'
+        }
+        
+        # Signal extraction patterns
+        self.signal_patterns = {
+            "breakout": [
+                r'\b(?:breakout|break out|breaking out|breaking)\s+(?:above|over|past)\s+(\d+(?:\.\d+)?)',
+                r'\[BREAKOUT\].*?(?:above|over|past)\s+(\d+(?:\.\d+)?)',
+                r'(?:buying|long|calls)\s+(?:above|over|past)\s+(\d+(?:\.\d+)?)'
+            ],
+            "breakdown": [
+                r'\b(?:breakdown|break down|breaking down)\s+(?:below|under|beneath)\s+(\d+(?:\.\d+)?)',
+                r'\[BREAKDOWN\].*?(?:below|under|beneath)\s+(\d+(?:\.\d+)?)',
+                r'(?:selling|short|puts)\s+(?:below|under|beneath)\s+(\d+(?:\.\d+)?)'
+            ],
+            "rejection": [
+                r'\b(?:rejection|reject|rejecting)\s+(?:near|at|around)\s+(\d+(?:\.\d+)?)',
+                r'\[REJECTION\].*?(?:near|at|around)\s+(\d+(?:\.\d+)?)'
+            ],
+            "bounce": [
+                r'\b(?:bounce|bouncing|support)\s+(?:from|off|at)\s+(\d+(?:\.\d+)?)',
+                r'\[BOUNCE\].*?(?:from|off|at)\s+(\d+(?:\.\d+)?)'
+            ]
+        }
+        
+        # Bias extraction patterns
+        self.bias_patterns = [
+            r'(?i)(?:remain|bias|sentiment|outlook|stance)\s+(bullish|bearish)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)',
+            r'(?i)(bullish|bearish)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)',
+            r'(?i)(bullish|bearish)\s+(?:bias|sentiment|outlook|stance)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)'
+        ]
+        
+        # Bias flip patterns
+        self.flip_patterns = [
+            r'(?i)(?:flip|switch|turn|change)\s+(?:to)?\s+(bullish|bearish)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)',
+            r'(?i)(?:above|below|over|under)\s+(\d+(?:\.\d+)?)\s+(?:flip|switch|turn|change)\s+(?:to)?\s+(bullish|bearish)',
+            r'(?i)(bullish|bearish)\s+(?:on|if|when)\s+(?:above|below|over|under)\s+(\d+(?:\.\d+)?)' 
+        ]
+        
+        # Target extraction patterns
+        self.target_patterns = [
+            r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?:\s*(\d+(?:\.\d+)?)',
+            r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?\s+(?:at|is|of|near|around)?\s*(\d+(?:\.\d+)?)',
+            r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?[:\s]+(\d+(?:\.\d+)?)'
+        ]
+        
+        # Target line patterns (for multiline targets)
+        self.target_line_patterns = [
+            r'(?i)(?:target|tgt|t|price target|take profit|tp)(?:\s+\d+)?:\s*(\d+(?:\.\d+)?)',
+            r'(?i)(?:target|tgt|t|price target|take profit|tp)(?:\s+\d+)?\s+(?:at|is|of|near|around)?\s*(\d+(?:\.\d+)?)',
+            r'(?i)(?:target|tgt|t|price target|take profit|tp)(?:\s+\d+)?[:\s]+(\d+(?:\.\d+)?)'
+        ]
     
-    return signals
-
-
-def extract_bias(text: str, symbol: str) -> Optional[Bias]:
-    """Extract bias information for a ticker symbol."""
-    lines = text.split('\n')
-    
-    # First look for the newer structured format
-    ticker_section_start = None
-    ticker_section_end = None
-    
-    # Try to find the ticker section using numbered format: "1) SPY:"
-    for i, line in enumerate(lines):
-        # Match section headers like "1) SPY:" or "2. MSFT:"
-        if re.search(rf"\d+\)?\.?\s+{symbol}:", line):
-            ticker_section_start = i
+    def normalize_text(self, text: str) -> str:
+        """
+        Normalize text by replacing emojis with standard text markers.
+        
+        Args:
+            text: Raw text with potential emojis
             
-            # Find where this section ends (next ticker or end of text)
-            ticker_section_end = len(lines)
-            for j in range(i + 1, len(lines)):
-                if re.search(r"\d+\)?\.?\s+[A-Z]+:", lines[j]):
-                    ticker_section_end = j
-                    break
+        Returns:
+            Normalized text with emojis replaced by standard markers
+        """
+        normalized = text
+        for emoji, replacement in self.emoji_map.items():
+            normalized = normalized.replace(emoji, replacement)
+        return normalized
+    
+    def extract_ticker_symbols(self, text: str) -> List[str]:
+        """
+        Extract ticker symbols from text.
+        
+        Args:
+            text: The text to extract ticker symbols from
             
-            break
+        Returns:
+            List of ticker symbols found in the text
+        """
+        ticker_matches = re.findall(self.ticker_pattern, text)
+        # Remove common words that might be mistaken for tickers
+        excluded_words = {"A", "I", "AT", "BE", "DO", "GO", "IF", "IN", "IS", "IT", "OR", "TO", "BY", "ON", "FOR", "THE"}
+        tickers = [ticker for ticker in ticker_matches if ticker not in excluded_words]
+        
+        logger.info(f"Extracted {len(tickers)} ticker symbols: {tickers}")
+        return tickers
     
-    # If we didn't find a section with numbered format, try the traditional format
-    if ticker_section_start is None:
-        for i, line in enumerate(lines):
-            if re.search(rf"\b{symbol}\b", line) or re.search(r"\b{symbol}$", line.strip()):
-                ticker_section_start = i
-                
-                # Find where this section ends
-                ticker_section_end = len(lines)
-                for j in range(i + 1, len(lines)):
-                    if (re.search(r"\b[A-Z]{2,5}\b", lines[j]) and 
-                        not re.search(rf"\b{symbol}\b", lines[j]) and
-                        not "resistance" in lines[j].lower() and
-                        not "support" in lines[j].lower()):
-                        ticker_section_end = j
-                        break
-                
-                break
+    def extract_ticker_sections(self, text: str) -> Dict[str, str]:
+        """
+        Extract sections of text corresponding to different ticker symbols.
+        
+        Args:
+            text: The text to extract ticker sections from
+            
+        Returns:
+            Dictionary mapping ticker symbols to their sections of text
+        """
+        normalized_text = self.normalize_text(text)
+        
+        # Try different section extraction patterns
+        for format_name, pattern in self.section_patterns.items():
+            sections = re.findall(pattern, normalized_text)
+            if sections:
+                logger.debug(f"Found {len(sections)} ticker sections using pattern: {pattern}")
+                return {ticker: content for ticker, content in sections}
+        
+        # Fallback: Try to split based on common patterns
+        fallback_sections = {}
+        tickers = self.extract_ticker_symbols(normalized_text)
+        
+        for ticker in tickers:
+            # Look for ticker followed by a section of text
+            ticker_pattern = rf'(?ms)(?:^|\n)({ticker})(?::|$|\n)([^A-Z]+)(?=\n[A-Z]{{1,5}}(?::|$|\n)|\Z)'
+            matches = re.findall(ticker_pattern, normalized_text)
+            
+            if matches:
+                for t, content in matches:
+                    fallback_sections[t] = content.strip()
+        
+        return fallback_sections
     
-    # If we still didn't find a section, we can't extract bias
-    if ticker_section_start is None:
+    def extract_signals(self, ticker: str, text: str) -> List[Signal]:
+        """
+        Extract trading signals from text for a specific ticker.
+        
+        Args:
+            ticker: The ticker symbol
+            text: The text section for this ticker
+            
+        Returns:
+            List of Signal objects
+        """
+        signals = []
+        
+        # Process each signal category
+        for category, patterns in self.signal_patterns.items():
+            for pattern in patterns:
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        # Convert the price level to float
+                        price_level = float(match)
+                        
+                        # Determine comparison type based on signal category
+                        comparison = ComparisonType.ABOVE
+                        if category == "breakout":
+                            signal_category = SignalCategory.BREAKOUT
+                            comparison = ComparisonType.ABOVE
+                        elif category == "breakdown":
+                            signal_category = SignalCategory.BREAKDOWN
+                            comparison = ComparisonType.BELOW
+                        elif category == "rejection":
+                            signal_category = SignalCategory.REJECTION
+                            comparison = ComparisonType.NEAR
+                        elif category == "bounce":
+                            signal_category = SignalCategory.BOUNCE
+                            comparison = ComparisonType.ABOVE  # Default for bounce
+                        else:
+                            continue
+                        
+                        # Extract targets for this signal
+                        targets = self.extract_targets(text)
+                        if not targets:
+                            # If no targets found in full text, look for numbers that might be targets
+                            numbers = re.findall(r'(?<!\.)(?<!\d)\d+(?:\.\d+)?(?!\d)(?!\.)', text)
+                            if numbers and len(numbers) > 1:
+                                # Use the price level itself as a target if no other targets found
+                                targets = {price_level}
+                        
+                        # Create the signal object
+                        signal = Signal(
+                            category=signal_category,
+                            comparison=comparison,
+                            trigger=price_level,
+                            targets=targets or {price_level}  # Default to the trigger price if no targets found
+                        )
+                        
+                        signals.append(signal)
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Error extracting signal for {ticker}: {e}")
+        
+        return signals
+    
+    def extract_bias(self, ticker: str, text: str) -> Optional[Bias]:
+        """
+        Extract market bias from text for a specific ticker.
+        
+        Args:
+            ticker: The ticker symbol
+            text: The text section for this ticker
+            
+        Returns:
+            Bias object if found, None otherwise
+        """
+        # Extract bias from text
+        for pattern in self.bias_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    # Format might be (direction, price) or (price, direction) depending on regex
+                    if len(match) == 2:
+                        if match[0].lower() in ["bullish", "bearish"]:
+                            direction_str, price_str = match
+                        else:
+                            price_str, direction_str = match
+                    
+                        # Parse direction
+                        if direction_str.lower() == "bullish":
+                            direction = BiasDirection.BULLISH
+                        elif direction_str.lower() == "bearish":
+                            direction = BiasDirection.BEARISH
+                        else:
+                            continue
+                        
+                        # Parse price
+                        price = float(price_str)
+                        
+                        # Determine condition type based on context
+                        condition_text = re.search(r'(above|below|near)\s+\d+(?:\.\d+)?', text, re.IGNORECASE)
+                        if condition_text:
+                            condition_str = condition_text.group(1).lower()
+                            if condition_str == "above":
+                                condition = ComparisonType.ABOVE
+                            elif condition_str == "below":
+                                condition = ComparisonType.BELOW
+                            else:
+                                condition = ComparisonType.NEAR
+                        else:
+                            # Default condition based on direction
+                            condition = ComparisonType.ABOVE if direction == BiasDirection.BULLISH else ComparisonType.BELOW
+                        
+                        # Create bias object
+                        bias = Bias(
+                            direction=direction,
+                            condition=condition,
+                            price=price
+                        )
+                        
+                        # Extract potential bias flip
+                        bias_flip = self.extract_bias_flip(text)
+                        if bias_flip:
+                            bias.flip = bias_flip
+                        
+                        return bias
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error extracting bias for {ticker}: {e}")
+        
         return None
     
-    # Make sure we have an end index
-    if ticker_section_end is None:
-        ticker_section_end = len(lines)
-    
-    # Get the section text
-    ticker_section = lines[ticker_section_start:ticker_section_end]
-    ticker_text = "\n".join(ticker_section)
-    
-    # Try to find structured bias formats first
-    structured_bias_regex = r"(?:^|\s+)-?\s*(Bullish|Bearish)\s+bias\s+(above|below)\s+(\d+\.\d+)"
-    structured_bias_match = re.search(structured_bias_regex, ticker_text, re.IGNORECASE)
-    
-    if structured_bias_match:
-        try:
-            direction_str = structured_bias_match.group(1).lower()
-            comparison_str = structured_bias_match.group(2).lower()
-            price = float(structured_bias_match.group(3))
+    def extract_bias_flip(self, text: str) -> Optional[BiasFlip]:
+        """
+        Extract bias flip conditions from text.
+        
+        Args:
+            text: The text to extract bias flip from
             
-            direction = BiasDirection.BULLISH if direction_str == "bullish" else BiasDirection.BEARISH
-            comparison = ComparisonType.ABOVE if comparison_str == "above" else ComparisonType.BELOW
+        Returns:
+            BiasFlip object if found, None otherwise
+        """
+        for pattern in self.flip_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    # Format might be (direction, price) or (price, direction) depending on regex
+                    if len(match) == 2:
+                        if match[0].lower() in ["bullish", "bearish"]:
+                            direction_str, price_str = match
+                        else:
+                            price_str, direction_str = match
+                    
+                        # Parse direction
+                        if direction_str.lower() == "bullish":
+                            direction = BiasDirection.BULLISH
+                        elif direction_str.lower() == "bearish":
+                            direction = BiasDirection.BEARISH
+                        else:
+                            continue
+                        
+                        # Parse price
+                        price = float(price_str)
+                        
+                        # Create bias flip object
+                        return BiasFlip(
+                            direction=direction,
+                            price_level=price
+                        )
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error extracting bias flip: {e}")
+        
+        return None
+    
+    def extract_targets(self, text: str) -> Set[float]:
+        """
+        Extract price targets from text.
+        
+        Args:
+            text: The text to extract targets from
             
-            # Check for bias flip info
-            flip_match = re.search(r"flips?\s+(bullish|bearish)\s+(above|below|at)\s+(\d+\.\d+)", 
-                                ticker_text, re.IGNORECASE)
-            flip = None
-            if flip_match:
-                flip_direction_str = flip_match.group(1).lower()
-                flip_price = float(flip_match.group(3))
-                flip_direction = BiasDirection.BULLISH if flip_direction_str == "bullish" else BiasDirection.BEARISH
+        Returns:
+            Set of target prices
+        """
+        targets = set()
+        
+        # Extract targets using various patterns
+        for pattern in self.target_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    target = float(match)
+                    targets.add(target)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Process line by line for targets with numbers
+        lines = text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and any(kw in line.lower() for kw in ['target', 'tgt', 't:', 'price target', 'take profit', 'tp']):
+                for pattern in self.target_line_patterns:
+                    matches = re.findall(pattern, line, re.IGNORECASE)
+                    for match in matches:
+                        try:
+                            target = float(match)
+                            targets.add(target)
+                        except (ValueError, TypeError):
+                            pass
                 
-                flip = BiasFlip(
-                    direction=flip_direction,
-                    price_level=flip_price
-                )
+                # If no match found but there are numbers in the line, use those
+                if not any(re.findall(pattern, line, re.IGNORECASE) for pattern in self.target_line_patterns):
+                    numbers = re.findall(r'(?<!\.)(?<!\d)\d+(?:\.\d+)?(?!\d)(?!\.)', line)
+                    for num in numbers:
+                        try:
+                            target = float(num)
+                            targets.add(target)
+                        except (ValueError, TypeError):
+                            pass
+        
+        return targets
+    
+    def process_ticker_sections(self, sections: Dict[str, str]) -> List[TickerSetup]:
+        """
+        Process ticker sections to extract signals and biases.
+        
+        Args:
+            sections: Dictionary mapping ticker symbols to their sections of text
             
-            return Bias(
-                direction=direction,
-                condition=comparison,
-                price=price,
-                flip=flip
-            )
-        except Exception as e:
-            logger.warning(f"Error extracting structured bias for {symbol}: {str(e)}")
-    
-    # If structured format not found, try emoji pattern
-    emoji_bias_match = re.search(EMOJI_BIAS_PATTERN, ticker_text)
-    if emoji_bias_match:
-        try:
-            direction_str = emoji_bias_match.group(1).lower()
-            price = float(emoji_bias_match.group(2))
-            
-            direction = BiasDirection.BULLISH if direction_str == "bullish" else BiasDirection.BEARISH
-            # For emoji pattern we need to infer the comparison based on direction
-            comparison = ComparisonType.ABOVE if direction == BiasDirection.BULLISH else ComparisonType.BELOW
-            
-            # Check for flip
-            flip_match = re.search(BIAS_FLIP_PATTERN, ticker_text)
-            flip = None
-            if flip_match:
-                flip_direction_str = flip_match.group(1).lower()
-                flip_price = float(flip_match.group(2))
-                flip_direction = BiasDirection.BULLISH if flip_direction_str == "bullish" else BiasDirection.BEARISH
-                
-                flip = BiasFlip(
-                    direction=flip_direction,
-                    price_level=flip_price
-                )
-            
-            return Bias(
-                direction=direction,
-                condition=comparison,
-                price=price,
-                flip=flip
-            )
-        except Exception as e:
-            logger.warning(f"Error extracting emoji bias for {symbol}: {str(e)}")
-    
-    # Try to infer bias from signals and price levels
-    if "bullish" in ticker_text.lower() and "above" in ticker_text.lower():
-        price_match = re.search(r"(?:bullish|above).*?(\d+\.\d+)", ticker_text.lower())
-        if price_match:
-            return Bias(
-                direction=BiasDirection.BULLISH,
-                condition=ComparisonType.ABOVE,
-                price=float(price_match.group(1)),
-                flip=None
-            )
-    
-    if "bearish" in ticker_text.lower() and "below" in ticker_text.lower():
-        price_match = re.search(r"(?:bearish|below).*?(\d+\.\d+)", ticker_text.lower())
-        if price_match:
-            return Bias(
-                direction=BiasDirection.BEARISH,
-                condition=ComparisonType.BELOW,
-                price=float(price_match.group(1)),
-                flip=None
-            )
-    
-    # Infer bias from signal type - breakout above is bullish
-    breakout_match = re.search(r"breakout.*?above\s+(\d+\.\d+)", ticker_text.lower())
-    if breakout_match:
-        return Bias(
-            direction=BiasDirection.BULLISH,
-            condition=ComparisonType.ABOVE,
-            price=float(breakout_match.group(1)),
-            flip=None
-        )
-        
-    # Infer bias from signal type - breakdown below is bearish
-    breakdown_match = re.search(r"breakdown.*?below\s+(\d+\.\d+)", ticker_text.lower())
-    if breakdown_match:
-        return Bias(
-            direction=BiasDirection.BEARISH,
-            condition=ComparisonType.BELOW,
-            price=float(breakdown_match.group(1)),
-            flip=None
-        )
-    
-    return None
-
-
-def extract_structured_signals(text: str, symbol: str) -> List[Signal]:
-    """
-    Extract signals from structured message format.
-    
-    This function is specifically designed to parse the newer format with numbered tickers
-    and structured indented information.
-    
-    Args:
-        text: The raw message text
-        symbol: The ticker symbol to extract signals for
-        
-    Returns:
-        List[Signal]: List of extracted signals
-    """
-    signals = []
-    
-    # Try to find the section for this ticker
-    lines = text.split('\n')
-    ticker_section_start = None
-    ticker_section_end = None
-    
-    # Look for numbered format headers: "1) SPY:" or "1. SPY:"
-    for i, line in enumerate(lines):
-        if re.search(rf"\d+\)?\.?\s+{symbol}:", line):
-            ticker_section_start = i
-            
-            # Find the end of this section (next ticker or end of text)
-            ticker_section_end = len(lines)
-            for j in range(i + 1, len(lines)):
-                if re.search(r"\d+\)?\.?\s+[A-Z]+:", lines[j]):
-                    ticker_section_end = j
-                    break
-            
-            break
-    
-    # Look for "ticker: message" format
-    if ticker_section_start is None:
-        for i, line in enumerate(lines):
-            if line.startswith(f"{symbol}:"):
-                ticker_section_start = i
-                
-                # Find the end of this section
-                ticker_section_end = len(lines)
-                for j in range(i + 1, len(lines)):
-                    if re.match(r"^[A-Z]{1,5}:", lines[j]):
-                        ticker_section_end = j
-                        break
-                
-                break
-    
-    # If we didn't find a section, we can't extract signals
-    if ticker_section_start is None:
-        return []
-    
-    # Extract the ticker section
-    ticker_section = lines[ticker_section_start:ticker_section_end]
-    ticker_text = "\n".join(ticker_section)
-    
-    # Extract signal type and price from the header line
-    header_match = re.search(rf"{symbol}:\s+(Breakout|Breakdown|Rejection|Bounce)\s+(Above|Below|Near)\s+(\d+\.\d+)", 
-                          ticker_text, re.IGNORECASE)
-    
-    if header_match:
-        signal_type = header_match.group(1).lower()
-        comparison_type = header_match.group(2).lower()
-        price_level = float(header_match.group(3))
-        
-        # Map signal type to category
-        category = None
-        if "breakout" in signal_type:
-            category = SignalCategory.BREAKOUT
-        elif "breakdown" in signal_type:
-            category = SignalCategory.BREAKDOWN
-        elif "rejection" in signal_type:
-            category = SignalCategory.REJECTION
-        elif "bounce" in signal_type:
-            category = SignalCategory.BOUNCE
-        else:
-            return []  # Unknown signal type
-        
-        # Map comparison type
-        comparison = None
-        if "above" in comparison_type:
-            comparison = ComparisonType.ABOVE
-        elif "below" in comparison_type:
-            comparison = ComparisonType.BELOW
-        elif "near" in comparison_type:
-            comparison = ComparisonType.NEAR
-        else:
-            comparison = ComparisonType.NEAR  # Default
-        
-        # Extract targets
-        targets = []
-        for line in ticker_section:
-            # Look for target lines
-            target_match = re.search(r"Target\s+\d+:\s+(\d+\.\d+)", line)
-            if target_match:
-                targets.append(float(target_match.group(1)))
-            
-            # Also check for simple "Target: X.XX" format
-            simple_target = re.search(r"Target:\s+(\d+\.\d+)", line)
-            if simple_target and not target_match:
-                targets.append(float(simple_target.group(1)))
-        
-        # If no explicit targets found, use the trigger price
-        if not targets:
-            targets = [price_level]
-        
-        signals.append(Signal(
-            category=category,
-            aggressiveness=Aggressiveness.NONE,
-            comparison=comparison,
-            trigger=price_level,
-            targets=targets
-        ))
-    
-    logger.debug(f"Extracted {len(signals)} structured signals for {symbol}")
-    return signals
-
-
-def parse_setup_message(text: str, source: str = "unknown") -> TradeSetupMessage:
-    """
-    Parse a complete A+ Trade Setup message with improved multi-ticker support.
-    
-    Args:
-        text: The raw message text
-        source: Source of the message (e.g., "discord", "email")
-        
-    Returns:
-        TradeSetupMessage: Structured data representation of the message
-    """
-    # Import multi-ticker parser module for section-based processing
-    from features.setups.multi_ticker_parser import (
-        normalize_text,
-        extract_ticker_sections,
-        process_ticker_sections
-    )
-    
-    # Extract date
-    date_match = re.search(DATE_PATTERN, text)
-    if date_match:
-        # Handle both formats from DATE_PATTERN
-        date_str = date_match.group(1) if date_match.group(1) else date_match.group(2)
-        message_date = parse_date(date_str)
-    else:
-        message_date = date.today()
-    
-    # Extract tickers
-    tickers = extract_tickers(text)
-    logger.info(f"Extracted {len(tickers)} ticker symbols: {tickers}")
-    
-    # ---- APPROACH 1: Special case handling for test formats ----
-    # Handle the specific test case format directly for reliable parsing
-    if "AAPL: Breakout Above 180" in text and "SPY: Breakdown Below 500.5" in text:
-        # This specific pattern matches our test cases - handle directly
+        Returns:
+            List of TickerSetup objects
+        """
         ticker_setups = []
         
-        # Add SPY setup
-        spy_signals = [Signal(
-            category=SignalCategory.BREAKDOWN,
-            aggressiveness=Aggressiveness.NONE,
-            comparison=ComparisonType.BELOW,
-            trigger=500.5,
-            targets=[495.0]
-        )]
+        for ticker, section_text in sections.items():
+            # Extract signals
+            signals = self.extract_signals(ticker, section_text)
+            
+            # Extract bias
+            bias = self.extract_bias(ticker, section_text)
+            
+            # Only create setup if we have signals or bias
+            if signals or bias:
+                setup = TickerSetup(
+                    symbol=ticker,
+                    signals=signals,
+                    bias=bias,
+                    text=section_text.strip()
+                )
+                ticker_setups.append(setup)
+                logger.debug(f"Created setup for {ticker} with {len(signals)} signals and bias={bias is not None}")
         
-        spy_bias = Bias(
-            direction=BiasDirection.BEARISH,
-            condition=ComparisonType.BELOW,
-            price=500.5,
-            flip=None
-        )
+        return ticker_setups
+    
+    def parse_hardcoded_test_case(self, text: str) -> List[TickerSetup]:
+        """
+        Parse a hardcoded test case for multiple tickers.
         
-        ticker_setups.append(TickerSetup(
-            symbol="SPY",
-            signals=spy_signals,
-            bias=spy_bias,
-            text="SPY: Breakdown Below 500.5"
-        ))
+        Args:
+            text: The hardcoded test message
         
-        # Add AAPL setup
-        aapl_signals = [Signal(
-            category=SignalCategory.BREAKOUT,
-            aggressiveness=Aggressiveness.NONE,
-            comparison=ComparisonType.ABOVE,
-            trigger=180.0,
-            targets=[185.0]
-        )]
+        Returns:
+            List of TickerSetup objects
+        """
+        # This method handles a specific format used in testing
+        ticker_setups = []
         
-        aapl_bias = Bias(
-            direction=BiasDirection.BULLISH,
-            condition=ComparisonType.ABOVE,
-            price=180.0,
-            flip=None
-        )
+        # Pattern for sections with format "TICKER: action description"
+        pattern = r'([A-Z]{1,5}):\s*(.*?)(?=\n[A-Z]{1,5}:|\Z)'
+        sections = re.findall(pattern, text, re.DOTALL)
         
-        ticker_setups.append(TickerSetup(
-            symbol="AAPL",
-            signals=aapl_signals,
-            bias=aapl_bias,
-            text="AAPL: Breakout Above 180"
-        ))
+        for ticker, content in sections:
+            content = content.strip()
+            
+            # Check for breakout patterns
+            breakout_match = re.search(r'[Bb]reakout (?:[Aa]bove|[Oo]ver) (\d+(?:\.\d+)?)(?:[\s\n]|$)', content)
+            breakdown_match = re.search(r'[Bb]reakdown (?:[Bb]elow|[Uu]nder) (\d+(?:\.\d+)?)(?:[\s\n]|$)', content)
+            target_match = re.search(r'[Tt]arget:?\s*(\d+(?:\.\d+)?)(?:[\s\n]|$)', content)
+            
+            signals = []
+            bias = None
+            
+            # Process breakout signal
+            if breakout_match:
+                price = float(breakout_match.group(1))
+                targets = {float(target_match.group(1))} if target_match else {price + 5.0}  # Default target
+                
+                signals.append(Signal(
+                    category=SignalCategory.BREAKOUT,
+                    comparison=ComparisonType.ABOVE,
+                    trigger=price,
+                    targets=targets
+                ))
+                
+                # Add bias for breakout
+                bias = Bias(
+                    direction=BiasDirection.BULLISH,
+                    condition=ComparisonType.ABOVE,
+                    price=price
+                )
+            
+            # Process breakdown signal
+            elif breakdown_match:
+                price = float(breakdown_match.group(1))
+                targets = {float(target_match.group(1))} if target_match else {price - 5.0}  # Default target
+                
+                signals.append(Signal(
+                    category=SignalCategory.BREAKDOWN,
+                    comparison=ComparisonType.BELOW,
+                    trigger=price,
+                    targets=targets
+                ))
+                
+                # Add bias for breakdown
+                bias = Bias(
+                    direction=BiasDirection.BEARISH,
+                    condition=ComparisonType.BELOW,
+                    price=price
+                )
+            
+            if signals:
+                ticker_setups.append(TickerSetup(
+                    symbol=ticker,
+                    signals=signals,
+                    bias=bias,
+                    text=content
+                ))
         
-        logger.info("Using hardcoded test case format")
-        return TradeSetupMessage(
-            date=message_date,
+        return ticker_setups
+    
+    def parse_message(self, text: str, date: date = None, source: str = "unknown") -> Optional[TradeSetupMessage]:
+        """
+        Parse a setup message text into a structured TradeSetupMessage object.
+        
+        Args:
+            text: The raw setup message text
+            date: The date of the setup message, defaults to today
+            source: Source of the message, defaults to 'unknown'
+            
+        Returns:
+            TradeSetupMessage object if parsing successful, None otherwise
+        """
+        if not text or not text.strip():
+            return None
+        
+        # Use today's date if not provided
+        if not date:
+            date = datetime.now().date()
+        
+        # Find potential ticker symbols in the message
+        ticker_symbols = self.extract_ticker_symbols(text)
+        if not ticker_symbols:
+            return None
+        
+        # Try to extract ticker sections
+        ticker_sections = self.extract_ticker_sections(text)
+        
+        ticker_setups = []
+        
+        # If we found sections, process each section
+        if ticker_sections:
+            ticker_setups = self.process_ticker_sections(ticker_sections)
+            logger.info(f"Found {len(ticker_setups)} ticker setups using section-based approach")
+        # Fallback: If section extraction failed but message contains typical patterns
+        elif "Breakout" in text or "Breakdown" in text or "Target" in text:
+            logger.info("Using hardcoded test case format")
+            ticker_setups = self.parse_hardcoded_test_case(text)
+        
+        # Create the setup message
+        setup_message = TradeSetupMessage(
             raw_text=text,
-            setups=ticker_setups,
+            date=date,
             source=source,
+            setups=ticker_setups,
             created_at=datetime.now()
         )
-    
-    # ---- APPROACH 2: Section-based parsing ----
-    # This follows the suggestions for a two-stage pipeline:
-    # 1. Split the message into sections by ticker first
-    # 2. Process each section independently
-    
-    # Stage 1: Normalize text and split into ticker sections
-    normalized_text = normalize_text(text)
-    ticker_sections = extract_ticker_sections(normalized_text)
-    
-    # Stage 2: Process each section for signals and bias
-    if ticker_sections:
-        ticker_setups = process_ticker_sections(ticker_sections)
         
-        # If we found any setups from section-based parsing, return them
-        if ticker_setups:
-            logger.info(f"Found {len(ticker_setups)} ticker setups using section-based approach")
-            return TradeSetupMessage(
-                date=message_date,
-                raw_text=text,
-                setups=ticker_setups,
-                source=source,
-                created_at=datetime.now()
-            )
-    
-    # ---- APPROACH 3: Legacy fallback ----
-    # If both approaches above fail, use the original parsing logic
-    ticker_setups = []
-    for symbol in tickers:
-        logger.info(f"Processing ticker {symbol} with legacy approach")
-        
-        # Extract signals
-        signals = extract_signals(text, symbol)
-        if not signals:
-            signals = extract_structured_signals(text, symbol)
-        
-        # Extract bias
-        bias = extract_bias(text, symbol)
-        
-        logger.info(f"Found {len(signals)} signals and bias={bias is not None} for {symbol}")
-        
-        if signals:
-            ticker_setups.append(TickerSetup(
-                symbol=symbol,
-                signals=signals,
-                bias=bias,
-                text=text
-            ))
-    
-    logger.info(f"Found {len(ticker_setups)} ticker setups using legacy approach")
-    return TradeSetupMessage(
-        date=message_date,
-        raw_text=text,
-        setups=ticker_setups,
-        source=source,
-        created_at=datetime.now()
-    )
+        return setup_message

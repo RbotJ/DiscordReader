@@ -14,7 +14,7 @@ from app import db
 from common.db_models import SetupModel, TickerSetupModel, SignalModel, BiasModel
 from common.models import TradeSetupMessage, Signal, Bias, BiasFlip
 from features.setups.parser import parse_setup_message
-from features.setups.event_publisher import publish_setup_message_created
+from features.setups.event_publisher import publish_setup_event
 from features.setups.auth import require_auth
 
 logger = logging.getLogger(__name__)

@@ -1,17 +1,24 @@
+"""
+Common Models Module
+
+This module defines the data transfer objects (DTOs) and common models
+used across the application.
+"""
+from dataclasses import dataclass, field
+from datetime import datetime, date
 from enum import Enum
-from typing import List, Optional, Union, Dict, Any
-from pydantic import BaseModel, Field
-from datetime import date, datetime
+from typing import List, Optional, Set, Tuple, Union
 
 
-class SignalCategory(str, Enum):
+# Enum definitions
+class SignalCategory(Enum):
     BREAKOUT = "breakout"
     BREAKDOWN = "breakdown"
     REJECTION = "rejection"
     BOUNCE = "bounce"
 
 
-class Aggressiveness(str, Enum):
+class Aggressiveness(Enum):
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
@@ -20,104 +27,59 @@ class Aggressiveness(str, Enum):
     CONSERVATIVE = "conservative"
 
 
-class ComparisonType(str, Enum):
+class ComparisonType(Enum):
     ABOVE = "above"
     BELOW = "below"
     NEAR = "near"
     RANGE = "range"
 
 
-class BiasDirection(str, Enum):
+class BiasDirection(Enum):
     BULLISH = "bullish"
     BEARISH = "bearish"
 
 
-class BiasFlip(BaseModel):
+# Data transfer objects
+@dataclass
+class BiasFlip:
+    """Represents a bias flip condition in a trading setup."""
     direction: BiasDirection
     price_level: float
 
 
-class Signal(BaseModel):
-    category: SignalCategory
-    aggressiveness: Aggressiveness = Aggressiveness.NONE
-    comparison: ComparisonType
-    trigger: Union[float, List[float]]
-    targets: List[float]
-
-
-class Bias(BaseModel):
+@dataclass
+class Bias:
+    """Represents a market bias for a ticker."""
     direction: BiasDirection
     condition: ComparisonType
     price: float
     flip: Optional[BiasFlip] = None
 
 
-class TickerSetup(BaseModel):
+@dataclass
+class Signal:
+    """Represents a trading signal for a ticker."""
+    category: SignalCategory
+    comparison: ComparisonType
+    trigger: Union[float, Tuple[float, float]]
+    targets: Set[float]
+    aggressiveness: Aggressiveness = Aggressiveness.NONE
+
+
+@dataclass
+class TickerSetup:
+    """Represents a trading setup for a specific ticker symbol."""
     symbol: str
-    signals: List[Signal]
+    signals: List[Signal] = field(default_factory=list)
     bias: Optional[Bias] = None
-    text: str = ""  # Raw text of the ticker setup for extraction
+    text: Optional[str] = None
 
 
-class TradeSetupMessage(BaseModel):
-    date: date
+@dataclass
+class TradeSetupMessage:
+    """Represents a trading setup message containing one or more ticker setups."""
     raw_text: str
-    setups: List[TickerSetup]
+    date: date
     source: str = "unknown"
-    created_at: datetime = Field(default_factory=datetime.now)
-
-
-class OptionsContract(BaseModel):
-    symbol: str
-    underlying: str
-    expiration_date: date
-    strike: float
-    option_type: str  # 'call' or 'put'
-    bid: float
-    ask: float
-    last: float
-    volume: int
-    open_interest: int
-    implied_volatility: float
-    delta: float
-    gamma: float
-    theta: float
-    vega: float
-    rho: float
-
-
-class TradeOrder(BaseModel):
-    symbol: str
-    quantity: int
-    side: str  # 'buy' or 'sell'
-    type: str  # 'market', 'limit', etc.
-    time_in_force: str  # 'day', 'gtc', etc.
-    limit_price: Optional[float] = None
-    stop_price: Optional[float] = None
-    extended_hours: bool = False
-    client_order_id: Optional[str] = None
-    order_class: Optional[str] = None  # 'simple', 'bracket', 'oco', 'oto'
-    take_profit: Optional[Dict[str, Any]] = None
-    stop_loss: Optional[Dict[str, Any]] = None
-
-
-class Position(BaseModel):
-    symbol: str
-    quantity: int
-    avg_entry_price: float
-    side: str  # 'long' or 'short'
-    market_value: float
-    cost_basis: float
-    unrealized_pl: float
-    unrealized_plpc: float
-    current_price: float
-    lastday_price: float
-    change_today: float
-
-
-class MarketData(BaseModel):
-    symbol: str
-    price: float
-    timestamp: datetime
-    previous_close: Optional[float] = None
-    volume: Optional[int] = None
+    setups: List[TickerSetup] = field(default_factory=list)
+    created_at: Optional[datetime] = None
