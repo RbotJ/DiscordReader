@@ -21,6 +21,83 @@ from common.schemas import (
     BiasDirectionDTO
 )
 
+# Global parser instance for the functional API
+_parser = None
+
+def parse_setup_message(
+    message_text: str,
+    setup_date: Optional[date] = None,
+    source: str = "unknown"
+) -> TradeSetupDTO:
+    """
+    Parse a setup message into structured data.
+    
+    This is a functional wrapper around the SetupParser class for backwards compatibility.
+    
+    Args:
+        message_text: Raw setup message text
+        setup_date: Date of the setup message (defaults to today)
+        source: Source of the setup message
+        
+    Returns:
+        TradeSetupDTO: Parsed setup data
+    """
+    global _parser
+    
+    # Initialize parser if needed
+    if _parser is None:
+        _parser = SetupParser()
+    
+    # Use today's date if no date provided
+    if setup_date is None:
+        setup_date = datetime.now().date()
+    
+    # Process the message
+    ticker_sections = _parser.extract_ticker_sections(message_text)
+    ticker_setups = []
+    
+    for ticker, section_text in ticker_sections.items():
+        # Extract signals and bias for this ticker
+        signals = _parser.extract_signals(ticker, section_text)
+        bias = _parser.extract_bias(ticker, section_text)
+        
+        # Create ticker setup
+        ticker_setup = TickerSetupDTO(
+            symbol=ticker,
+            text=section_text,
+            signals=signals,
+            bias=bias
+        )
+        
+        ticker_setups.append(ticker_setup)
+    
+    # Create and return setup message
+    # Ensure setup_date is not None
+    actual_date = setup_date if setup_date is not None else datetime.now().date()
+    
+    return TradeSetupDTO(
+        date=actual_date,
+        raw_text=message_text,
+        source=source,
+        ticker_setups=ticker_setups
+    )
+import logging
+import re
+from datetime import datetime, date
+from typing import List, Optional, Dict, Any, Union, Set, Tuple
+
+from common.schemas import (
+    TradeSetupDTO,
+    TickerSetupDTO,
+    SignalDTO,
+    BiasDTO,
+    BiasFlipDTO,
+    SignalCategoryDTO,
+    AggressivenessDTO,
+    ComparisonTypeDTO,
+    BiasDirectionDTO
+)
+
 # Configure logger
 logger = logging.getLogger(__name__)
 

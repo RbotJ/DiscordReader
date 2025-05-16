@@ -171,13 +171,25 @@ def receive_setup():
             # Commit all changes
             db.session.commit()
             
+            # Send notifications via Discord
+            try:
+                from features.setups.notification_service import process_new_setup_message
+                # Use test_mode=True for testing, False for production
+                process_new_setup_message(db_message.id, test_mode=True)
+                notification_status = 'sent'
+            except Exception as e:
+                logger.warning(f"Failed to send notifications: {e}")
+                notification_status = 'failed'
+                # Continue with success response even if notifications fail
+            
             # Return success response
             return jsonify({
                 'status': 'success',
                 'message': 'Setup message successfully processed',
                 'setup_id': db_message.id,
-                'ticker_count': len(db_message.ticker_setups),
-                'tickers': [ts.symbol for ts in db_message.ticker_setups]
+                'ticker_count': len(list(db_message.ticker_setups)),
+                'tickers': [ts.symbol for ts in list(db_message.ticker_setups)],
+                'notifications': notification_status
             }), 201
             
         except Exception as e:
