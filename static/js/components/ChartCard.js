@@ -1,66 +1,85 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart } from 'lightweight-charts';
-import { fetchTickerData } from '../services/apiService';
+import { createChart, CrosshairMode } from 'lightweight-charts';
+import apiService from '../services/apiService';
 
-// Trade state constants
-const TRADE_STATE = {
-  MONITORING: 'monitoring',
-  IN_TRADE: 'inTrade',
-  CLOSED: 'closed'
-};
-
-const ChartCard = ({ 
-  symbol, 
-  signal, 
-  onRemove,
-  onSignalFired,
-  onOrderUpdate
-}) => {
+/**
+ * ChartCard component
+ * Displays a ticker chart with trigger and target lines
+ * 
+ * @param {Object} props Component props
+ * @param {string} props.ticker Ticker symbol
+ * @param {string} props.status Card status (monitoring, inTrade, closed)
+ * @param {Object} props.signal Signal data containing trigger and target prices
+ */
+const ChartCard = ({ ticker, status = 'monitoring', signal = null }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeries = useRef(null);
-  const [tradeState, setTradeState] = useState(TRADE_STATE.MONITORING);
-  const [candleData, setCandleData] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const triggerLineRef = useRef(null);
+  const targetLineRef = useRef(null);
   
-  // Initialize chart
+  const [timeframe, setTimeframe] = useState('5min');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Card classes based on status
+  const cardClasses = {
+    monitoring: 'border-primary',
+    inTrade: 'border-warning',
+    closed: 'border-success'
+  };
+  
+  // Card titles based on status
+  const cardTitles = {
+    monitoring: 'Monitoring',
+    inTrade: 'In Trade',
+    closed: 'Closed'
+  };
+  
+  // Load chart data when component mounts or ticker/timeframe changes
   useEffect(() => {
-    if (chartContainerRef.current && !chartRef.current) {
-      // Create chart
+    if (!chartContainerRef.current) return;
+    
+    // Create chart instance if it doesn't exist
+    if (!chartRef.current) {
+      // Create the chart
       chartRef.current = createChart(chartContainerRef.current, {
         width: chartContainerRef.current.clientWidth,
         height: 300,
         layout: {
-          background: { color: '#18181B' },
-          textColor: '#DDD',
+          backgroundColor: '#131722',
+          textColor: '#d1d4dc',
         },
         grid: {
-          vertLines: { color: '#242424' },
-          horzLines: { color: '#242424' }
-        },
-        timeScale: {
-          borderColor: '#3C3C3C',
-          timeVisible: true,
+          vertLines: {
+            color: 'rgba(42, 46, 57, 0.5)',
+          },
+          horzLines: {
+            color: 'rgba(42, 46, 57, 0.5)',
+          },
         },
         crosshair: {
-          mode: 0
+          mode: CrosshairMode.Normal,
         },
-        rightPriceScale: {
-          borderColor: '#3C3C3C',
+        priceScale: {
+          borderColor: 'rgba(197, 203, 206, 0.8)',
+        },
+        timeScale: {
+          borderColor: 'rgba(197, 203, 206, 0.8)',
+          timeVisible: true,
         },
       });
       
-      // Create candlestick series
+      // Create the candlestick series
       candleSeries.current = chartRef.current.addCandlestickSeries({
         upColor: '#26a69a',
         downColor: '#ef5350',
         borderVisible: false,
         wickUpColor: '#26a69a',
-        wickDownColor: '#ef5350'
+        wickDownColor: '#ef5350',
       });
       
-      // Resize handler
+      // Handle window resize
       const handleResize = () => {
         if (chartRef.current) {
           chartRef.current.applyOptions({ 
@@ -71,222 +90,247 @@ const ChartCard = ({
       
       window.addEventListener('resize', handleResize);
       
-      // Load data
-      loadChartData();
-      
       return () => {
         window.removeEventListener('resize', handleResize);
-        
         if (chartRef.current) {
           chartRef.current.remove();
           chartRef.current = null;
-          candleSeries.current = null;
         }
       };
     }
-  }, [chartContainerRef, symbol]);
-  
-  // Load chart data
-  const loadChartData = async () => {
-    try {
+    
+    // Load candle data
+    const loadCandleData = async () => {
       setLoading(true);
       setError(null);
       
-      const data = await fetchTickerData(symbol, '10m', 1);
-      
-      // Format data for lightweight-charts
-      const formattedData = data.map(candle => ({
-        time: new Date(candle.timestamp).getTime() / 1000,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close
-      }));
-      
-      setCandleData(formattedData);
-      
-      if (candleSeries.current) {
-        candleSeries.current.setData(formattedData);
+      try {
+        // Fetch candle data from API
+        const candles = await apiService.getCandles(ticker, timeframe);
+        
+        if (candles && candles.length > 0) {
+          // Format candles for the chart
+          const formattedCandles = candles.map(candle => ({
+            time: candle.time,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close
+          }));
+          
+          // Update chart data
+          candleSeries.current.setData(formattedCandles);
+          
+          // Add trigger and target lines if signal is provided
+          updateSignalLines();
+          
+          // Fit content to view
+          chartRef.current.timeScale().fitContent();
+        } else {
+          setError('No candle data available');
+        }
+      } catch (err) {
+        console.error('Error loading candle data:', err);
+        setError('Failed to load chart data');
+      } finally {
+        setLoading(false);
       }
-      
-      // Draw trigger and target lines if we have signal data
-      if (signal) {
-        drawSignalLines(signal);
-      }
-      
-    } catch (err) {
-      console.error(`Error loading chart data for ${symbol}:`, err);
-      setError(`Failed to load chart data for ${symbol}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+    
+    loadCandleData();
+  }, [ticker, timeframe]);
   
-  // Draw trigger and target lines on the chart
-  const drawSignalLines = (signal) => {
-    if (!chartRef.current || !candleSeries.current) return;
+  // Update signal lines when signal changes
+  useEffect(() => {
+    updateSignalLines();
+  }, [signal]);
+  
+  // Update trigger and target lines
+  const updateSignalLines = () => {
+    if (!chartRef.current || !candleSeries.current || !signal) return;
     
-    // Clear previous lines
-    chartRef.current.removeSeries();
+    // Remove existing lines
+    if (triggerLineRef.current) {
+      chartRef.current.removePriceLine(triggerLineRef.current);
+      triggerLineRef.current = null;
+    }
     
-    // Re-add candlestick series
-    candleSeries.current = chartRef.current.addCandlestickSeries({
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderVisible: false,
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350'
-    });
-    
-    // Set data again
-    if (candleData.length > 0) {
-      candleSeries.current.setData(candleData);
+    if (targetLineRef.current) {
+      chartRef.current.removePriceLine(targetLineRef.current);
+      targetLineRef.current = null;
     }
     
     // Add trigger line
     if (signal.trigger) {
-      const triggerLine = chartRef.current.addLineSeries({
-        color: '#F6C244',
+      triggerLineRef.current = candleSeries.current.createPriceLine({
+        price: signal.trigger.price,
+        color: '#ff9800',
         lineWidth: 2,
-        lineStyle: 0,
-        title: 'Trigger'
+        lineStyle: 2, // Dashed
+        axisLabelVisible: true,
+        title: 'Trigger',
       });
-      
-      // For time range we need start and end times
-      const firstTime = candleData.length > 0 ? candleData[0].time : Math.floor(Date.now() / 1000) - 86400;
-      const lastTime = candleData.length > 0 ? candleData[candleData.length - 1].time : Math.floor(Date.now() / 1000);
-      
-      let triggerValue = signal.trigger;
-      // Handle range triggers
-      if (Array.isArray(triggerValue)) {
-        triggerValue = triggerValue[0]; // Use first value for simplicity
-      }
-      
-      triggerLine.setData([
-        { time: firstTime, value: triggerValue },
-        { time: lastTime, value: triggerValue }
-      ]);
     }
     
-    // Add target lines
-    if (signal.targets && signal.targets.length > 0) {
-      signal.targets.forEach((target, index) => {
-        const targetLine = chartRef.current.addLineSeries({
-          color: '#4CAF50',
-          lineWidth: 1,
-          lineStyle: 2,
-          title: `Target ${index + 1}`
-        });
-        
-        const firstTime = candleData.length > 0 ? candleData[0].time : Math.floor(Date.now() / 1000) - 86400;
-        const lastTime = candleData.length > 0 ? candleData[candleData.length - 1].time : Math.floor(Date.now() / 1000);
-        
-        targetLine.setData([
-          { time: firstTime, value: target },
-          { time: lastTime, value: target }
-        ]);
+    // Add target line
+    if (signal.target) {
+      targetLineRef.current = candleSeries.current.createPriceLine({
+        price: signal.target.price,
+        color: '#4caf50',
+        lineWidth: 2,
+        lineStyle: 0, // Solid
+        axisLabelVisible: true,
+        title: 'Target',
       });
     }
   };
   
-  // Handle WebSocket updates
-  useEffect(() => {
-    // This would be set up to listen for websocket events
-    
-    // Mock signal fired handler (connect this to WebSocket in real implementation)
-    const handleSignalFired = (event) => {
-      if (event.symbol === symbol) {
-        setTradeState(TRADE_STATE.IN_TRADE);
-        onSignalFired && onSignalFired(event);
-      }
-    };
-    
-    // Mock order update handler (connect this to WebSocket in real implementation)
-    const handleOrderUpdate = (event) => {
-      if (event.symbol === symbol) {
-        if (event.status === 'filled' && event.side === 'sell') {
-          setTradeState(TRADE_STATE.CLOSED);
-          // Schedule removal after showing close badge
-          setTimeout(() => {
-            onRemove && onRemove(symbol);
-          }, 5000);
-        }
-        onOrderUpdate && onOrderUpdate(event);
-      }
-    };
-    
-    // Set up listeners here
-    
-    return () => {
-      // Clean up listeners here
-    };
-  }, [symbol, onRemove, onSignalFired, onOrderUpdate]);
-  
-  // Get card class based on trade state
-  const getCardClass = () => {
-    switch (tradeState) {
-      case TRADE_STATE.MONITORING:
-        return 'card border-primary';
-      case TRADE_STATE.IN_TRADE:
-        return 'card border-warning';
-      case TRADE_STATE.CLOSED:
-        return 'card border-success';
-      default:
-        return 'card';
-    }
-  };
-  
-  // Get badge based on trade state
-  const getBadge = () => {
-    switch (tradeState) {
-      case TRADE_STATE.MONITORING:
-        return <span className="badge bg-primary">Monitoring</span>;
-      case TRADE_STATE.IN_TRADE:
-        return <span className="badge bg-warning">In Trade</span>;
-      case TRADE_STATE.CLOSED:
-        return <span className="badge bg-success">✅ Closed</span>;
-      default:
-        return null;
-    }
+  // Handle timeframe change
+  const handleTimeframeChange = (newTimeframe) => {
+    setTimeframe(newTimeframe);
   };
   
   return (
-    <div className={getCardClass()}>
+    <div className={`card ${cardClasses[status] || 'border-primary'} mb-3`}>
       <div className="card-header d-flex justify-content-between align-items-center">
-        <h5 className="mb-0">{symbol}</h5>
         <div>
-          {getBadge()}
+          <h5 className="mb-0">{ticker}</h5>
+          <span className="badge bg-secondary">{cardTitles[status] || 'Monitoring'}</span>
+        </div>
+        <div className="btn-group">
           <button 
-            className="btn btn-sm btn-close ms-2" 
-            onClick={() => onRemove(symbol)} 
-            aria-label="Close"
-          />
+            className={`btn btn-sm ${timeframe === '1min' ? 'btn-primary' : 'btn-outline-secondary'}`}
+            onClick={() => handleTimeframeChange('1min')}
+          >
+            1m
+          </button>
+          <button 
+            className={`btn btn-sm ${timeframe === '5min' ? 'btn-primary' : 'btn-outline-secondary'}`}
+            onClick={() => handleTimeframeChange('5min')}
+          >
+            5m
+          </button>
+          <button 
+            className={`btn btn-sm ${timeframe === '15min' ? 'btn-primary' : 'btn-outline-secondary'}`}
+            onClick={() => handleTimeframeChange('15min')}
+          >
+            15m
+          </button>
+          <button 
+            className={`btn btn-sm ${timeframe === '1day' ? 'btn-primary' : 'btn-outline-secondary'}`}
+            onClick={() => handleTimeframeChange('1day')}
+          >
+            1d
+          </button>
         </div>
       </div>
       <div className="card-body">
-        {loading && <div className="text-center">Loading chart data...</div>}
-        {error && <div className="alert alert-danger">{error}</div>}
-        <div 
-          ref={chartContainerRef} 
-          className="chart-container" 
-          style={{ height: '300px' }}
-        />
-        
-        {signal && (
-          <div className="mt-3">
-            <h6>Signal</h6>
-            <div className="small">
-              <div><strong>Category:</strong> {signal.category}</div>
-              <div><strong>Trigger:</strong> {Array.isArray(signal.trigger) 
-                ? `${signal.trigger[0]} - ${signal.trigger[1]}` 
-                : signal.trigger}
-              </div>
-              <div>
-                <strong>Targets:</strong> {signal.targets.join(', ')}
-              </div>
+        {loading && (
+          <div className="text-center py-5">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
             </div>
           </div>
         )}
+        
+        {error && (
+          <div className="alert alert-danger">
+            {error}
+          </div>
+        )}
+        
+        <div 
+          className="chart-container" 
+          ref={chartContainerRef}
+          style={{ height: '300px', visibility: loading ? 'hidden' : 'visible' }}
+        ></div>
+        
+        {signal && (
+          <div className="mt-3">
+            <div className="row">
+              {signal.category && (
+                <div className="col-md-3 mb-2">
+                  <div className="text-muted small">Type</div>
+                  <div className="fw-bold">
+                    {signal.category === 'breakout' && (
+                      <span className="badge bg-primary">Breakout</span>
+                    )}
+                    {signal.category === 'breakdown' && (
+                      <span className="badge bg-danger">Breakdown</span>
+                    )}
+                    {signal.category === 'rejection' && (
+                      <span className="badge bg-warning">Rejection</span>
+                    )}
+                    {signal.category === 'bounce' && (
+                      <span className="badge bg-success">Bounce</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {signal.trigger && (
+                <div className="col-md-3 mb-2">
+                  <div className="text-muted small">Trigger</div>
+                  <div className="fw-bold">${signal.trigger.price.toFixed(2)}</div>
+                </div>
+              )}
+              
+              {signal.target && (
+                <div className="col-md-3 mb-2">
+                  <div className="text-muted small">Target</div>
+                  <div className="fw-bold">${signal.target.price.toFixed(2)}</div>
+                </div>
+              )}
+              
+              {signal.aggressiveness && (
+                <div className="col-md-3 mb-2">
+                  <div className="text-muted small">Aggressiveness</div>
+                  <div className="fw-bold">
+                    {signal.aggressiveness === 'low' && (
+                      <span className="badge bg-info">Low</span>
+                    )}
+                    {signal.aggressiveness === 'medium' && (
+                      <span className="badge bg-warning">Medium</span>
+                    )}
+                    {signal.aggressiveness === 'high' && (
+                      <span className="badge bg-danger">High</span>
+                    )}
+                    {signal.aggressiveness === 'aggressive' && (
+                      <span className="badge bg-danger">Aggressive</span>
+                    )}
+                    {signal.aggressiveness === 'conservative' && (
+                      <span className="badge bg-info">Conservative</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      
+      <div className="card-footer d-flex justify-content-between">
+        {status === 'monitoring' && (
+          <button className="btn btn-success">
+            <i className="bi bi-play-fill"></i> Trade
+          </button>
+        )}
+        
+        {status === 'inTrade' && (
+          <button className="btn btn-danger">
+            <i className="bi bi-x-lg"></i> Close Trade
+          </button>
+        )}
+        
+        {status === 'closed' && (
+          <button className="btn btn-primary">
+            <i className="bi bi-arrow-repeat"></i> Reactivate
+          </button>
+        )}
+        
+        <button className="btn btn-outline-secondary">
+          <i className="bi bi-gear-fill"></i>
+        </button>
       </div>
     </div>
   );

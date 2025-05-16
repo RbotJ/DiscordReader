@@ -10,9 +10,13 @@ logging.basicConfig(
 )
 
 from flask import Flask, jsonify, render_template, redirect, url_for
+from flask_socketio import SocketIO, emit
 from common.db import db
 # Import models from the main models.py file
 import models
+
+# Create Socket.IO instance
+socketio = SocketIO()
 
 def create_app():
     """Create and configure the Flask application."""
@@ -32,10 +36,52 @@ def create_app():
     # Initialize extensions
     db.init_app(app)
     
+    # Initialize SocketIO
+    socketio.init_app(app, cors_allowed_origins="*")
+    
     # Register routes
     register_routes(app)
     
+    # Register SocketIO event handlers
+    register_socketio_events()
+    
     return app
+
+def register_socketio_events():
+    """Register Socket.IO event handlers."""
+    @socketio.on('connect')
+    def handle_connect():
+        """Handle client connection."""
+        logging.info("Client connected")
+        emit('connection_response', {'status': 'connected'})
+
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        """Handle client disconnection."""
+        logging.info("Client disconnected")
+
+    @socketio.on('subscribe_tickers')
+    def handle_subscribe_tickers(data):
+        """
+        Handle ticker subscription requests.
+        
+        Args:
+            data: Dictionary containing tickers to subscribe to
+        """
+        tickers = data.get('tickers', [])
+        if tickers:
+            logging.info(f"Client subscribed to tickers: {tickers}")
+            # Emit confirmation back to the client
+            emit('subscription_response', {'status': 'success', 'tickers': tickers})
+            
+            # Send initial data for the subscribed tickers
+            # This would normally come from our market data cache
+            for ticker in tickers:
+                emit('market_data', {
+                    'ticker': ticker,
+                    'price': 0,  # Will be filled with real data later
+                    'timestamp': datetime.now().isoformat()
+                })
 
 def register_routes(app):
     """Register API routes with the Flask application."""
@@ -84,6 +130,32 @@ def register_routes(app):
     def setup():
         """Setup submission page."""
         return render_template('setup.html', title="Create Setup")
+    
+    # API endpoints for the dashboard
+    @app.route('/api/tickers')
+    def get_tickers():
+        """
+        Get available tickers with trading setups.
+        Returns a list of ticker symbols that have active setups.
+        """
+        # We'll implement this to fetch tickers from our database later
+        tickers = ["SPY", "AAPL", "MSFT", "NVDA", "TSLA"]
+        return jsonify({'tickers': tickers})
+    
+    @app.route('/api/account')
+    def get_account():
+        """
+        Get account information.
+        Returns account balance, buying power, etc.
+        """
+        # We'll implement this to fetch from Alpaca later
+        account_info = {
+            'portfolio_value': 100000.00,
+            'cash': 75000.00,
+            'buying_power': 150000.00,
+            'positions_count': 5
+        }
+        return jsonify(account_info)
 
 # Create the application
 app = create_app()
@@ -115,4 +187,4 @@ with app.app_context():
         logging.error(f"Error initializing app components: {e}")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
