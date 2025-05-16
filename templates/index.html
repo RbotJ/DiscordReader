@@ -1,118 +1,78 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A+ Trading - Home</title>
-    <!-- Bootstrap CSS from Replit CDN -->
-    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-    <!-- Custom CSS -->
-    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
-    <!-- Feather Icons -->
-    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <span class="text-primary fw-bold">A+</span> Trading
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="{{ url_for('index') }}">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('setup_form') }}">Submit Setup</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+{% extends 'base.html' %}
 
-    <main class="container py-5">
-        <div class="row justify-content-center">
-            <div class="col-lg-8 text-center">
-                <h1 class="display-4 mb-4"><span class="text-primary fw-bold">A+</span> Trading</h1>
-                <p class="lead mb-5">An AI-driven options trading application using Alpaca paper trading with signal parsing, strategy execution, and position management.</p>
-                <div class="d-flex justify-content-center gap-3">
-                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg px-5">
-                        Go to Dashboard
-                    </a>
-                    <a href="{{ url_for('setup_form') }}" class="btn btn-outline-primary btn-lg px-5">
-                        Submit Setup
-                    </a>
-                </div>
-            </div>
-        </div>
-        
-        <div class="row mt-5 pt-5">
-            <div class="col-md-4 mb-4">
-                <div class="card h-100">
-                    <div class="card-body text-center">
-                        <div class="mb-3">
-                            <i data-feather="activity" class="text-primary" style="width: 48px; height: 48px;"></i>
-                        </div>
-                        <h3>Signal Parsing</h3>
-                        <p class="text-muted">Automatically parse trading signals from various sources and convert them to actionable trade setups.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-4">
-                <div class="card h-100">
-                    <div class="card-body text-center">
-                        <div class="mb-3">
-                            <i data-feather="trending-up" class="text-primary" style="width: 48px; height: 48px;"></i>
-                        </div>
-                        <h3>Strategy Execution</h3>
-                        <p class="text-muted">Execute trading strategies based on predefined signals and market conditions with automated precision.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-4">
-                <div class="card h-100">
-                    <div class="card-body text-center">
-                        <div class="mb-3">
-                            <i data-feather="bar-chart-2" class="text-primary" style="width: 48px; height: 48px;"></i>
-                        </div>
-                        <h3>Position Management</h3>
-                        <p class="text-muted">Monitor and manage your trading positions with intelligent risk assessment and portfolio balancing.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="row mt-5">
-            <div class="col-12 text-center">
-                <p class="text-muted">Powered by Alpaca Paper Trading</p>
-                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary mt-3">
-                    View Dashboard <i data-feather="arrow-right" class="ms-2"></i>
+{% block title %}Home | A+ Trading App{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="h2">A+ Trading App</h1>
+            <div>
+                <a href="/trading" class="btn btn-primary">
+                    <i class="bi bi-graph-up"></i> Trading Dashboard
                 </a>
             </div>
         </div>
-    </main>
+    </div>
+</div>
 
-    <footer class="footer mt-auto py-3 bg-dark">
-        <div class="container text-center">
-            <span class="text-muted">© 2025 A+ Trading | Data provided by Alpaca Markets</span>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Recent Setup Messages</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    View and analyze the latest trading setup messages received from Discord.
+                </p>
+                <a href="/setups" class="btn btn-outline-primary">View Setups</a>
+            </div>
         </div>
-    </footer>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Trading Dashboard</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Monitor your trading activity, view signals, and manage paper trading on Alpaca.
+                </p>
+                <a href="/trading" class="btn btn-outline-primary">Open Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
 
-    <!-- Bootstrap Bundle with Popper -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- App JavaScript -->
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-    <!-- Initialize Feather icons -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            feather.replace();
-        });
-    </script>
-</body>
-</html>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Setup Parser</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Test the setup parser functionality on sample messages.
+                </p>
+                <a href="/parser" class="btn btn-outline-primary">Test Parser</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Webhook Tester</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Test the webhook endpoint for receiving setup messages.
+                </p>
+                <a href="/webhook-tester" class="btn btn-outline-primary">Test Webhook</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

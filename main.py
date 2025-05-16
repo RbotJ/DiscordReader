@@ -49,6 +49,14 @@ def register_routes(app):
     except ImportError as e:
         logging.warning(f"Could not import setup webhook routes: {e}")
     
+    # Register Alpaca trading routes
+    try:
+        from features.alpaca.api import register_routes as register_alpaca_routes
+        register_alpaca_routes(app)
+        logging.info("Alpaca trading routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import Alpaca trading routes: {e}")
+    
     # Add other route registrations here as they are implemented
     
     # Add API health check endpoint
