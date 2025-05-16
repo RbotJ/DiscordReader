@@ -1,0 +1,77 @@
+/* Dashboard-specific styles */
+:root {
+  --card-bg-monitoring: rgba(13, 110, 253, 0.05);
+  --card-bg-in-trade: rgba(255, 193, 7, 0.05);
+  --card-bg-closed: rgba(25, 135, 84, 0.05);
+}
+
+body {
+  background-color: var(--bs-dark);
+  color: var(--bs-light);
+}
+
+.card {
+  background-color: var(--bs-gray-800);
+  border-color: var(--bs-gray-700);
+  color: var(--bs-light);
+  margin-bottom: 20px;
+}
+
+.card-header {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-color: var(--bs-gray-700);
+}
+
+.list-group-item {
+  background-color: var(--bs-gray-800);
+  border-color: var(--bs-gray-700);
+  color: var(--bs-light);
+}
+
+.list-group-item.active {
+  background-color: var(--bs-primary);
+  border-color: var(--bs-primary);
+}
+
+.list-group-item-action:hover {
+  background-color: var(--bs-gray-700);
+  color: var(--bs-light);
+}
+
+.table {
+  color: var(--bs-light);
+}
+
+/* Chart card state-specific styles */
+.card.border-primary {
+  background-color: var(--card-bg-monitoring);
+}
+
+.card.border-warning {
+  background-color: var(--card-bg-in-trade);
+}
+
+.card.border-success {
+  background-color: var(--card-bg-closed);
+}
+
+/* Event log styles */
+.event-log {
+  font-family: var(--bs-font-monospace);
+}
+
+.event-log .list-group-item {
+  padding: 0.25rem 0.5rem;
+  background-color: transparent;
+}
+
+/* Chart container styles */
+.chart-container {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Positions table styles */
+.table-sm td, .table-sm th {
+  padding: 0.25rem 0.5rem;
+}
