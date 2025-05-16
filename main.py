@@ -144,6 +144,17 @@ def initialize_app_components():
         logging.info("Exit rules engine initialized")
     except ImportError as e:
         logging.warning(f"Could not initialize exit rules engine: {e}")
+        
+    # Initialize Discord integration
+    try:
+        from features.discord import init_discord
+        success = init_discord()
+        if success:
+            logging.info("Discord integration initialized")
+        else:
+            logging.warning("Discord integration initialization failed")
+    except ImportError as e:
+        logging.warning(f"Could not initialize Discord integration: {e}")
 
 # Set up a function to initialize components with the app context
 with app.app_context():
