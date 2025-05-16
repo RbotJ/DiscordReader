@@ -1,229 +1,164 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Dashboard component
+ * 
+ * Main dashboard component that integrates all UI elements
+ */
+import React, { useEffect, useState, useRef } from 'react';
 import ChartCard from './ChartCard';
 import PositionsTable from './PositionsTable';
 import EventLog from './EventLog';
 import TickerSidebar from './TickerSidebar';
-import apiService from '../services/apiService';
-import websocketService from '../services/websocketService';
+import AccountInfo from './AccountInfo';
+import { initializeSocket, subscribeTickers, on, off } from '../services/websocketService';
 
-/**
- * Dashboard component
- * Main dashboard component that integrates all UI elements
- */
 const Dashboard = () => {
-  const [tickers, setTickers] = useState([]);
-  const [selectedTicker, setSelectedTicker] = useState(null);
-  const [signal, setSignal] = useState(null);
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [activeTickers, setActiveTickers] = useState([]);
+  const [connected, setConnected] = useState(false);
+  const eventLogRef = useRef(null);
   
-  // Initialize data and WebSocket connection on component mount
+  // Initialize socket and event handlers
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        setLoading(true);
-        
-        // Load available tickers
-        const tickersData = await apiService.getTickers();
-        setTickers(tickersData || []);
-        
-        // If we have tickers, select the first one
-        if (tickersData && tickersData.length > 0) {
-          setSelectedTicker(tickersData[0]);
-          
-          // Load signal for the selected ticker
-          const signalData = await apiService.getSignals(tickersData[0]);
-          setSignal(signalData);
-        }
-        
-        // Initialize WebSocket connection
-        await websocketService.connect();
-        
-        // Add event handlers for WebSocket events
-        websocketService.on('connect', () => {
-          addEvent({
-            type: 'info',
-            message: 'Connected to server',
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        websocketService.on('disconnect', () => {
-          addEvent({
-            type: 'warning',
-            message: 'Disconnected from server',
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        websocketService.on('error', (data) => {
-          addEvent({
-            type: 'error',
-            message: `WebSocket error: ${data.message}`,
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        websocketService.on('price_update', (data) => {
-          addEvent({
-            type: 'info',
-            message: `Price update: ${data.ticker} ${data.price}`,
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        websocketService.on('signal_triggered', (data) => {
-          addEvent({
-            type: 'signal',
-            message: `Signal triggered: ${data.ticker} ${data.category}`,
-            data: data,
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        websocketService.on('trade_executed', (data) => {
-          addEvent({
-            type: 'trade',
-            message: `Trade executed: ${data.ticker} ${data.side} ${data.qty} @ ${data.price}`,
-            data: data,
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        setError(null);
-      } catch (err) {
-        console.error('Error initializing dashboard:', err);
-        setError('Failed to initialize dashboard data');
-        
-        addEvent({
-          type: 'error',
-          message: 'Failed to initialize dashboard data',
-          data: err.message,
-          timestamp: new Date().toISOString(),
-        });
-      } finally {
-        setLoading(false);
+    // Initialize WebSocket connection
+    const socket = initializeSocket();
+    
+    // Set up event handlers
+    const handleConnect = () => {
+      setConnected(true);
+      if (eventLogRef.current) {
+        eventLogRef.current.addLog('success', 'Connected to server');
       }
-    };
-    
-    initializeData();
-    
-    // Clean up WebSocket connection on unmount
-    return () => {
-      websocketService.disconnect();
-    };
-  }, []);
-  
-  // Subscribe to ticker updates when selected ticker changes
-  useEffect(() => {
-    if (!selectedTicker) return;
-    
-    const loadSignalForTicker = async () => {
-      try {
-        const signalData = await apiService.getSignals(selectedTicker);
-        setSignal(signalData);
-        
-        addEvent({
-          type: 'info',
-          message: `Loaded signal data for ${selectedTicker}`,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.error(`Error loading signal for ${selectedTicker}:`, err);
-        
-        addEvent({
-          type: 'error',
-          message: `Failed to load signal for ${selectedTicker}`,
-          data: err.message,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    };
-    
-    // Subscribe to the selected ticker updates
-    if (websocketService.connected) {
-      websocketService.subscribeTickers([selectedTicker]);
       
-      addEvent({
-        type: 'info',
-        message: `Subscribed to ${selectedTicker} updates`,
-        timestamp: new Date().toISOString(),
-      });
-    }
-    
-    loadSignalForTicker();
-    
-    // Clean up subscription when selected ticker changes
-    return () => {
-      if (websocketService.connected) {
-        websocketService.unsubscribeTickers([selectedTicker]);
+      // Subscribe to tickers if any are active
+      if (activeTickers.length > 0) {
+        subscribeTickers(activeTickers);
       }
     };
-  }, [selectedTicker]);
+    
+    const handleDisconnect = (reason) => {
+      setConnected(false);
+      if (eventLogRef.current) {
+        eventLogRef.current.addLog('error', `Disconnected from server: ${reason}`);
+      }
+    };
+    
+    const handleMarketData = (data) => {
+      if (eventLogRef.current && Math.random() < 0.1) { // Log only 10% of market data to avoid flooding
+        eventLogRef.current.addLog('info', `Market data for ${data.ticker}`, `Price: ${data.price}`);
+      }
+    };
+    
+    const handleSignalUpdate = (data) => {
+      if (eventLogRef.current) {
+        eventLogRef.current.addLog(
+          'trade', 
+          `Signal triggered for ${data.ticker}`, 
+          `${data.category} at ${data.price}`
+        );
+      }
+    };
+    
+    // Register event handlers
+    on('connect', handleConnect);
+    on('disconnect', handleDisconnect);
+    on('market_data', handleMarketData);
+    on('signal_update', handleSignalUpdate);
+    
+    // Clean up on unmount
+    return () => {
+      off('connect', handleConnect);
+      off('disconnect', handleDisconnect);
+      off('market_data', handleMarketData);
+      off('signal_update', handleSignalUpdate);
+    };
+  }, [activeTickers]);
   
-  // Add event to the event log
-  const addEvent = (event) => {
-    setEvents(prevEvents => [...prevEvents, event]);
+  // Add a ticker to the dashboard
+  const handleAddTicker = (ticker) => {
+    if (!activeTickers.includes(ticker)) {
+      const newTickers = [...activeTickers, ticker];
+      setActiveTickers(newTickers);
+      
+      // Subscribe to the new ticker
+      if (connected) {
+        subscribeTickers([ticker]);
+      }
+      
+      // Log ticker addition
+      if (eventLogRef.current) {
+        eventLogRef.current.addLog('info', `Added ${ticker} to dashboard`);
+      }
+    }
   };
   
-  // Handle ticker selection
-  const handleTickerSelect = (ticker) => {
-    setSelectedTicker(ticker);
+  // Remove a ticker from the dashboard
+  const handleRemoveTicker = (ticker) => {
+    const newTickers = activeTickers.filter(t => t !== ticker);
+    setActiveTickers(newTickers);
+    
+    // Log ticker removal
+    if (eventLogRef.current) {
+      eventLogRef.current.addLog('info', `Removed ${ticker} from dashboard`);
+    }
   };
   
   return (
-    <div className="container-fluid mt-4">
+    <div className="container-fluid py-4">
+      <div className="row mb-4">
+        <div className="col-12">
+          <AccountInfo />
+        </div>
+      </div>
+      
       <div className="row">
         <div className="col-md-3">
-          <TickerSidebar 
-            tickers={tickers}
-            selectedTicker={selectedTicker}
-            onTickerSelect={handleTickerSelect}
-          />
+          <TickerSidebar onAddTicker={handleAddTicker} />
         </div>
+        
         <div className="col-md-9">
           <div className="row mb-4">
             <div className="col-12">
-              {loading ? (
-                <div className="card">
-                  <div className="card-body d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
-                    <div className="spinner-border text-primary" role="status">
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    <span className="ms-3">Loading dashboard data...</span>
-                  </div>
-                </div>
-              ) : error ? (
-                <div className="alert alert-danger">
-                  {error}
-                </div>
-              ) : selectedTicker ? (
-                <ChartCard 
-                  ticker={selectedTicker}
-                  signal={signal}
-                  onEvent={addEvent}
-                />
-              ) : (
+              {activeTickers.length === 0 ? (
                 <div className="alert alert-info">
-                  No ticker selected. Please select a ticker from the sidebar.
+                  <i className="bi bi-info-circle me-2"></i>
+                  Select tickers from the sidebar to display charts
                 </div>
+              ) : (
+                activeTickers.map(ticker => (
+                  <ChartCard 
+                    key={ticker} 
+                    ticker={ticker} 
+                    onClose={() => handleRemoveTicker(ticker)} 
+                  />
+                ))
               )}
             </div>
           </div>
+          
           <div className="row">
             <div className="col-12">
               <PositionsTable />
             </div>
           </div>
-          <div className="row mt-4">
+          
+          <div className="row">
             <div className="col-12">
-              <EventLog 
-                events={events}
-                maxEvents={100}
-              />
+              <EventLog ref={eventLogRef} />
             </div>
           </div>
+        </div>
+      </div>
+      
+      <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 5 }}>
+        <div className={`badge ${connected ? 'bg-success' : 'bg-danger'} p-2`}>
+          {connected ? (
+            <>
+              <i className="bi bi-broadcast me-1"></i> Connected
+            </>
+          ) : (
+            <>
+              <i className="bi bi-broadcast me-1"></i> Disconnected
+            </>
+          )}
         </div>
       </div>
     </div>

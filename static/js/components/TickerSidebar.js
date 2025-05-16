@@ -1,102 +1,112 @@
-import React, { useState, useEffect } from 'react';
-import apiService from '../services/apiService';
-
 /**
  * TickerSidebar component
- * Sidebar for selecting tickers to display in the dashboard
  * 
- * @param {Object} props Component props
- * @param {Array} props.tickers Array of ticker symbols
- * @param {string} props.selectedTicker Currently selected ticker
- * @param {function} props.onTickerSelect Function to call when a ticker is selected
+ * Displays a sidebar with available tickers and allows the user to add them to the dashboard
  */
-const TickerSidebar = ({ tickers = [], selectedTicker, onTickerSelect }) => {
-  const [availableTickers, setAvailableTickers] = useState(tickers);
+import React, { useEffect, useState } from 'react';
+import { fetchTickers } from '../services/apiService';
+
+const TickerSidebar = ({ onAddTicker }) => {
+  const [tickers, setTickers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [search, setSearch] = useState('');
   
-  // Load tickers on component mount if none are provided
+  // Load tickers on component mount
   useEffect(() => {
-    if (tickers && tickers.length > 0) {
-      setAvailableTickers(tickers);
-      setLoading(false);
-      return;
-    }
-    
-    const loadTickers = async () => {
-      try {
-        setLoading(true);
-        const data = await apiService.getTickers();
-        setAvailableTickers(data || []);
-        setError(null);
-      } catch (err) {
-        console.error('Error loading tickers:', err);
-        setError('Failed to load tickers');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
     loadTickers();
-  }, [tickers]);
+  }, []);
+  
+  // Load tickers from the API
+  const loadTickers = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchTickers();
+      setTickers(data || []);
+      setError(null);
+    } catch (err) {
+      console.error('Error loading tickers:', err);
+      setError('Failed to load tickers');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handle search input change
+  const handleSearchChange = (e) => {
+    setSearch(e.target.value);
+  };
   
   // Filter tickers based on search query
-  const filteredTickers = searchQuery.trim() !== '' 
-    ? availableTickers.filter(ticker => 
-        ticker.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : availableTickers;
+  const filteredTickers = tickers.filter(ticker => 
+    ticker.includes(search.toUpperCase())
+  );
+  
+  // Handle ticker click
+  const handleTickerClick = (ticker) => {
+    if (onAddTicker) {
+      onAddTicker(ticker);
+    }
+  };
   
   return (
     <div className="card mb-4">
       <div className="card-header">
-        <h5 className="mb-0">Trading Setups</h5>
+        <h5 className="mb-0">Tickers</h5>
       </div>
-      <div className="card-body p-0">
-        <div className="p-3">
+      <div className="card-body">
+        <div className="input-group mb-3">
           <input
             type="text"
-            className="form-control form-control-sm"
+            className="form-control"
             placeholder="Search tickers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={search}
+            onChange={handleSearchChange}
           />
+          <button
+            className="btn btn-outline-secondary"
+            type="button"
+            onClick={loadTickers}
+            disabled={loading}
+          >
+            {loading ? (
+              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            ) : (
+              <i className="bi bi-arrow-clockwise"></i>
+            )}
+          </button>
         </div>
         
-        {loading ? (
-          <div className="text-center p-3">
-            <div className="spinner-border spinner-border-sm text-primary" role="status">
-              <span className="visually-hidden">Loading...</span>
-            </div>
-            <span className="ms-2">Loading tickers...</span>
-          </div>
-        ) : error ? (
-          <div className="alert alert-danger m-3">
+        {error && (
+          <div className="alert alert-danger">
             {error}
           </div>
-        ) : filteredTickers.length === 0 ? (
-          <div className="text-center p-3 text-muted">
-            {searchQuery ? 'No matching tickers found' : 'No tickers available'}
-          </div>
-        ) : (
-          <div className="list-group list-group-flush">
-            {filteredTickers.map((ticker) => (
+        )}
+        
+        <div className="list-group" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+          {loading ? (
+            <div className="d-flex justify-content-center p-3">
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          ) : filteredTickers.length === 0 ? (
+            <div className="text-center p-3 text-muted">
+              {search ? 'No matching tickers found' : 'No tickers available'}
+            </div>
+          ) : (
+            filteredTickers.map(ticker => (
               <button
                 key={ticker}
-                className={`list-group-item list-group-item-action d-flex justify-content-between align-items-center ${
-                  ticker === selectedTicker ? 'active' : ''
-                }`}
-                onClick={() => onTickerSelect(ticker)}
+                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                onClick={() => handleTickerClick(ticker)}
               >
-                <span>{ticker}</span>
-                {ticker === selectedTicker && (
-                  <i className="bi bi-check2"></i>
-                )}
+                {ticker}
+                <i className="bi bi-plus-circle text-primary"></i>
               </button>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

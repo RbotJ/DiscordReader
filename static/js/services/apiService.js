@@ -1,92 +1,102 @@
 /**
  * API Service
  * 
- * This module provides functions to interact with the backend API
+ * Provides methods for interacting with the backend API
  */
-import axios from 'axios';
 
 const API_BASE_URL = '/api';
 
-// Define API endpoints
-const endpoints = {
-  tickers: `${API_BASE_URL}/tickers`,
-  account: `${API_BASE_URL}/account`,
-  positions: `${API_BASE_URL}/positions`,
-  candles: (ticker, timeframe = '1min', limit = 100) => 
-    `${API_BASE_URL}/candles/${ticker}?timeframe=${timeframe}&limit=${limit}`,
-  signals: (ticker) => `${API_BASE_URL}/signals/${ticker}`,
+/**
+ * Handle API response and extract data
+ */
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error: ${response.status} - ${errorText}`);
+  }
+  
+  const data = await response.json();
+  return data;
+};
+
+/**
+ * Make an API request
+ */
+const apiRequest = async (endpoint, options = {}) => {
+  try {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options
+    });
+    
+    return await handleResponse(response);
+  } catch (error) {
+    console.error(`API request failed: ${error.message}`);
+    throw error;
+  }
 };
 
 /**
  * Fetch available tickers
- * @returns {Promise<Array>} Array of ticker symbols
  */
 export const fetchTickers = async () => {
-  try {
-    const response = await axios.get(endpoints.tickers);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching tickers:', error);
-    return [];
-  }
+  return apiRequest('/tickers');
 };
 
 /**
  * Fetch account information
- * @returns {Promise<Object>} Account information
  */
 export const fetchAccount = async () => {
-  try {
-    const response = await axios.get(endpoints.account);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching account:', error);
-    return null;
-  }
+  return apiRequest('/account');
 };
 
 /**
- * Fetch positions
- * @returns {Promise<Array>} Array of positions
+ * Fetch open positions
  */
 export const fetchPositions = async () => {
-  try {
-    const response = await axios.get(endpoints.positions);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching positions:', error);
-    return [];
-  }
+  return apiRequest('/positions');
 };
 
 /**
  * Fetch candle data for a ticker
- * @param {string} ticker - Ticker symbol
- * @param {string} timeframe - Candle timeframe (default: 1min)
- * @param {number} limit - Number of candles to return (default: 100)
- * @returns {Promise<Array>} Array of candles
  */
 export const fetchCandles = async (ticker, timeframe = '1min', limit = 100) => {
-  try {
-    const response = await axios.get(endpoints.candles(ticker, timeframe, limit));
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching candles for ${ticker}:`, error);
-    return [];
-  }
+  return apiRequest(`/candles/${ticker}?timeframe=${timeframe}&limit=${limit}`);
 };
 
 /**
  * Fetch signals for a ticker
- * @param {string} ticker - Ticker symbol
- * @returns {Promise<Object>} Signal data
  */
 export const fetchSignals = async (ticker) => {
-  try {
-    const response = await axios.get(endpoints.signals(ticker));
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching signals for ${ticker}:`, error);
-    return null;
-  }
+  return apiRequest(`/signals/${ticker}`);
+};
+
+/**
+ * Place a trade order
+ */
+export const placeOrder = async (orderData) => {
+  return apiRequest('/orders', {
+    method: 'POST',
+    body: JSON.stringify(orderData)
+  });
+};
+
+/**
+ * Cancel a trade order
+ */
+export const cancelOrder = async (orderId) => {
+  return apiRequest(`/orders/${orderId}`, {
+    method: 'DELETE'
+  });
+};
+
+/**
+ * Get all orders (open by default)
+ */
+export const fetchOrders = async (status = 'open') => {
+  return apiRequest(`/orders?status=${status}`);
 };
