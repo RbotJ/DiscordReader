@@ -122,6 +122,6 @@ const EventLog = forwardRef((props, ref) => {
       </div>
     </div>
   );
-};
+});
 
 export default EventLog;
