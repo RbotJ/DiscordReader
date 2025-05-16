@@ -73,19 +73,19 @@ def get_account_info() -> Dict:
     try:
         account = trading_client.get_account()
         
-        # Convert account to dictionary for better handling
-        account_dict = account.to_dict()
-        
+        # Manual extraction to avoid serialization issues
         return {
-            'id': str(account_dict.get('id', '')),
-            'status': str(account_dict.get('status', '')),
-            'equity': float(account_dict.get('equity', 0)),
-            'cash': float(account_dict.get('cash', 0)),
-            'buying_power': float(account_dict.get('buying_power', 0)),
-            'position_market_value': float(account_dict.get('long_market_value', 0)) - float(account_dict.get('short_market_value', 0)),
-            'portfolio_value': float(account_dict.get('portfolio_value', 0)),
-            'trading_blocked': bool(account_dict.get('trading_blocked', False)),
-            'pattern_day_trader': bool(account_dict.get('pattern_day_trader', False))
+            'id': str(account.id) if hasattr(account, 'id') else '',
+            'status': str(account.status) if hasattr(account, 'status') else '',
+            'equity': float(account.equity) if hasattr(account, 'equity') else 0,
+            'cash': float(account.cash) if hasattr(account, 'cash') else 0,
+            'buying_power': float(account.buying_power) if hasattr(account, 'buying_power') else 0,
+            'position_market_value': float(account.long_market_value or 0) - float(account.short_market_value or 0),
+            'portfolio_value': float(account.portfolio_value) if hasattr(account, 'portfolio_value') else 0,
+            'trading_blocked': bool(account.trading_blocked) if hasattr(account, 'trading_blocked') else False,
+            'pattern_day_trader': bool(account.pattern_day_trader) if hasattr(account, 'pattern_day_trader') else False,
+            'account_number': str(account.account_number) if hasattr(account, 'account_number') else '',
+            'created_at': str(account.created_at) if hasattr(account, 'created_at') else ''
         }
     except Exception as e:
         logger.error(f"Error getting account info: {e}")
@@ -108,24 +108,60 @@ def get_positions() -> List[Dict]:
         position_list = []
         
         for pos in positions:
-            # Convert position to dictionary
+            # Extract properties directly to avoid serialization issues
             try:
-                pos_dict = pos.to_dict()
+                # Check if position is positive for 'long' or negative for 'short'
+                qty = float(pos.qty) if hasattr(pos, 'qty') else 0
+                
                 position_list.append({
-                    'symbol': str(pos_dict.get('symbol', '')),
-                    'qty': float(pos_dict.get('qty', 0)),
-                    'market_value': float(pos_dict.get('market_value', 0)),
-                    'avg_entry_price': float(pos_dict.get('avg_entry_price', 0)),
-                    'side': 'long' if float(pos_dict.get('qty', 0)) > 0 else 'short',
-                    'unrealized_pl': float(pos_dict.get('unrealized_pl', 0)),
-                    'unrealized_plpc': float(pos_dict.get('unrealized_plpc', 0)),
-                    'current_price': float(pos_dict.get('current_price', 0))
+                    'symbol': str(pos.symbol) if hasattr(pos, 'symbol') else '',
+                    'qty': qty,
+                    'market_value': float(pos.market_value) if hasattr(pos, 'market_value') else 0,
+                    'avg_entry_price': float(pos.avg_entry_price) if hasattr(pos, 'avg_entry_price') else 0,
+                    'side': 'long' if qty > 0 else 'short',
+                    'unrealized_pl': float(pos.unrealized_pl) if hasattr(pos, 'unrealized_pl') else 0,
+                    'unrealized_plpc': float(pos.unrealized_plpc) if hasattr(pos, 'unrealized_plpc') else 0,
+                    'current_price': float(pos.current_price) if hasattr(pos, 'current_price') else 0,
+                    'asset_id': str(pos.asset_id) if hasattr(pos, 'asset_id') else '',
+                    'asset_class': str(pos.asset_class) if hasattr(pos, 'asset_class') else '',
+                    'lastday_price': float(pos.lastday_price) if hasattr(pos, 'lastday_price') else 0
                 })
             except Exception as e:
                 logger.error(f"Error processing position {pos}: {e}")
                 continue
                 
         return position_list
+    except AttributeError:
+        # Implement a fallback method for different client versions
+        try:
+            # For newer Alpaca SDK versions that might not have get_all_positions
+            positions = trading_client.get_positions()
+            position_list = []
+            
+            for pos in positions:
+                # Extract position data
+                try:
+                    # Check if position is positive for 'long' or negative for 'short'
+                    qty = float(pos.qty) if hasattr(pos, 'qty') else 0
+                    
+                    position_list.append({
+                        'symbol': str(pos.symbol) if hasattr(pos, 'symbol') else '',
+                        'qty': qty,
+                        'market_value': float(pos.market_value) if hasattr(pos, 'market_value') else 0,
+                        'avg_entry_price': float(pos.avg_entry_price) if hasattr(pos, 'avg_entry_price') else 0,
+                        'side': 'long' if qty > 0 else 'short',
+                        'unrealized_pl': float(pos.unrealized_pl) if hasattr(pos, 'unrealized_pl') else 0,
+                        'unrealized_plpc': float(pos.unrealized_plpc) if hasattr(pos, 'unrealized_plpc') else 0,
+                        'current_price': float(pos.current_price) if hasattr(pos, 'current_price') else 0
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing position {pos}: {e}")
+                    continue
+                    
+            return position_list
+        except Exception as e:
+            logger.error(f"Error getting positions using fallback method: {e}")
+            return []
     except Exception as e:
         logger.error(f"Error getting positions: {e}")
         return []
@@ -143,20 +179,83 @@ def get_open_orders() -> List[Dict]:
     
     try:
         orders = trading_client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN))
-        return [{
-            'id': str(order.id),
-            'symbol': str(order.symbol),
-            'qty': float(order.qty),
-            'filled_qty': float(order.filled_qty),
-            'side': str(order.side.name) if hasattr(order.side, 'name') else str(order.side),
-            'type': str(order.order_type.name) if hasattr(order.order_type, 'name') else str(order.order_type),
-            'time_in_force': str(order.time_in_force.name) if hasattr(order.time_in_force, 'name') else str(order.time_in_force),
-            'limit_price': float(order.limit_price) if hasattr(order, 'limit_price') and order.limit_price else None,
-            'stop_price': float(order.stop_price) if hasattr(order, 'stop_price') and order.stop_price else None,
-            'status': str(order.status.name) if hasattr(order.status, 'name') else str(order.status),
-            'created_at': str(order.submitted_at) if hasattr(order, 'submitted_at') else str(order.created_at),
-            'updated_at': str(order.updated_at) if hasattr(order, 'updated_at') else None
-        } for order in orders]
+        result = []
+        
+        for order in orders:
+            # Handle each order individually to process properties safely
+            try:
+                order_data = {
+                    'id': str(order.id) if hasattr(order, 'id') else '',
+                    'symbol': str(order.symbol) if hasattr(order, 'symbol') else '',
+                    'qty': float(order.qty) if hasattr(order, 'qty') else 0,
+                    'filled_qty': float(order.filled_qty) if hasattr(order, 'filled_qty') else 0,
+                    'status': str(order.status.name) if hasattr(order, 'status') and hasattr(order.status, 'name') else 
+                             str(order.status) if hasattr(order, 'status') else 'unknown'
+                }
+                
+                # Handle side property
+                if hasattr(order, 'side'):
+                    if hasattr(order.side, 'name'):
+                        order_data['side'] = str(order.side.name)
+                    else:
+                        order_data['side'] = str(order.side)
+                else:
+                    order_data['side'] = 'unknown'
+                
+                # Handle order type
+                if hasattr(order, 'order_type'):
+                    if hasattr(order.order_type, 'name'):
+                        order_data['type'] = str(order.order_type.name)
+                    else:
+                        order_data['type'] = str(order.order_type)
+                else:
+                    order_data['type'] = 'unknown'
+                
+                # Handle time in force
+                if hasattr(order, 'time_in_force'):
+                    if hasattr(order.time_in_force, 'name'):
+                        order_data['time_in_force'] = str(order.time_in_force.name)
+                    else:
+                        order_data['time_in_force'] = str(order.time_in_force)
+                else:
+                    order_data['time_in_force'] = 'day'
+                
+                # Handle prices
+                if hasattr(order, 'limit_price') and order.limit_price:
+                    try:
+                        order_data['limit_price'] = float(order.limit_price)
+                    except (ValueError, TypeError):
+                        order_data['limit_price'] = None
+                else:
+                    order_data['limit_price'] = None
+                    
+                if hasattr(order, 'stop_price') and order.stop_price:
+                    try:
+                        order_data['stop_price'] = float(order.stop_price)
+                    except (ValueError, TypeError):
+                        order_data['stop_price'] = None
+                else:
+                    order_data['stop_price'] = None
+                
+                # Handle timestamps
+                if hasattr(order, 'submitted_at'):
+                    order_data['created_at'] = str(order.submitted_at)
+                elif hasattr(order, 'created_at'):
+                    order_data['created_at'] = str(order.created_at)
+                else:
+                    order_data['created_at'] = None
+                    
+                if hasattr(order, 'updated_at'):
+                    order_data['updated_at'] = str(order.updated_at)
+                else:
+                    order_data['updated_at'] = None
+                    
+                result.append(order_data)
+            except Exception as e:
+                logger.error(f"Error processing order {order}: {e}")
+                continue
+        
+        return result
     except Exception as e:
         logger.error(f"Error getting open orders: {e}")
         return []
@@ -210,19 +309,58 @@ def submit_market_order(
         # Submit order
         order = trading_client.submit_order(order_data)
         
-        logger.info(f"Market order submitted: {order.id} - {symbol} {qty} {side}")
+        # Extract order information safely
+        order_id = str(order.id) if hasattr(order, 'id') else ''
+        logger.info(f"Market order submitted: {order_id} - {symbol} {qty} {side}")
         
-        return {
-            'id': str(order.id),
-            'client_order_id': str(order.client_order_id) if order.client_order_id else None,
-            'symbol': str(order.symbol),
-            'qty': float(order.qty),
-            'side': str(order.side.name) if hasattr(order.side, 'name') else str(order.side),
+        # Build response dictionary with safe property extraction
+        result = {
+            'id': order_id,
+            'symbol': str(order.symbol) if hasattr(order, 'symbol') else symbol,
+            'qty': float(order.qty) if hasattr(order, 'qty') else float(qty),
             'type': 'market',
-            'time_in_force': str(order.time_in_force.name) if hasattr(order.time_in_force, 'name') else str(order.time_in_force),
-            'status': str(order.status.name) if hasattr(order.status, 'name') else str(order.status),
-            'created_at': str(order.submitted_at) if hasattr(order, 'submitted_at') else str(order.created_at)
         }
+        
+        # Add optional fields when available
+        if hasattr(order, 'client_order_id'):
+            result['client_order_id'] = str(order.client_order_id) if order.client_order_id else None
+        
+        # Handle side
+        if hasattr(order, 'side'):
+            if hasattr(order.side, 'name'):
+                result['side'] = str(order.side.name)
+            else:
+                result['side'] = str(order.side)
+        else:
+            result['side'] = side
+        
+        # Handle time in force
+        if hasattr(order, 'time_in_force'):
+            if hasattr(order.time_in_force, 'name'):
+                result['time_in_force'] = str(order.time_in_force.name)
+            else:
+                result['time_in_force'] = str(order.time_in_force)
+        else:
+            result['time_in_force'] = time_in_force
+        
+        # Handle status
+        if hasattr(order, 'status'):
+            if hasattr(order.status, 'name'):
+                result['status'] = str(order.status.name)
+            else:
+                result['status'] = str(order.status)
+        else:
+            result['status'] = 'unknown'
+        
+        # Handle timestamps
+        if hasattr(order, 'submitted_at'):
+            result['created_at'] = str(order.submitted_at)
+        elif hasattr(order, 'created_at'):
+            result['created_at'] = str(order.created_at)
+        else:
+            result['created_at'] = str(datetime.now().isoformat())
+        
+        return result
     except APIError as e:
         logger.error(f"API error submitting market order: {e}")
         return None
