@@ -1,0 +1,49 @@
+Here are a few ideas to make multi-ticker parsing more robust and a lot simpler:
+
+Split your text into “sections” by ticker header
+Instead of trying to hunt for start/end lines in ten different ways, use one regex to break the whole message into chunks. For example:
+section_re = re.compile(
+  r'(?ms)^\s*\d+\)\s+(?P<ticker>[A-Z]{1,5}):\s*'     # “1) SPY:”
+  r'(?P<body>.*?)(?=^\s*\d+\)\s+[A-Z]{1,5}:|\Z)',     # everything up to next “2) XXX:” or end
+  re.MULTILINE
+)
+
+for m in section_re.finditer(text):
+    symbol = m.group('ticker')
+    body   = m.group('body')
+    # now run your signal/bias extractors just on `body`
+This gives you an explicit ticker and its own body every time—no more guessing where one ends and the next begins.
+Normalize and annotate emojis before matching
+Emojis can be tricky in regex. Pre-process by replacing each emoji with a short placeholder, e.g.
+text = text.replace("🔼","[BREAKOUT]") \
+           .replace("🔻","[BREAKDOWN]") \
+           .replace("❌","[REJECTION]") \
+           .replace("🔄","[BOUNCE]")
+Then your patterns become simpler (and faster) since you’re matching ASCII tags.
+Use named-group, reusable patterns
+Instead of one giant inline regex per signal, define a small library of patterns:
+SIG_PATTERNS = {
+  'breakout':   re.compile(r'\[BREAKOUT\]\s*(?P<agg>Aggressive|Conservative)?\s*.*?(?P<price>\d+\.\d+)'),
+  'breakdown':  re.compile(r'\[BREAKDOWN\]\s*(?P<agg>Aggressive|Conservative)?\s*.*?(?P<price>\d+\.\d+)'),
+  # …etc…
+}
+Then in each section:
+
+for cat, pat in SIG_PATTERNS.items():
+    for m in pat.finditer(body):
+        # m.group('price'), m.group('agg')…
+Favor a clear 2-stage pipeline
+Stage 1: Section out each ticker + its substring
+Stage 2: Run a tiny, category-based extractor over that substring
+This separation means you never re-scan the whole message for every ticker, and each extractor only sees the relevant text.
+Boundary-check your tickers
+If you still need a fallback “find any all-caps word” approach, make sure you use \b[A-Z]{2,5}\b (and maybe check against a known universe of tickers) so you don’t accidentally pick up random words.
+Leverage a bit of NLP if your messages get really messy
+A tiny spaCy model with a custom “TICKER” entity or even a simple word-list lookup can help you avoid regex hell altogether.
+Putting it all together, your parser becomes:
+
+Normalize (dash types, emojis → tags)
+Split with one master regex into (ticker, body)
+Extract signals with a small dict of named-group patterns
+Extract bias the same way, scoping only to that body
+That should clean things up and make adding new signal types trivial. Let me know if you want a more concrete code snippet for any of these steps!
