@@ -40,6 +40,7 @@ class BiasDirectionEnum(enum.Enum):
 class SetupMessage(db.Model):
     """Represents a trading setup message containing one or more ticker setups."""
     __tablename__ = 'setups'
+    __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False)
@@ -57,6 +58,7 @@ class SetupMessage(db.Model):
 class TickerSetup(db.Model):
     """Represents a trading setup for a specific ticker symbol."""
     __tablename__ = 'ticker_setups'
+    __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
     symbol = db.Column(db.String(10), nullable=False)
@@ -76,6 +78,7 @@ class TickerSetup(db.Model):
 class Signal(db.Model):
     """Represents a trading signal for a ticker."""
     __tablename__ = 'signals'
+    __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
     ticker_setup_id = db.Column(db.Integer, db.ForeignKey('ticker_setups.id', ondelete='CASCADE'), nullable=False)
@@ -102,6 +105,7 @@ class Signal(db.Model):
 class SignalTarget(db.Model):
     """Represents a price target for a signal."""
     __tablename__ = 'signal_targets'
+    __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
     signal_id = db.Column(db.Integer, db.ForeignKey('signals.id', ondelete='CASCADE'), nullable=False)
@@ -119,6 +123,7 @@ class SignalTarget(db.Model):
 class Bias(db.Model):
     """Represents a market bias for a ticker."""
     __tablename__ = 'biases'
+    __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
     ticker_setup_id = db.Column(db.Integer, db.ForeignKey('ticker_setups.id', ondelete='CASCADE'), nullable=False)

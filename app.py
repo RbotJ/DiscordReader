@@ -68,33 +68,4 @@ db.init_app(app)
 if not ALPACA_API_KEY or not ALPACA_API_SECRET:
     logger.warning("Alpaca API credentials not set. Some features may not work.")
 
-# Define routes for the main application
-@app.route('/')
-def index():
-    """Render the main dashboard."""
-    return render_template('index.html')
-
-@app.route('/dashboard')
-def dashboard():
-    """Render the detailed dashboard."""
-    return render_template('dashboard.html')
-
-@app.route('/setup')
-def setup_form():
-    """Render the setup submission form."""
-    return render_template('setup_form.html')
-
-@app.route('/trading')
-def trading_dashboard():
-    """Render the trading dashboard."""
-    return render_template('trading.html')
-
-@app.route('/parser')
-def setup_parser():
-    """Render the setup parser UI."""
-    return render_template('setup_parser.html')
-
-@app.route('/webhook-tester')
-def webhook_tester():
-    """Render the webhook tester UI."""
-    return render_template('setup_webhook_tester.html')
+# Note: Routes are now defined in main.py to avoid duplication

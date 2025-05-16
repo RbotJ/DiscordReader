@@ -11,9 +11,8 @@ from sqlalchemy import (
     JSON
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
-from app import db
 import enum
+from common.db import db
 
 # Define Enum types
 class SignalCategoryEnum(enum.Enum):

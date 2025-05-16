@@ -4,6 +4,11 @@ Database Module
 This module provides a centralized SQLAlchemy database instance for the entire application.
 """
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import DeclarativeBase
 
-# Create a single SQLAlchemy instance to be used across the application
-db = SQLAlchemy()
+# Define SQLAlchemy base class
+class Base(DeclarativeBase):
+    pass
+
+# Initialize SQLAlchemy with our base class
+db = SQLAlchemy(model_class=Base)
