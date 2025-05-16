@@ -1,161 +1,153 @@
-import io from 'socket.io-client';
+/**
+ * WebSocket Service
+ * 
+ * This module provides functions to interact with the WebSocket server
+ */
+import { io } from 'socket.io-client';
+
+// Store event listeners and socket instance
+let socket = null;
+let eventHandlers = {};
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 /**
- * WebSocketService
- * Handles WebSocket connections and events
+ * Initialize the WebSocket connection
+ * @returns {Object} socket instance
  */
-class WebSocketService {
-  constructor() {
-    this.socket = null;
-    this.connected = false;
-    this.eventHandlers = {
-      'connect': [],
-      'disconnect': [],
-      'price_update': [],
-      'signal_triggered': [],
-      'trade_executed': [],
-      'error': []
-    };
+export const initializeSocket = () => {
+  if (socket) {
+    console.log('Socket already initialized');
+    return socket;
   }
-  
-  /**
-   * Initialize WebSocket connection
-   * @returns {Promise} Promise that resolves when connected
-   */
-  connect() {
-    return new Promise((resolve, reject) => {
-      try {
-        // If already connected, resolve immediately
-        if (this.socket && this.connected) {
-          resolve();
-          return;
-        }
-        
-        // Create a new socket instance
-        this.socket = io();
-        
-        // Set up connection event handlers
-        this.socket.on('connect', () => {
-          console.log('WebSocket connected');
-          this.connected = true;
-          this._notifyHandlers('connect');
-          resolve();
-        });
-        
-        this.socket.on('disconnect', () => {
-          console.log('WebSocket disconnected');
-          this.connected = false;
-          this._notifyHandlers('disconnect');
-        });
-        
-        this.socket.on('connect_error', (error) => {
-          console.error('WebSocket connection error:', error);
-          this._notifyHandlers('error', { message: 'Connection error', error });
-          reject(error);
-        });
-        
-        // Set up business event handlers
-        this.socket.on('price_update', (data) => {
-          this._notifyHandlers('price_update', data);
-        });
-        
-        this.socket.on('signal_triggered', (data) => {
-          this._notifyHandlers('signal_triggered', data);
-        });
-        
-        this.socket.on('trade_executed', (data) => {
-          this._notifyHandlers('trade_executed', data);
-        });
-        
-      } catch (error) {
-        console.error('WebSocket initialization error:', error);
-        reject(error);
-      }
-    });
-  }
-  
-  /**
-   * Disconnect WebSocket
-   */
-  disconnect() {
-    if (this.socket) {
-      this.socket.disconnect();
-    }
-  }
-  
-  /**
-   * Subscribe to ticker updates
-   * @param {Array} tickers - Array of ticker symbols to subscribe to
-   */
-  subscribeTickers(tickers) {
-    if (!this.socket || !this.connected) {
-      console.error('Cannot subscribe: WebSocket not connected');
-      return;
-    }
-    
-    this.socket.emit('subscribe_tickers', { tickers });
-    console.log('Subscribed to tickers:', tickers);
-  }
-  
-  /**
-   * Unsubscribe from ticker updates
-   * @param {Array} tickers - Array of ticker symbols to unsubscribe from
-   */
-  unsubscribeTickers(tickers) {
-    if (!this.socket || !this.connected) {
-      console.error('Cannot unsubscribe: WebSocket not connected');
-      return;
-    }
-    
-    this.socket.emit('unsubscribe_tickers', { tickers });
-    console.log('Unsubscribed from tickers:', tickers);
-  }
-  
-  /**
-   * Register event handler
-   * @param {string} event - Event name
-   * @param {function} handler - Event handler function
-   */
-  on(event, handler) {
-    if (!this.eventHandlers[event]) {
-      this.eventHandlers[event] = [];
-    }
-    
-    this.eventHandlers[event].push(handler);
-    return this;
-  }
-  
-  /**
-   * Remove event handler
-   * @param {string} event - Event name
-   * @param {function} handler - Event handler function to remove
-   */
-  off(event, handler) {
-    if (!this.eventHandlers[event]) return this;
-    
-    this.eventHandlers[event] = this.eventHandlers[event].filter(h => h !== handler);
-    return this;
-  }
-  
-  /**
-   * Notify all registered handlers for an event
-   * @param {string} event - Event name
-   * @param {any} data - Event data
-   * @private
-   */
-  _notifyHandlers(event, data) {
-    if (!this.eventHandlers[event]) return;
-    
-    this.eventHandlers[event].forEach(handler => {
-      try {
-        handler(data);
-      } catch (error) {
-        console.error(`Error in ${event} handler:`, error);
-      }
-    });
-  }
-}
 
-// Export as singleton
-const websocketService = new WebSocketService();
-export default websocketService;
+  console.log('Initializing WebSocket connection...');
+  
+  // Create socket instance with auto-reconnect
+  socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+  });
+
+  // Handle socket connection events
+  socket.on('connect', () => {
+    console.log('WebSocket connected');
+    reconnectAttempts = 0;
+    
+    // Trigger any registered connection handlers
+    triggerEvent('connect');
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log(`WebSocket disconnected: ${reason}`);
+    triggerEvent('disconnect', reason);
+  });
+
+  socket.on('connection_response', (data) => {
+    console.log('Socket connection response:', data);
+    triggerEvent('connection_response', data);
+  });
+
+  socket.on('subscription_response', (data) => {
+    console.log('Subscription response:', data);
+    triggerEvent('subscription_response', data);
+  });
+
+  socket.on('market_data', (data) => {
+    // Only log every 10th message to avoid console flooding
+    if (Math.random() < 0.1) {
+      console.log('Market data received:', data);
+    }
+    triggerEvent('market_data', data);
+  });
+
+  socket.on('signal_update', (data) => {
+    console.log('Signal update received:', data);
+    triggerEvent('signal_update', data);
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('Socket connection error:', error);
+    reconnectAttempts++;
+    triggerEvent('connect_error', error);
+    
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error('Maximum reconnect attempts reached. Please refresh the page.');
+      triggerEvent('max_reconnect_attempts');
+    }
+  });
+
+  return socket;
+};
+
+/**
+ * Subscribe to ticker updates
+ * @param {Array} tickers - Array of ticker symbols to subscribe to
+ */
+export const subscribeTickers = (tickers) => {
+  if (!socket) {
+    console.error('Socket not initialized. Call initializeSocket() first.');
+    return;
+  }
+
+  console.log('Subscribing to tickers:', tickers);
+  socket.emit('subscribe_tickers', { tickers });
+};
+
+/**
+ * Register an event handler
+ * @param {string} event - Event name
+ * @param {Function} handler - Event handler function
+ */
+export const on = (event, handler) => {
+  if (!eventHandlers[event]) {
+    eventHandlers[event] = [];
+  }
+  eventHandlers[event].push(handler);
+};
+
+/**
+ * Remove an event handler
+ * @param {string} event - Event name
+ * @param {Function} handler - Event handler function
+ */
+export const off = (event, handler) => {
+  if (!eventHandlers[event]) return;
+  
+  if (handler) {
+    eventHandlers[event] = eventHandlers[event].filter(h => h !== handler);
+  } else {
+    // If no handler provided, remove all handlers for this event
+    eventHandlers[event] = [];
+  }
+};
+
+/**
+ * Trigger an event
+ * @param {string} event - Event name
+ * @param {*} data - Event data
+ */
+const triggerEvent = (event, data) => {
+  if (!eventHandlers[event]) return;
+  
+  eventHandlers[event].forEach(handler => {
+    try {
+      handler(data);
+    } catch (error) {
+      console.error(`Error in ${event} handler:`, error);
+    }
+  });
+};
+
+/**
+ * Disconnect the WebSocket
+ */
+export const disconnect = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+    eventHandlers = {};
+  }
+};

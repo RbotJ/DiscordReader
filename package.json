@@ -14,10 +14,16 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@babel/core": "^7.27.1",
+    "@babel/preset-env": "^7.27.2",
+    "@babel/preset-react": "^7.27.1",
     "axios": "^1.9.0",
+    "babel-loader": "^10.0.0",
     "lightweight-charts": "^5.0.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "webpack": "^5.99.8",
+    "webpack-cli": "^6.0.1"
   }
 }

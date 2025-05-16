@@ -1,67 +1,104 @@
-import React, { useState, useEffect, useRef } from 'react';
-
 /**
  * EventLog component
- * Displays real-time event logs
  * 
- * @param {Object} props Component props
- * @param {Array} props.events Array of event objects
- * @param {number} props.maxEvents Maximum number of events to display
+ * Displays a scrollable log of market events, trades, and system messages
  */
-const EventLog = ({ events = [], maxEvents = 50 }) => {
-  const [visibleEvents, setVisibleEvents] = useState([]);
-  const logContainerRef = useRef(null);
+import React, { useEffect, useRef, useState } from 'react';
+
+const MAX_LOG_ENTRIES = 100;
+
+const EventLog = () => {
+  const [logs, setLogs] = useState([]);
+  const logEndRef = useRef(null);
   
-  // Update visible events when events prop changes
+  // Add a new log entry
+  const addLogEntry = (entry) => {
+    setLogs(prevLogs => {
+      // Keep only the most recent entries to prevent memory issues
+      const newLogs = [...prevLogs, entry].slice(-MAX_LOG_ENTRIES);
+      return newLogs;
+    });
+  };
+  
+  // Scroll to bottom when logs change
   useEffect(() => {
-    if (events.length === 0) return;
-    
-    // Keep only the most recent events, up to maxEvents
-    const updatedEvents = [...visibleEvents, ...events];
-    const trimmedEvents = updatedEvents.slice(-maxEvents);
-    
-    setVisibleEvents(trimmedEvents);
-  }, [events, maxEvents]);
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs]);
   
-  // Auto-scroll to the bottom when new events are added
+  // Method to add a new log message
+  const addLog = (type, message, data = null) => {
+    const timestamp = new Date().toISOString();
+    const entry = {
+      id: Date.now(),
+      timestamp,
+      type,
+      message,
+      data
+    };
+    
+    addLogEntry(entry);
+  };
+  
+  // Log entry component
+  const LogEntry = ({ entry }) => {
+    const { timestamp, type, message, data } = entry;
+    
+    // Format timestamp
+    const formattedTime = new Date(timestamp).toLocaleTimeString();
+    
+    // Get CSS class based on log type
+    const getTypeClass = () => {
+      switch (type) {
+        case 'error':
+          return 'text-danger';
+        case 'warning':
+          return 'text-warning';
+        case 'success':
+          return 'text-success';
+        case 'info':
+          return 'text-info';
+        case 'trade':
+          return 'text-primary';
+        default:
+          return '';
+      }
+    };
+    
+    return (
+      <div className={`log-entry small ${getTypeClass()}`}>
+        <span className="log-timestamp text-muted">[{formattedTime}]</span>
+        <span className="log-message ms-2">{message}</span>
+        {data && (
+          <span className="log-data ms-2 text-muted">
+            {typeof data === 'string' ? data : JSON.stringify(data)}
+          </span>
+        )}
+      </div>
+    );
+  };
+  
+  // Clear the log
+  const clearLog = () => {
+    setLogs([]);
+    addLog('info', 'Log cleared');
+  };
+  
+  // Expose methods to parent components
+  React.useImperativeHandle(
+    React.useRef(),
+    () => ({
+      addLog,
+      clearLog
+    })
+  );
+  
+  // Add test logs on initial render
   useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [visibleEvents]);
-  
-  // Clear all events
-  const handleClear = () => {
-    setVisibleEvents([]);
-  };
-  
-  // Get the appropriate badge class based on event type
-  const getEventBadgeClass = (type) => {
-    switch (type.toLowerCase()) {
-      case 'error':
-        return 'bg-danger';
-      case 'warning':
-        return 'bg-warning';
-      case 'success':
-        return 'bg-success';
-      case 'info':
-        return 'bg-info';
-      case 'trade':
-        return 'bg-primary';
-      case 'signal':
-        return 'bg-secondary';
-      default:
-        return 'bg-secondary';
-    }
-  };
-  
-  // Format timestamp
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return '';
-    
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
+    addLog('info', 'Event log initialized');
+    addLog('info', 'Waiting for market data...');
+  }, []);
   
   return (
     <div className="card mb-4">
@@ -69,42 +106,22 @@ const EventLog = ({ events = [], maxEvents = 50 }) => {
         <h5 className="mb-0">Event Log</h5>
         <button 
           className="btn btn-sm btn-outline-secondary"
-          onClick={handleClear}
+          onClick={clearLog}
         >
           Clear
         </button>
       </div>
-      <div 
-        className="card-body p-0 event-log" 
-        ref={logContainerRef}
-        style={{ maxHeight: '300px', overflowY: 'auto' }}
-      >
-        {visibleEvents.length === 0 ? (
-          <div className="text-center p-3 text-muted">
-            No events to display
-          </div>
-        ) : (
-          <ul className="list-group list-group-flush">
-            {visibleEvents.map((event, index) => (
-              <li key={index} className="list-group-item py-1 px-3 border-bottom">
-                <span className="text-muted small me-2">
-                  {formatTimestamp(event.timestamp)}
-                </span>
-                <span className={`badge ${getEventBadgeClass(event.type)} me-2`}>
-                  {event.type}
-                </span>
-                <span>{event.message}</span>
-                {event.data && (
-                  <span className="text-muted small ms-2">
-                    {typeof event.data === 'object' 
-                      ? JSON.stringify(event.data) 
-                      : event.data.toString()}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="card-body p-2">
+        <div className="event-log bg-dark p-2 rounded" style={{ height: '200px', overflowY: 'auto' }}>
+          {logs.length === 0 ? (
+            <div className="text-muted text-center p-3">No events</div>
+          ) : (
+            logs.map(entry => (
+              <LogEntry key={entry.id} entry={entry} />
+            ))
+          )}
+          <div ref={logEndRef} />
+        </div>
       </div>
     </div>
   );

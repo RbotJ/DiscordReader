@@ -1,323 +1,324 @@
+/**
+ * ChartCard Component
+ * 
+ * This component displays a candlestick chart using lightweight-charts
+ * It shows price data, triggers, and targets for a given ticker
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
-import apiService from '../services/apiService';
+import { fetchCandles, fetchSignals } from '../services/apiService';
 
-/**
- * ChartCard component
- * Displays a ticker chart with trigger and target lines
- * 
- * @param {Object} props Component props
- * @param {string} props.ticker Ticker symbol
- * @param {string} props.status Card status (monitoring, inTrade, closed)
- * @param {Object} props.signal Signal data containing trigger and target prices
- */
-const ChartCard = ({ ticker, status = 'monitoring', signal = null, onEvent }) => {
+// Card states
+const CARD_STATES = {
+  MONITORING: 'monitoring',
+  IN_TRADE: 'inTrade',
+  CLOSED: 'closed'
+};
+
+const ChartCard = ({ ticker, onClose }) => {
   const chartContainerRef = useRef(null);
-  const chartInstanceRef = useRef(null);
-  const candleSeriesRef = useRef(null);
+  const chartRef = useRef(null);
+  const candlestickSeriesRef = useRef(null);
   const triggerLineRef = useRef(null);
   const targetLinesRef = useRef([]);
-  
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState(CARD_STATES.MONITORING);
+  const [timeframe, setTimeframe] = useState('1min');
+  const [signal, setSignal] = useState(null);
+  const [lastPrice, setLastPrice] = useState(null);
   const [error, setError] = useState(null);
-  const [currentPrice, setCurrentPrice] = useState(null);
-  const [cardStatus, setCardStatus] = useState(status);
   
-  // Status colors
-  const statusColors = {
-    monitoring: {
-      headerClass: 'bg-secondary',
-      headerText: 'Monitoring',
-      borderClass: 'border-secondary'
-    },
-    inTrade: {
-      headerClass: 'bg-primary',
-      headerText: 'In Trade',
-      borderClass: 'border-primary'
-    },
-    closed: {
-      headerClass: 'bg-success',
-      headerText: 'Closed',
-      borderClass: 'border-success'
-    }
-  };
-  
-  // Update card status when status prop changes
+  // Initialize chart
   useEffect(() => {
-    setCardStatus(status);
-  }, [status]);
-  
-  // Clean up chart on unmount
-  useEffect(() => {
+    if (!chartContainerRef.current) return;
+    
+    // Create chart instance
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: 300,
+      layout: {
+        background: { color: '#1e1e2e' },
+        textColor: '#d9d9d9',
+      },
+      grid: {
+        vertLines: { color: '#2e2e3e' },
+        horzLines: { color: '#2e2e3e' },
+      },
+      crosshair: {
+        mode: 1,
+        vertLine: {
+          width: 1,
+          color: '#4f8bff',
+          style: 0,
+        },
+        horzLine: {
+          width: 1,
+          color: '#4f8bff',
+          style: 0,
+        },
+      },
+      rightPriceScale: {
+        borderColor: '#2e2e3e',
+      },
+      timeScale: {
+        borderColor: '#2e2e3e',
+        timeVisible: true,
+      },
+    });
+    
+    // Add candlestick series
+    const candlestickSeries = chart.addCandlestickSeries({
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderVisible: false,
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350',
+    });
+    
+    // Save refs
+    chartRef.current = chart;
+    candlestickSeriesRef.current = candlestickSeries;
+    
+    // Handle resize
+    const handleResize = () => {
+      if (chartRef.current) {
+        chartRef.current.applyOptions({ 
+          width: chartContainerRef.current.clientWidth 
+        });
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    // Load initial data
+    loadChartData();
+    
+    // Load signal data
+    loadSignalData();
+    
     return () => {
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.remove();
+      window.removeEventListener('resize', handleResize);
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
       }
     };
-  }, []);
+  }, [ticker]);
   
-  // Initialize chart when component mounts or ticker changes
+  // Effect for timeframe changes
   useEffect(() => {
-    if (!ticker) return;
-    
-    const initializeChart = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch candle data for the ticker
-        const candles = await apiService.getCandles(ticker);
-        
-        // Create chart instance
-        if (!chartInstanceRef.current && chartContainerRef.current) {
-          // Create chart
-          const chart = createChart(chartContainerRef.current, {
-            layout: {
-              background: { color: '#1e222d' },
-              textColor: '#d1d4dc',
-            },
-            grid: {
-              vertLines: { color: '#2e3241' },
-              horzLines: { color: '#2e3241' },
-            },
-            width: chartContainerRef.current.clientWidth,
-            height: 300,
-            timeScale: {
-              timeVisible: true,
-              secondsVisible: false,
-            },
-          });
-          
-          // Handle chart resizing
-          const handleResize = () => {
-            if (chartContainerRef.current && chart) {
-              chart.applyOptions({
-                width: chartContainerRef.current.clientWidth
-              });
-            }
-          };
-          
-          window.addEventListener('resize', handleResize);
-          
-          // Create candlestick series
-          const candleSeries = chart.addCandlestickSeries({
-            upColor: '#26a69a',
-            downColor: '#ef5350',
-            borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
-          });
-          
-          chartInstanceRef.current = chart;
-          candleSeriesRef.current = candleSeries;
-          
-          // Set up a cleanup function to remove event listener
-          return () => {
-            window.removeEventListener('resize', handleResize);
-          };
-        }
-        
-        // Update candle data
-        if (candleSeriesRef.current && candles && candles.length > 0) {
-          const formattedCandles = candles.map(candle => ({
-            time: candle.time,
-            open: candle.open,
-            high: candle.high,
-            low: candle.low,
-            close: candle.close
-          }));
-          
-          candleSeriesRef.current.setData(formattedCandles);
-          
-          // Update current price
-          if (formattedCandles.length > 0) {
-            const latestCandle = formattedCandles[formattedCandles.length - 1];
-            setCurrentPrice(latestCandle.close);
-          }
-        }
-        
-        // If we have signal data, add trigger and target lines
-        if (signal && candleSeriesRef.current) {
-          // Add trigger price line
-          if (signal.trigger && signal.trigger.price) {
-            const triggerPrice = parseFloat(signal.trigger.price);
-            
-            if (!triggerLineRef.current) {
-              const triggerLine = candleSeriesRef.current.createPriceLine({
-                price: triggerPrice,
-                color: '#ff9800',
-                lineWidth: 2,
-                lineStyle: 2, // dashed
-                axisLabelVisible: true,
-                title: 'Trigger',
-              });
-              
-              triggerLineRef.current = triggerLine;
-            } else {
-              triggerLineRef.current.applyOptions({
-                price: triggerPrice
-              });
-            }
-          }
-          
-          // Add target price lines
-          if (signal.targets && Array.isArray(signal.targets) && signal.targets.length > 0) {
-            // Remove existing target lines
-            targetLinesRef.current.forEach(line => {
-              if (line && candleSeriesRef.current) {
-                candleSeriesRef.current.removePriceLine(line);
-              }
-            });
-            
-            targetLinesRef.current = [];
-            
-            // Add new target lines
-            signal.targets.forEach((target, index) => {
-              if (target && target.price) {
-                const targetPrice = parseFloat(target.price);
-                
-                const targetLine = candleSeriesRef.current.createPriceLine({
-                  price: targetPrice,
-                  color: '#4caf50',
-                  lineWidth: 2,
-                  lineStyle: 1, // solid
-                  axisLabelVisible: true,
-                  title: `Target ${index + 1}`,
-                });
-                
-                targetLinesRef.current.push(targetLine);
-              }
-            });
-          }
-        }
-        
-        // Log event
-        if (onEvent) {
-          onEvent({
-            type: 'info',
-            message: `Chart for ${ticker} loaded`,
-            timestamp: new Date().toISOString(),
-          });
-        }
-        
-        setError(null);
-      } catch (err) {
-        console.error('Error loading chart data:', err);
-        setError(`Failed to load chart for ${ticker}`);
-        
-        // Log error event
-        if (onEvent) {
-          onEvent({
-            type: 'error',
-            message: `Failed to load chart for ${ticker}`,
-            data: err.message,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      } finally {
-        setLoading(false);
+    loadChartData();
+  }, [timeframe]);
+  
+  // Load chart data
+  const loadChartData = async () => {
+    try {
+      const candleData = await fetchCandles(ticker, timeframe);
+      
+      if (!candleData || candleData.length === 0) {
+        setError('No candle data available');
+        return;
       }
-    };
+      
+      setError(null);
+      
+      // Format data for lightweight-charts
+      const formattedData = candleData.map(candle => ({
+        time: new Date(candle.timestamp).getTime() / 1000,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close
+      }));
+      
+      if (candlestickSeriesRef.current) {
+        candlestickSeriesRef.current.setData(formattedData);
+      }
+      
+      // Update last price
+      if (formattedData.length > 0) {
+        setLastPrice(formattedData[formattedData.length - 1].close);
+      }
+    } catch (err) {
+      console.error('Error loading chart data:', err);
+      setError('Failed to load chart data');
+    }
+  };
+  
+  // Load signal data
+  const loadSignalData = async () => {
+    try {
+      const signalData = await fetchSignals(ticker);
+      
+      if (!signalData) {
+        // No signals available, stay in monitoring state
+        setState(CARD_STATES.MONITORING);
+        return;
+      }
+      
+      setSignal(signalData);
+      
+      // Add trigger line
+      if (chartRef.current && signalData.trigger) {
+        const triggerPrice = signalData.trigger.price;
+        
+        // Remove existing trigger line
+        if (triggerLineRef.current) {
+          chartRef.current.removePriceLine(triggerLineRef.current);
+        }
+        
+        // Add new trigger line
+        const triggerLine = candlestickSeriesRef.current.createPriceLine({
+          price: triggerPrice,
+          color: '#f5a623',
+          lineWidth: 2,
+          lineStyle: 1, // Dashed
+          axisLabelVisible: true,
+          title: `Trigger: ${signalData.category}`
+        });
+        
+        triggerLineRef.current = triggerLine;
+        
+        // Add target lines
+        if (signalData.targets && Array.isArray(signalData.targets)) {
+          // Remove existing target lines
+          targetLinesRef.current.forEach(line => {
+            chartRef.current.removePriceLine(line);
+          });
+          
+          targetLinesRef.current = [];
+          
+          // Add new target lines
+          signalData.targets.forEach((target, index) => {
+            const targetLine = candlestickSeriesRef.current.createPriceLine({
+              price: target.price,
+              color: '#4caf50',
+              lineWidth: 1,
+              lineStyle: 0, // Solid
+              axisLabelVisible: true,
+              title: `Target ${index + 1}`
+            });
+            
+            targetLinesRef.current.push(targetLine);
+          });
+        }
+        
+        // Update card state based on price
+        updateCardState(lastPrice, triggerPrice, signalData);
+      }
+    } catch (err) {
+      console.error('Error loading signal data:', err);
+    }
+  };
+  
+  // Update card state based on price
+  const updateCardState = (price, triggerPrice, signalData) => {
+    if (!price || !triggerPrice) return;
     
-    initializeChart();
-  }, [ticker, signal]);
-  
-  // Handle button actions
-  const handleAction = (action) => {
-    switch (action) {
-      case 'enter':
-        setCardStatus('inTrade');
-        // Log event
-        if (onEvent) {
-          onEvent({
-            type: 'trade',
-            message: `Entered trade for ${ticker}`,
-            timestamp: new Date().toISOString(),
-          });
-        }
-        break;
-      case 'exit':
-        setCardStatus('closed');
-        // Log event
-        if (onEvent) {
-          onEvent({
-            type: 'trade',
-            message: `Exited trade for ${ticker}`,
-            timestamp: new Date().toISOString(),
-          });
-        }
-        break;
-      case 'reset':
-        setCardStatus('monitoring');
-        // Log event
-        if (onEvent) {
-          onEvent({
-            type: 'info',
-            message: `Reset status for ${ticker}`,
-            timestamp: new Date().toISOString(),
-          });
-        }
-        break;
-      default:
-        break;
+    // Determine if the trigger has been hit
+    const category = signalData.category.toLowerCase();
+    const comparison = signalData.comparison.toLowerCase();
+    
+    let triggerHit = false;
+    
+    if (category === 'breakout' && comparison === 'above' && price > triggerPrice) {
+      triggerHit = true;
+    } else if (category === 'breakdown' && comparison === 'below' && price < triggerPrice) {
+      triggerHit = true;
+    } else if (category === 'rejection' && ((comparison === 'above' && price > triggerPrice) || 
+              (comparison === 'below' && price < triggerPrice))) {
+      triggerHit = true;
+    } else if (category === 'bounce' && ((comparison === 'above' && price > triggerPrice) || 
+              (comparison === 'below' && price < triggerPrice))) {
+      triggerHit = true;
+    }
+    
+    // Update state
+    if (triggerHit) {
+      setState(CARD_STATES.IN_TRADE);
+    } else {
+      setState(CARD_STATES.MONITORING);
     }
   };
   
-  // Get action buttons based on current status
-  const getActionButtons = () => {
-    switch (cardStatus) {
-      case 'monitoring':
-        return (
-          <button 
-            className="btn btn-sm btn-success"
-            onClick={() => handleAction('enter')}
-          >
-            Enter Trade
-          </button>
-        );
-      case 'inTrade':
-        return (
-          <button 
-            className="btn btn-sm btn-warning"
-            onClick={() => handleAction('exit')}
-          >
-            Exit Trade
-          </button>
-        );
-      case 'closed':
-        return (
-          <button 
-            className="btn btn-sm btn-secondary"
-            onClick={() => handleAction('reset')}
-          >
-            Reset
-          </button>
-        );
-      default:
-        return null;
+  // Handle market data update
+  const handleMarketUpdate = (data) => {
+    if (data.ticker !== ticker) return;
+    
+    setLastPrice(data.price);
+    
+    // Update card state if we have a signal
+    if (signal && signal.trigger) {
+      updateCardState(data.price, signal.trigger.price, signal);
     }
   };
+  
+  // Get class based on state
+  const getCardClass = () => {
+    switch (state) {
+      case CARD_STATES.MONITORING:
+        return 'border-secondary';
+      case CARD_STATES.IN_TRADE:
+        return 'border-primary';
+      case CARD_STATES.CLOSED:
+        return 'border-success';
+      default:
+        return 'border-secondary';
+    }
+  };
+  
+  // Handle timeframe change
+  const handleTimeframeChange = (e) => {
+    setTimeframe(e.target.value);
+  };
+  
+  // Get badge text and class for state
+  const getStateBadge = () => {
+    switch (state) {
+      case CARD_STATES.MONITORING:
+        return { text: 'Monitoring', className: 'bg-secondary' };
+      case CARD_STATES.IN_TRADE:
+        return { text: 'In Trade', className: 'bg-primary' };
+      case CARD_STATES.CLOSED:
+        return { text: 'Closed', className: 'bg-success' };
+      default:
+        return { text: 'Unknown', className: 'bg-secondary' };
+    }
+  };
+  
+  const badge = getStateBadge();
   
   return (
-    <div className={`card mb-4 ${statusColors[cardStatus]?.borderClass || 'border-secondary'}`}>
-      <div className={`card-header ${statusColors[cardStatus]?.headerClass || 'bg-secondary'} text-white d-flex justify-content-between align-items-center`}>
+    <div className={`card mb-4 ${getCardClass()}`}>
+      <div className="card-header d-flex justify-content-between align-items-center">
         <div>
-          <h5 className="mb-0">{ticker}</h5>
-          <span className="badge bg-light text-dark ms-2">
-            {statusColors[cardStatus]?.headerText || 'Monitoring'}
-          </span>
+          <h5 className="mb-0 d-inline">{ticker}</h5>
+          <span className={`badge ms-2 ${badge.className}`}>{badge.text}</span>
+          {lastPrice && (
+            <span className="ms-2">${parseFloat(lastPrice).toFixed(2)}</span>
+          )}
         </div>
-        {!loading && currentPrice && (
-          <h5 className="mb-0">${currentPrice.toFixed(2)}</h5>
-        )}
+        <div className="d-flex">
+          <select 
+            className="form-select form-select-sm me-2" 
+            value={timeframe} 
+            onChange={handleTimeframeChange}
+          >
+            <option value="1min">1 Min</option>
+            <option value="5min">5 Min</option>
+            <option value="15min">15 Min</option>
+            <option value="1hour">1 Hour</option>
+            <option value="1day">Daily</option>
+          </select>
+          <button 
+            className="btn btn-sm btn-outline-danger" 
+            onClick={onClose}
+          >
+            <i className="bi bi-x-lg"></i>
+          </button>
+        </div>
       </div>
       <div className="card-body p-0">
-        {loading ? (
-          <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
-            <div className="spinner-border text-primary" role="status">
-              <span className="visually-hidden">Loading...</span>
-            </div>
-          </div>
-        ) : error ? (
+        {error ? (
           <div className="alert alert-danger m-3">
             {error}
           </div>
@@ -325,21 +326,27 @@ const ChartCard = ({ ticker, status = 'monitoring', signal = null, onEvent }) =>
           <div 
             ref={chartContainerRef} 
             className="chart-container"
-          />
+          ></div>
         )}
       </div>
-      <div className="card-footer d-flex justify-content-between align-items-center">
-        <div>
-          {signal && (
-            <small className="text-muted">
-              {signal.category} {signal.aggressiveness} | Trigger: ${signal.trigger?.price}
-            </small>
-          )}
+      {signal && (
+        <div className="card-footer">
+          <div className="d-flex justify-content-between small">
+            <span>
+              <strong>Signal:</strong> {signal.category} {signal.comparison}
+            </span>
+            <span>
+              <strong>Trigger:</strong> ${signal.trigger?.price?.toFixed(2)}
+            </span>
+            <span>
+              <strong>Targets:</strong> 
+              {signal.targets?.map((target, i) => 
+                <span key={i} className="ms-1">${target.price.toFixed(2)}{i < signal.targets.length - 1 ? ',' : ''}</span>
+              )}
+            </span>
+          </div>
         </div>
-        <div>
-          {getActionButtons()}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

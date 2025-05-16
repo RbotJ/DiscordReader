@@ -1,31 +1,30 @@
-import React, { useEffect, useState } from 'react';
-import apiService from '../services/apiService';
-
 /**
  * PositionsTable component
- * Displays current positions in a table format
+ * 
+ * Displays a table of current positions with key metrics
  */
+import React, { useEffect, useState } from 'react';
+import { fetchPositions } from '../services/apiService';
+
 const PositionsTable = () => {
   const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // Load positions on component mount
+
   useEffect(() => {
     loadPositions();
-    
-    // Set up a refresh interval (every 60 seconds)
-    const intervalId = setInterval(loadPositions, 60000);
-    
-    return () => clearInterval(intervalId);
+
+    // Refresh positions every 60 seconds
+    const refreshInterval = setInterval(loadPositions, 60000);
+
+    return () => clearInterval(refreshInterval);
   }, []);
-  
-  // Load positions from API
+
   const loadPositions = async () => {
     try {
       setLoading(true);
-      const data = await apiService.getPositions();
-      setPositions(data);
+      const data = await fetchPositions();
+      setPositions(data || []);
       setError(null);
     } catch (err) {
       console.error('Error loading positions:', err);
@@ -34,117 +33,98 @@ const PositionsTable = () => {
       setLoading(false);
     }
   };
-  
-  // Handle close position action
-  const handleClosePosition = async (positionId) => {
-    if (window.confirm('Are you sure you want to close this position?')) {
-      try {
-        // In a real app, this would call an API to close the position
-        console.log('Closing position:', positionId);
-        await loadPositions();
-      } catch (err) {
-        console.error('Error closing position:', err);
-      }
-    }
+
+  // Format currency values
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-US', { 
+      style: 'currency', 
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2 
+    }).format(value);
   };
-  
-  // Format profit/loss as a string with color class
-  const formatPL = (pl) => {
-    const isPositive = pl >= 0;
-    const formattedValue = isPositive ? `+$${pl.toFixed(2)}` : `-$${Math.abs(pl).toFixed(2)}`;
-    const colorClass = isPositive ? 'text-success' : 'text-danger';
-    
-    return { value: formattedValue, class: colorClass };
+
+  // Format percentage values
+  const formatPercent = (value) => {
+    return new Intl.NumberFormat('en-US', { 
+      style: 'percent', 
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2 
+    }).format(value / 100);
   };
-  
-  // Format profit/loss percentage as a string with color class
-  const formatPLPercent = (plPercent) => {
-    const isPositive = plPercent >= 0;
-    const formattedValue = isPositive ? `+${plPercent.toFixed(2)}%` : `-${Math.abs(plPercent).toFixed(2)}%`;
-    const colorClass = isPositive ? 'text-success' : 'text-danger';
-    
-    return { value: formattedValue, class: colorClass };
+
+  // Get style for profit/loss values
+  const getProfitLossClass = (value) => {
+    if (value > 0) return 'text-success';
+    if (value < 0) return 'text-danger';
+    return '';
   };
-  
+
+  const handleRefresh = () => {
+    loadPositions();
+  };
+
   return (
     <div className="card mb-4">
       <div className="card-header d-flex justify-content-between align-items-center">
-        <h5 className="mb-0">Current Positions</h5>
+        <h5 className="mb-0">Open Positions</h5>
         <button 
           className="btn btn-sm btn-outline-secondary" 
-          onClick={loadPositions}
+          onClick={handleRefresh}
           disabled={loading}
         >
           {loading ? (
-            <>
-              <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-              Loading...
-            </>
+            <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
           ) : (
-            <>
-              <i className="bi bi-arrow-repeat me-1"></i>
-              Refresh
-            </>
+            <i className="bi bi-arrow-clockwise me-1"></i>
           )}
+          Refresh
         </button>
       </div>
-      <div className="card-body">
+      <div className="card-body p-0">
         {error && (
-          <div className="alert alert-danger">
+          <div className="alert alert-danger m-3">
             {error}
           </div>
         )}
-        
-        <div className="table-responsive">
-          <table className="table table-hover">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Quantity</th>
-                <th>Entry Price</th>
-                <th>Current Price</th>
-                <th>Market Value</th>
-                <th>P/L</th>
-                <th>P/L %</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.length === 0 ? (
+        {positions.length === 0 && !loading && !error ? (
+          <div className="p-4 text-center text-muted">
+            <p>No open positions</p>
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="table table-hover table-striped mb-0">
+              <thead>
                 <tr>
-                  <td colSpan="8" className="text-center py-3">
-                    {loading ? 'Loading positions...' : 'No positions found'}
-                  </td>
+                  <th>Symbol</th>
+                  <th>Quantity</th>
+                  <th>Avg Entry</th>
+                  <th>Current</th>
+                  <th>Market Value</th>
+                  <th>P/L</th>
+                  <th>P/L %</th>
                 </tr>
-              ) : (
-                positions.map((position) => {
-                  const pl = formatPL(position.unrealized_pl);
-                  const plPercent = formatPLPercent(position.unrealized_plpc);
-                  
-                  return (
-                    <tr key={position.symbol}>
-                      <td>{position.symbol}</td>
-                      <td>{position.qty}</td>
-                      <td>${position.avg_entry_price.toFixed(2)}</td>
-                      <td>${position.current_price.toFixed(2)}</td>
-                      <td>${position.market_value.toFixed(2)}</td>
-                      <td className={pl.class}>{pl.value}</td>
-                      <td className={plPercent.class}>{plPercent.value}</td>
-                      <td>
-                        <button 
-                          className="btn btn-sm btn-danger"
-                          onClick={() => handleClosePosition(position.symbol)}
-                        >
-                          Close
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {positions.map((position) => (
+                  <tr key={position.symbol}>
+                    <td>{position.symbol}</td>
+                    <td>{parseFloat(position.qty).toFixed(2)}</td>
+                    <td>{formatCurrency(position.avg_entry_price)}</td>
+                    <td>{formatCurrency(position.current_price)}</td>
+                    <td>{formatCurrency(position.market_value)}</td>
+                    <td className={getProfitLossClass(position.unrealized_pl)}>
+                      {formatCurrency(position.unrealized_pl)}
+                    </td>
+                    <td className={getProfitLossClass(position.unrealized_plpc)}>
+                      {formatPercent(position.unrealized_plpc)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
