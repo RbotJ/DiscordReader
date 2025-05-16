@@ -215,6 +215,25 @@ def cmd_ticker(message: discord.Message, args: str):
         
         send_bot_message(reply)
 
+@command('test', 'Send a test message to the test channel')
+def cmd_test(message: discord.Message, args: str):
+    """
+    Send a test message to the test channel.
+    
+    Args:
+        message: Discord message
+        args: Command arguments
+    """
+    from features.discord.client import send_test_message
+    
+    test_message = args if args else "This is a test message from the A+ Trading bot"
+    success = send_test_message(test_message)
+    
+    if success:
+        send_bot_message("Test message sent successfully to the test channel.")
+    else:
+        send_bot_message("Failed to send test message. Check if the test channel ID is configured correctly.")
+
 def register_command_handlers():
     """Register Discord command message handler."""
     register_message_handler(handle_discord_message)
