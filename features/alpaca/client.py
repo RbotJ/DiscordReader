@@ -6,17 +6,15 @@ for paper trading and market data.
 """
 import os
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime, date, timedelta
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
-    MarketOrderRequest, LimitOrderRequest, StopOrderRequest,
-    StopLimitOrderRequest, GetOrdersRequest
+    MarketOrderRequest, LimitOrderRequest, GetOrdersRequest
 )
-from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.live import StockDataStream
 from alpaca.data.requests import StockBarsRequest, StockQuotesRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.common.exceptions import APIError
@@ -31,11 +29,10 @@ ALPACA_API_SECRET = os.environ.get('ALPACA_API_SECRET')
 # Global clients
 trading_client = None
 historical_client = None
-data_stream = None
 
 def initialize_clients():
     """Initialize Alpaca clients if credentials are available."""
-    global trading_client, historical_client, data_stream
+    global trading_client, historical_client
     
     if not ALPACA_API_KEY or not ALPACA_API_SECRET:
         logger.warning("Alpaca API credentials not found in environment variables")
@@ -47,9 +44,6 @@ def initialize_clients():
         
         # Initialize historical data client
         historical_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
-        
-        # Initialize real-time data stream
-        data_stream = StockDataStream(ALPACA_API_KEY, ALPACA_API_SECRET)
         
         logger.info("Alpaca clients initialized successfully")
         return True
@@ -71,15 +65,15 @@ def get_account_info() -> Dict:
     try:
         account = trading_client.get_account()
         return {
-            'id': account.id,
-            'status': account.status,
-            'equity': account.equity,
-            'cash': account.cash,
-            'buying_power': account.buying_power,
-            'position_market_value': account.position_market_value,
-            'portfolio_value': account.portfolio_value,
-            'trading_blocked': account.trading_blocked,
-            'pattern_day_trader': account.pattern_day_trader
+            'id': str(account.account_id) if hasattr(account, 'account_id') else str(account.id),
+            'status': str(account.status),
+            'equity': float(account.equity),
+            'cash': float(account.cash),
+            'buying_power': float(account.buying_power),
+            'position_market_value': float(account.long_market_value - account.short_market_value),
+            'portfolio_value': float(account.portfolio_value),
+            'trading_blocked': bool(account.trading_blocked),
+            'pattern_day_trader': bool(account.pattern_day_trader)
         }
     except Exception as e:
         logger.error(f"Error getting account info: {e}")
@@ -99,15 +93,15 @@ def get_positions() -> List[Dict]:
     try:
         positions = trading_client.get_all_positions()
         return [{
-            'symbol': position.symbol,
-            'qty': position.qty,
-            'market_value': position.market_value,
-            'avg_entry_price': position.avg_entry_price,
-            'side': position.side,
-            'unrealized_pl': position.unrealized_pl,
-            'unrealized_plpc': position.unrealized_plpc,
-            'current_price': position.current_price
-        } for position in positions]
+            'symbol': str(pos.symbol),
+            'qty': float(pos.qty),
+            'market_value': float(pos.market_value),
+            'avg_entry_price': float(pos.avg_entry_price),
+            'side': 'long' if float(pos.qty) > 0 else 'short',
+            'unrealized_pl': float(pos.unrealized_pl),
+            'unrealized_plpc': float(pos.unrealized_plpc),
+            'current_price': float(pos.current_price)
+        } for pos in positions]
     except Exception as e:
         logger.error(f"Error getting positions: {e}")
         return []
@@ -124,20 +118,20 @@ def get_open_orders() -> List[Dict]:
         return []
     
     try:
-        orders = trading_client.get_orders(GetOrdersRequest(status='open'))
+        orders = trading_client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN))
         return [{
-            'id': order.id,
-            'symbol': order.symbol,
-            'qty': order.qty,
-            'filled_qty': order.filled_qty,
-            'side': order.side,
-            'type': order.type,
-            'time_in_force': order.time_in_force,
-            'limit_price': order.limit_price,
-            'stop_price': order.stop_price,
-            'status': order.status,
-            'created_at': order.created_at,
-            'updated_at': order.updated_at
+            'id': str(order.id),
+            'symbol': str(order.symbol),
+            'qty': float(order.qty),
+            'filled_qty': float(order.filled_qty),
+            'side': str(order.side.name) if hasattr(order.side, 'name') else str(order.side),
+            'type': str(order.order_type.name) if hasattr(order.order_type, 'name') else str(order.order_type),
+            'time_in_force': str(order.time_in_force.name) if hasattr(order.time_in_force, 'name') else str(order.time_in_force),
+            'limit_price': float(order.limit_price) if hasattr(order, 'limit_price') and order.limit_price else None,
+            'stop_price': float(order.stop_price) if hasattr(order, 'stop_price') and order.stop_price else None,
+            'status': str(order.status.name) if hasattr(order.status, 'name') else str(order.status),
+            'created_at': str(order.submitted_at) if hasattr(order, 'submitted_at') else str(order.created_at),
+            'updated_at': str(order.updated_at) if hasattr(order, 'updated_at') else None
         } for order in orders]
     except Exception as e:
         logger.error(f"Error getting open orders: {e}")
@@ -195,15 +189,15 @@ def submit_market_order(
         logger.info(f"Market order submitted: {order.id} - {symbol} {qty} {side}")
         
         return {
-            'id': order.id,
-            'client_order_id': order.client_order_id,
-            'symbol': order.symbol,
-            'qty': order.qty,
-            'side': order.side,
-            'type': order.type,
-            'time_in_force': order.time_in_force,
-            'status': order.status,
-            'created_at': order.created_at
+            'id': str(order.id),
+            'client_order_id': str(order.client_order_id) if order.client_order_id else None,
+            'symbol': str(order.symbol),
+            'qty': float(order.qty),
+            'side': str(order.side.name) if hasattr(order.side, 'name') else str(order.side),
+            'type': 'market',
+            'time_in_force': str(order.time_in_force.name) if hasattr(order.time_in_force, 'name') else str(order.time_in_force),
+            'status': str(order.status.name) if hasattr(order.status, 'name') else str(order.status),
+            'created_at': str(order.submitted_at) if hasattr(order, 'submitted_at') else str(order.created_at)
         }
     except APIError as e:
         logger.error(f"API error submitting market order: {e}")
@@ -267,16 +261,16 @@ def submit_limit_order(
         logger.info(f"Limit order submitted: {order.id} - {symbol} {qty} {side} @ {limit_price}")
         
         return {
-            'id': order.id,
-            'client_order_id': order.client_order_id,
-            'symbol': order.symbol,
-            'qty': order.qty,
-            'side': order.side,
-            'type': order.type,
-            'limit_price': order.limit_price,
-            'time_in_force': order.time_in_force,
-            'status': order.status,
-            'created_at': order.created_at
+            'id': str(order.id),
+            'client_order_id': str(order.client_order_id) if order.client_order_id else None,
+            'symbol': str(order.symbol),
+            'qty': float(order.qty),
+            'side': str(order.side.name) if hasattr(order.side, 'name') else str(order.side),
+            'type': 'limit',
+            'limit_price': float(limit_price),
+            'time_in_force': str(order.time_in_force.name) if hasattr(order.time_in_force, 'name') else str(order.time_in_force),
+            'status': str(order.status.name) if hasattr(order.status, 'name') else str(order.status),
+            'created_at': str(order.submitted_at) if hasattr(order, 'submitted_at') else str(order.created_at)
         }
     except APIError as e:
         logger.error(f"API error submitting limit order: {e}")
@@ -302,21 +296,37 @@ def get_latest_quote(symbol: str) -> Optional[Dict]:
     try:
         # Get latest quote
         request = StockQuotesRequest(
-            symbol_or_symbols=[symbol],
+            symbol_or_symbols=symbol,
             start=datetime.now() - timedelta(minutes=5),
             end=datetime.now()
         )
         quotes = historical_client.get_stock_quotes(request)
         
-        if symbol in quotes and len(quotes[symbol]) > 0:
-            latest = quotes[symbol][-1]
+        # Check if we have quote data
+        if quotes and len(quotes) > 0:
+            # Handle different response formats
+            if isinstance(quotes, dict) and symbol in quotes:
+                # Dictionary format with symbol as key
+                quotes_list = quotes[symbol]
+                if len(quotes_list) > 0:
+                    latest = quotes_list[-1]
+                else:
+                    return None
+            else:
+                # Direct list format
+                quotes_list = list(quotes)
+                if len(quotes_list) > 0:
+                    latest = quotes_list[-1]
+                else:
+                    return None
+            
             return {
                 'symbol': symbol,
-                'ask_price': latest.ask_price,
-                'ask_size': latest.ask_size,
-                'bid_price': latest.bid_price,
-                'bid_size': latest.bid_size,
-                'timestamp': latest.timestamp
+                'ask_price': float(latest.ask_price) if hasattr(latest, 'ask_price') else None,
+                'ask_size': int(latest.ask_size) if hasattr(latest, 'ask_size') else None,
+                'bid_price': float(latest.bid_price) if hasattr(latest, 'bid_price') else None,
+                'bid_size': int(latest.bid_size) if hasattr(latest, 'bid_size') else None,
+                'timestamp': str(latest.timestamp) if hasattr(latest, 'timestamp') else None
             }
         else:
             logger.warning(f"No quote data found for {symbol}")
@@ -325,13 +335,13 @@ def get_latest_quote(symbol: str) -> Optional[Dict]:
         logger.error(f"Error getting latest quote for {symbol}: {e}")
         return None
 
-def get_latest_bars(symbols: List[str], timeframe: str = '1D', limit: int = 10) -> Dict[str, List[Dict]]:
+def get_latest_bars(symbols: Union[List[str], str], timeframe: str = '1Day', limit: int = 10) -> Dict[str, List[Dict]]:
     """
     Get the latest bars for symbols.
     
     Args:
-        symbols: List of ticker symbols
-        timeframe: Bar timeframe ('1D', '1H', '15Min', etc.)
+        symbols: List of ticker symbols or a single symbol
+        timeframe: Bar timeframe ('1Day', '1Hour', '15Min', etc.)
         limit: Number of bars to retrieve
         
     Returns:
@@ -342,13 +352,20 @@ def get_latest_bars(symbols: List[str], timeframe: str = '1D', limit: int = 10) 
         return {}
     
     try:
-        # Map string timeframe to enum
-        tf = TimeFrame.DAY
-        if timeframe == '1H':
+        # Convert single symbol to list
+        if isinstance(symbols, str):
+            symbols = [symbols]
+        
+        # Map timeframe string to TimeFrame enum
+        if timeframe == '1Day':
+            tf = TimeFrame.DAY
+        elif timeframe == '1Hour':
             tf = TimeFrame.HOUR
-        elif timeframe == '15Min':
+        elif timeframe == '1Min':
             tf = TimeFrame.MINUTE
-            # Adjust for specific minute timeframes if needed
+        else:
+            # Default to day
+            tf = TimeFrame.DAY
         
         # Get bars
         request = StockBarsRequest(
@@ -361,15 +378,25 @@ def get_latest_bars(symbols: List[str], timeframe: str = '1D', limit: int = 10) 
         
         # Format response
         result = {}
-        for symbol, symbol_bars in bars.items():
-            result[symbol] = [{
-                'timestamp': bar.timestamp,
-                'open': bar.open,
-                'high': bar.high,
-                'low': bar.low,
-                'close': bar.close,
-                'volume': bar.volume
-            } for bar in symbol_bars]
+        
+        # Handle different response formats
+        if isinstance(bars, dict):
+            # Dictionary format with symbol as key
+            for symbol, symbol_bars in bars.items():
+                result[symbol] = []
+                for bar in symbol_bars:
+                    result[symbol].append({
+                        'timestamp': str(bar.timestamp) if hasattr(bar, 'timestamp') else None,
+                        'open': float(bar.open) if hasattr(bar, 'open') else None,
+                        'high': float(bar.high) if hasattr(bar, 'high') else None,
+                        'low': float(bar.low) if hasattr(bar, 'low') else None,
+                        'close': float(bar.close) if hasattr(bar, 'close') else None,
+                        'volume': int(bar.volume) if hasattr(bar, 'volume') else None
+                    })
+        else:
+            # Direct list format or other format
+            logger.warning("Unexpected format in get_stock_bars response")
+            return {}
         
         return result
     except Exception as e:

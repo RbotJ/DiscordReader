@@ -6,17 +6,17 @@ via the Alpaca API.
 """
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 from features.alpaca.client import (
     initialize_clients, get_latest_quote, submit_market_order, 
     submit_limit_order, get_positions, get_account_info
 )
-from features.setups.models import (
-    SetupMessage, TickerSetup, Signal,
-    SignalCategoryEnum, ComparisonTypeEnum, BiasDirectionEnum
+from models import (
+    Signal, TickerSetup, SignalCategoryEnum, ComparisonTypeEnum, BiasDirectionEnum
 )
-from common.db import db
+from sqlalchemy import desc
+from app import db
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class SignalProcessor:
                 return {'status': 'error', 'message': f'Could not get quote for {symbol}'}
             
             # Determine trade direction based on signal category and comparison
-            trade_side, entry_price = self._determine_trade_direction(signal, quote)
+            trade_side, entry_price = self._determine_trade_direction(signal, quote, ticker_setup)
             if not trade_side:
                 return {'status': 'warning', 'message': 'Signal does not indicate a valid trade direction'}
             
@@ -102,13 +102,14 @@ class SignalProcessor:
             logger.error(f"Error processing signal {signal_id}: {e}")
             return {'status': 'error', 'message': f'Error processing signal: {str(e)}'}
     
-    def _determine_trade_direction(self, signal: Signal, quote: Dict) -> Tuple[Optional[str], float]:
+    def _determine_trade_direction(self, signal: Signal, quote: Dict, ticker_setup: TickerSetup) -> Tuple[Optional[str], float]:
         """
         Determine the trade direction (buy/sell) based on the signal.
         
         Args:
             signal: The signal to process
             quote: Current market quote
+            ticker_setup: The ticker setup associated with the signal
             
         Returns:
             Tuple of (trade_side, entry_price) or (None, 0) if no valid direction
@@ -123,67 +124,104 @@ class SignalProcessor:
             logger.warning(f"Could not determine price for {quote.get('symbol')}")
             return None, 0
         
-        # Get trigger value (could be float or dict with range)
-        trigger = signal.trigger
-        trigger_value = 0
-        
-        # Parse trigger value based on format
-        if isinstance(trigger, dict):
-            if trigger.get('type') == 'single':
-                trigger_value = float(trigger.get('value', 0))
-            elif trigger.get('type') == 'range':
-                # For a range, use midpoint of the range
-                low = float(trigger.get('low', 0))
-                high = float(trigger.get('high', 0))
-                trigger_value = (low + high) / 2
-        elif isinstance(trigger, (int, float, str)):
-            trigger_value = float(trigger)
+        # Get trigger value from signal
+        try:
+            # Extract trigger based on how it's stored in the database
+            if hasattr(signal, 'trigger') and signal.trigger:
+                # Handle different storage formats
+                if isinstance(signal.trigger, dict):
+                    # Dictionary format - common in newer schemas
+                    if 'type' in signal.trigger and signal.trigger['type'] == 'single':
+                        trigger_value = float(signal.trigger.get('value', 0))
+                    elif 'type' in signal.trigger and signal.trigger['type'] == 'range':
+                        # For range type, use midpoint
+                        low = float(signal.trigger.get('low', 0))
+                        high = float(signal.trigger.get('high', 0))
+                        trigger_value = (low + high) / 2
+                    else:
+                        # Generic dict handling
+                        trigger_value = float(next(iter(signal.trigger.values())))
+                elif isinstance(signal.trigger, (int, float)):
+                    # Direct numeric value
+                    trigger_value = float(signal.trigger)
+                elif isinstance(signal.trigger, str):
+                    # String value that needs conversion
+                    trigger_value = float(signal.trigger)
+                else:
+                    # Array or other format
+                    if hasattr(signal.trigger, '__iter__') and not isinstance(signal.trigger, str):
+                        # It's some kind of iterable, use first value
+                        trigger_value = float(next(iter(signal.trigger)))
+                    else:
+                        # Unknown format
+                        logger.warning(f"Unknown trigger format: {type(signal.trigger)}")
+                        trigger_value = 0
+            else:
+                logger.warning("No trigger attribute found on signal")
+                trigger_value = 0
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing trigger value: {e}")
+            trigger_value = 0
         
         if not trigger_value:
-            logger.warning(f"Could not determine trigger value from {trigger}")
+            logger.warning(f"Could not determine valid trigger value")
             return None, 0
         
         # Determine trade direction based on signal category and comparison
         trade_side = None
         entry_price = 0
         
-        if signal.category == SignalCategoryEnum.BREAKOUT:
-            if signal.comparison == ComparisonTypeEnum.ABOVE:
+        # Convert enum values to strings if needed
+        category = signal.category
+        if hasattr(category, 'value'):  # If it's an enum
+            category = category.value
+            
+        comparison = signal.comparison
+        if hasattr(comparison, 'value'):  # If it's an enum
+            comparison = comparison.value
+        
+        # Process based on category and comparison
+        if category == SignalCategoryEnum.BREAKOUT or category == 'breakout':
+            if comparison == ComparisonTypeEnum.ABOVE or comparison == 'above':
                 # Breakout above - BUY if price is above trigger
                 if mid_price > trigger_value:
                     trade_side = 'buy'
                     entry_price = ask_price or mid_price  # Use ask price for buys if available
         
-        elif signal.category == SignalCategoryEnum.BREAKDOWN:
-            if signal.comparison == ComparisonTypeEnum.BELOW:
+        elif category == SignalCategoryEnum.BREAKDOWN or category == 'breakdown':
+            if comparison == ComparisonTypeEnum.BELOW or comparison == 'below':
                 # Breakdown below - SELL if price is below trigger
                 if mid_price < trigger_value:
                     trade_side = 'sell'
                     entry_price = bid_price or mid_price  # Use bid price for sells if available
         
-        elif signal.category == SignalCategoryEnum.REJECTION:
-            if signal.comparison == ComparisonTypeEnum.NEAR:
+        elif category == SignalCategoryEnum.REJECTION or category == 'rejection':
+            if comparison == ComparisonTypeEnum.NEAR or comparison == 'near':
                 # Rejection near - SELL if price is near or testing trigger
                 if 0.98 * trigger_value <= mid_price <= 1.02 * trigger_value:
                     trade_side = 'sell'
                     entry_price = bid_price or mid_price
         
-        elif signal.category == SignalCategoryEnum.BOUNCE:
-            if signal.comparison == ComparisonTypeEnum.ABOVE:
+        elif category == SignalCategoryEnum.BOUNCE or category == 'bounce':
+            if comparison == ComparisonTypeEnum.ABOVE or comparison == 'above':
                 # Bounce above - BUY if price is bouncing above support
                 if 0.98 * trigger_value <= mid_price <= 1.03 * trigger_value:
                     trade_side = 'buy'
                     entry_price = ask_price or mid_price
         
         # Consider bias if available
-        bias = ticker_setup.bias if hasattr(signal.ticker_setup, 'bias') else None
-        if bias and bias.direction and bias.price:
+        if hasattr(ticker_setup, 'bias') and ticker_setup.bias:
+            bias = ticker_setup.bias
+            bias_direction = bias.direction
+            if hasattr(bias_direction, 'value'):  # If it's an enum
+                bias_direction = bias_direction.value
+                
             # If bias conflicts with signal, don't trade
-            if (bias.direction == BiasDirectionEnum.BULLISH and trade_side == 'sell' and 
-                mid_price > bias.price):
+            if ((bias_direction == BiasDirectionEnum.BULLISH or bias_direction == 'bullish') and 
+                trade_side == 'sell' and mid_price > bias.price):
                 trade_side = None
-            elif (bias.direction == BiasDirectionEnum.BEARISH and trade_side == 'buy' and 
-                  mid_price < bias.price):
+            elif ((bias_direction == BiasDirectionEnum.BEARISH or bias_direction == 'bearish') and 
+                  trade_side == 'buy' and mid_price < bias.price):
                 trade_side = None
         
         return trade_side, entry_price

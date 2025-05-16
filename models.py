@@ -48,6 +48,7 @@ class BiasDirectionEnum(enum.Enum):
 class SetupMessage(db.Model):
     """Represents a trading setup message containing one or more ticker setups."""
     __tablename__ = 'setup_messages'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -65,6 +66,7 @@ class SetupMessage(db.Model):
 class TickerSetup(db.Model):
     """Represents a trading setup for a specific ticker symbol."""
     __tablename__ = 'ticker_setups'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     symbol = Column(String(10), nullable=False, index=True)
@@ -83,6 +85,7 @@ class TickerSetup(db.Model):
 class Signal(db.Model):
     """Represents a trading signal for a ticker."""
     __tablename__ = 'signals'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     ticker_setup_id = Column(Integer, ForeignKey('ticker_setups.id', ondelete='CASCADE'), nullable=False)
@@ -104,6 +107,7 @@ class Signal(db.Model):
 class Bias(db.Model):
     """Represents a market bias for a ticker."""
     __tablename__ = 'biases'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     ticker_setup_id = Column(Integer, ForeignKey('ticker_setups.id', ondelete='CASCADE'), nullable=False)
@@ -123,6 +127,7 @@ class Bias(db.Model):
 class BiasFlip(db.Model):
     """Represents a bias flip condition."""
     __tablename__ = 'bias_flips'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     bias_id = Column(Integer, ForeignKey('biases.id', ondelete='CASCADE'), nullable=False)

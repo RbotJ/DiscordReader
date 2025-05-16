@@ -9,11 +9,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template, redirect, url_for
 from common.db import db
-from features.setups.models import (
-    SetupMessage, TickerSetup, Signal, SignalTarget, Bias
-)
+# Import models from the main models.py file
+import models
 
 def create_app():
     """Create and configure the Flask application."""
@@ -69,6 +68,22 @@ def register_routes(app):
             "app": os.environ.get("REPL_SLUG", "aplus-trading-app"),
             "version": "0.1.0"
         })
+    
+    # Add main application routes
+    @app.route('/')
+    def index():
+        """Main landing page."""
+        return render_template('index.html', title="A+ Trading App")
+    
+    @app.route('/dashboard')
+    def dashboard():
+        """Trading dashboard page."""
+        return render_template('dashboard.html', title="Trading Dashboard")
+    
+    @app.route('/setup')
+    def setup():
+        """Setup submission page."""
+        return render_template('setup.html', title="Create Setup")
 
 # Create the application
 app = create_app()

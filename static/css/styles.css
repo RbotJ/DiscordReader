@@ -1,106 +1,68 @@
-/* Custom styles for A+ Trading application */
+/* Main Styles for A+ Trading App */
 
-/* General styling */
+/* Global Styles */
 body {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
 }
 
-.footer {
-    margin-top: auto;
-}
-
-/* Dashboard layout adjustments */
-.feather-sm {
-    width: 18px;
-    height: 18px;
-}
-
-/* Card styling */
+/* Card Styles */
 .card {
-    border-radius: 0.5rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    transition: all 0.2s ease;
+    margin-bottom: 1.5rem;
+    background-color: var(--bs-dark-bg-subtle);
+    border-color: var(--bs-border-color);
 }
 
-.card:hover {
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+.card-header {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom-color: var(--bs-border-color);
 }
 
-/* Better table responsiveness */
-.table-responsive {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+/* Stat Cards */
+.stat-card {
+    transition: transform 0.2s ease;
 }
 
-/* Custom styling for status badges */
-.badge {
-    font-weight: 500;
-    padding: 0.35em 0.65em;
+.stat-card:hover {
+    transform: translateY(-5px);
 }
 
-/* Custom styling for charts */
-canvas {
-    width: 100% !important;
+/* Tables */
+.table {
+    color: var(--bs-light);
 }
 
-/* Improve form elements */
-.form-control, .form-select {
-    border-radius: 0.375rem;
-}
-
-/* Improve buttons */
-.btn {
-    border-radius: 0.375rem;
-}
-
-/* Custom styles for the dashboard metrics */
-#positionCount, #signalCount, #todayPL, #totalPL {
-    font-weight: 700;
-}
-
-/* Styling for profit/loss text */
-.profit {
-    color: var(--bs-success);
-}
-
-.loss {
-    color: var(--bs-danger);
-}
-
-/* Make sure table headers are sticky in long tables */
-.table-responsive thead th {
-    position: sticky;
-    top: 0;
-    background-color: var(--bs-body-bg);
-    z-index: 1;
-}
-
-/* Better mobile responsiveness */
-@media (max-width: 768px) {
-    .container-fluid {
-        padding-left: 0.5rem;
-        padding-right: 0.5rem;
-    }
-    
-    .card-header {
-        padding: 0.75rem;
-    }
-    
-    .card-body {
-        padding: 0.75rem;
-    }
-}
-
-/* Dashboard signal and setup items */
-.signal-item, .setup-item {
-    padding: 1rem;
-    margin-bottom: 0.5rem;
-    border-radius: 0.375rem;
+.table-hover tbody tr:hover {
     background-color: rgba(255, 255, 255, 0.05);
 }
 
-.signal-item:hover, .setup-item:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+/* Badge color overrides */
+.badge.bg-success {
+    background-color: var(--bs-success) !important;
+}
+
+.badge.bg-danger {
+    background-color: var(--bs-danger) !important;
+}
+
+.badge.bg-warning {
+    background-color: var(--bs-warning) !important;
+    color: var(--bs-dark);
+}
+
+.badge.bg-info {
+    background-color: var(--bs-info) !important;
+    color: var(--bs-dark);
+}
+
+/* Dashboard specific styles */
+.dashboard-header {
+    margin-bottom: 2rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 767.98px) {
+    .card-title {
+        font-size: 1.1rem;
+    }
 }
