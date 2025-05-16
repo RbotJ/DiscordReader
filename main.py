@@ -1,168 +1,80 @@
 import logging
 import os
-import subprocess
-import time
 import sys
+from datetime import datetime
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-from app import app, db
-from flask import jsonify
-
-# Import SQLAlchemy models
-from common.db_models import (
-    SetupModel, TickerSetupModel, SignalModel, BiasModel,
-    OptionsContractModel, OrderModel, PositionModel, PriceTriggerModel,
-    MarketDataModel, WatchlistModel, NotificationModel
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Import route registrations (try/except for each in case files don't exist yet)
-try:
-    # Import the setup routes
-    from features.setups.api import register_routes as register_setup_routes
-    register_setup_routes(app)
-    logging.info("Setup routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import setup routes: {e}")
+from flask import Flask, jsonify
+from common.db import db
+from features.setups.models import (
+    SetupMessage, TickerSetup, Signal, SignalTarget, Bias
+)
 
-try:
-    # Import the adapter setup routes with multi-ticker support
-    from features.setups.api_adapter import register_routes as register_adapter_setup_routes
-    register_adapter_setup_routes(app)
-    logging.info("Adapter setup routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import adapter setup routes: {e}")
+def create_app():
+    """Create and configure the Flask application."""
+    app = Flask(__name__)
+    
+    # Configure SQLAlchemy
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    }
+    
+    # Configure app secret key
+    app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
+    
+    # Initialize extensions
+    db.init_app(app)
+    
+    # Register routes
+    register_routes(app)
+    
+    return app
 
-try:
-    # Import the webhook routes for handling multi-ticker setup messages
-    from features.setups.api_webhook import register_routes as register_webhook_routes
-    register_webhook_routes(app)
-    logging.info("Setup webhook routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import setup webhook routes: {e}")
+def register_routes(app):
+    """Register API routes with the Flask application."""
+    # Import necessary route registrations
+    try:
+        # Register webhook routes
+        from features.setups.webhook_api import register_routes as register_webhook_routes
+        register_webhook_routes(app)
+        logging.info("Setup webhook routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import setup webhook routes: {e}")
+    
+    # Add other route registrations here as they are implemented
+    
+    # Add API health check endpoint
+    @app.route('/api/health')
+    def health_check():
+        """API health check endpoint."""
+        return jsonify({
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "app": os.environ.get("REPL_SLUG", "aplus-trading-app"),
+            "version": "0.1.0"
+        })
 
-try:
-    # Import the auth routes
-    from features.setups.auth_routes import register_routes as register_auth_routes
-    register_auth_routes(app)
-    logging.info("Auth routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import auth routes: {e}")
+# Create the application
+app = create_app()
 
-try:
-    # Market data routes
-    from features.market.api import market_routes
-    app.register_blueprint(market_routes)
-    logging.info("Market routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import market routes: {e}")
-
-try:
-    # Strategy detector routes
-    from features.strategy.detector import strategy_routes
-    app.register_blueprint(strategy_routes)
-    logging.info("Strategy routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import strategy routes: {e}")
-
-try:
-    # Options chain routes
-    from features.options.chain import register_options_routes
-    register_options_routes(app)
-    logging.info("Options routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import options chain routes: {e}")
-
-try:
-    # Contract filter routes
-    from features.options.contract_filter import register_contract_filter_routes
-    register_contract_filter_routes(app)
-    logging.info("Contract filter routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import contract filter routes: {e}")
-
-try:
-    # Greeks calculator routes
-    from features.options.greeks_calculator import register_greeks_routes
-    register_greeks_routes(app)
-    logging.info("Greeks calculator routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import Greeks calculator routes: {e}")
-
-try:
-    # Risk assessor routes
-    from features.options.risk_assessor import register_risk_assessor_routes
-    register_risk_assessor_routes(app)
-    logging.info("Risk assessor routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import risk assessor routes: {e}")
-
-try:
-    # Trade execution routes
-    from features.execution.trader import execution_routes
-    app.register_blueprint(execution_routes)
-    logging.info("Execution routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import execution routes: {e}")
-
-try:
-    # Position management routes
-    from features.management.position_manager import register_position_routes
-    register_position_routes(app)
-    logging.info("Position management routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import position management routes: {e}")
-
-try:
-    # Exit rules routes
-    from features.management.exit_rules import register_exit_rules_routes
-    register_exit_rules_routes(app)
-    logging.info("Exit rules routes registered")
-except ImportError as e:
-    logging.warning(f"Could not import exit rules routes: {e}")
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# Create database tables
+# Create database tables on startup
 with app.app_context():
     db.create_all()
     logging.info("Database tables created")
 
-# Add API health check endpoint
-@app.route('/api/health')
-def health_check():
-    """API health check endpoint."""
-    return jsonify({
-        "status": "ok",
-        "timestamp": str(os.environ.get("REPL_SLUG", "aplus-trading-app")),
-        "version": "0.1.0"
-    })
-
-# Initialize app components after startup
 def initialize_app_components():
     """Initialize app components on first request."""
-    # Initialize position manager
+    # Initialize Discord integration (when implemented)
     try:
-        from features.management.position_manager import start_position_manager
-        start_position_manager()
-        logging.info("Position manager initialized")
-    except ImportError as e:
-        logging.warning(f"Could not initialize position manager: {e}")
-        
-    # Initialize exit rules engine
-    try:
-        from features.management.exit_rules import init_exit_rules_engine
-        init_exit_rules_engine()
-        logging.info("Exit rules engine initialized")
-    except ImportError as e:
-        logging.warning(f"Could not initialize exit rules engine: {e}")
-        
-    # Initialize Discord integration
-    try:
+        # Import Discord initialization
         from features.discord import init_discord
         success = init_discord()
         if success:
@@ -172,9 +84,8 @@ def initialize_app_components():
     except ImportError as e:
         logging.warning(f"Could not initialize Discord integration: {e}")
 
-# Set up a function to initialize components with the app context
+# Initialize components after database creation
 with app.app_context():
-    # Try to initialize components after database setup
     try:
         initialize_app_components()
     except Exception as e:

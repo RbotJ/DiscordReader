@@ -9,16 +9,16 @@ import re
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any, Union, Set, Tuple
 
-from common.models import (
-    TradeSetupMessage,
-    TickerSetup,
-    Signal,
-    Bias,
-    BiasFlip,
-    SignalCategory,
-    Aggressiveness,
-    ComparisonType,
-    BiasDirection
+from common.schemas import (
+    TradeSetupDTO,
+    TickerSetupDTO,
+    SignalDTO,
+    BiasDTO,
+    BiasFlipDTO,
+    SignalCategoryDTO,
+    AggressivenessDTO,
+    ComparisonTypeDTO,
+    BiasDirectionDTO
 )
 
 # Configure logger
@@ -62,7 +62,7 @@ class SetupParser:
             "🚨": "[WARNING]",
         }
         
-        # Pattern for extracting ticker symbols - adapt as needed
+        # Pattern for extracting ticker symbols
         self.ticker_pattern = r'\b[A-Z]{1,5}\b'
         
         # Patterns for detecting different message formats
@@ -114,13 +114,6 @@ class SetupParser:
             r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?:\s*(\d+(?:\.\d+)?)',
             r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?\s+(?:at|is|of|near|around)?\s*(\d+(?:\.\d+)?)',
             r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?[:\s]+(\d+(?:\.\d+)?)'
-        ]
-        
-        # Target line patterns (for multiline targets)
-        self.target_line_patterns = [
-            r'(?i)(?:target|tgt|t|price target|take profit|tp)(?:\s+\d+)?:\s*(\d+(?:\.\d+)?)',
-            r'(?i)(?:target|tgt|t|price target|take profit|tp)(?:\s+\d+)?\s+(?:at|is|of|near|around)?\s*(\d+(?:\.\d+)?)',
-            r'(?i)(?:target|tgt|t|price target|take profit|tp)(?:\s+\d+)?[:\s]+(\d+(?:\.\d+)?)'
         ]
     
     def normalize_text(self, text: str) -> str:
@@ -190,7 +183,7 @@ class SetupParser:
         
         return fallback_sections
     
-    def extract_signals(self, ticker: str, text: str) -> List[Signal]:
+    def extract_signals(self, ticker: str, text: str) -> List[SignalDTO]:
         """
         Extract trading signals from text for a specific ticker.
         
@@ -212,20 +205,20 @@ class SetupParser:
                         # Convert the price level to float
                         price_level = float(match)
                         
-                        # Determine comparison type based on signal category
-                        comparison = ComparisonType.ABOVE
+                        # Determine comparison type and category
+                        comparison = ComparisonTypeDTO.ABOVE
                         if category == "breakout":
-                            signal_category = SignalCategory.BREAKOUT
-                            comparison = ComparisonType.ABOVE
+                            signal_category = SignalCategoryDTO.BREAKOUT
+                            comparison = ComparisonTypeDTO.ABOVE
                         elif category == "breakdown":
-                            signal_category = SignalCategory.BREAKDOWN
-                            comparison = ComparisonType.BELOW
+                            signal_category = SignalCategoryDTO.BREAKDOWN
+                            comparison = ComparisonTypeDTO.BELOW
                         elif category == "rejection":
-                            signal_category = SignalCategory.REJECTION
-                            comparison = ComparisonType.NEAR
+                            signal_category = SignalCategoryDTO.REJECTION
+                            comparison = ComparisonTypeDTO.NEAR
                         elif category == "bounce":
-                            signal_category = SignalCategory.BOUNCE
-                            comparison = ComparisonType.ABOVE  # Default for bounce
+                            signal_category = SignalCategoryDTO.BOUNCE
+                            comparison = ComparisonTypeDTO.ABOVE
                         else:
                             continue
                         
@@ -235,15 +228,15 @@ class SetupParser:
                             # If no targets found in full text, look for numbers that might be targets
                             numbers = re.findall(r'(?<!\.)(?<!\d)\d+(?:\.\d+)?(?!\d)(?!\.)', text)
                             if numbers and len(numbers) > 1:
-                                # Use the price level itself as a target if no other targets found
-                                targets = {price_level}
+                                targets = {price_level}  # Default to the trigger price
                         
                         # Create the signal object
-                        signal = Signal(
+                        signal = SignalDTO(
                             category=signal_category,
                             comparison=comparison,
                             trigger=price_level,
-                            targets=targets or {price_level}  # Default to the trigger price if no targets found
+                            targets=targets or {price_level},  # Default to the trigger price
+                            aggressiveness=AggressivenessDTO.NONE
                         )
                         
                         signals.append(signal)
@@ -252,7 +245,7 @@ class SetupParser:
         
         return signals
     
-    def extract_bias(self, ticker: str, text: str) -> Optional[Bias]:
+    def extract_bias(self, ticker: str, text: str) -> Optional[BiasDTO]:
         """
         Extract market bias from text for a specific ticker.
         
@@ -277,9 +270,9 @@ class SetupParser:
                     
                         # Parse direction
                         if direction_str.lower() == "bullish":
-                            direction = BiasDirection.BULLISH
+                            direction = BiasDirectionDTO.BULLISH
                         elif direction_str.lower() == "bearish":
-                            direction = BiasDirection.BEARISH
+                            direction = BiasDirectionDTO.BEARISH
                         else:
                             continue
                         
@@ -291,17 +284,17 @@ class SetupParser:
                         if condition_text:
                             condition_str = condition_text.group(1).lower()
                             if condition_str == "above":
-                                condition = ComparisonType.ABOVE
+                                condition = ComparisonTypeDTO.ABOVE
                             elif condition_str == "below":
-                                condition = ComparisonType.BELOW
+                                condition = ComparisonTypeDTO.BELOW
                             else:
-                                condition = ComparisonType.NEAR
+                                condition = ComparisonTypeDTO.NEAR
                         else:
                             # Default condition based on direction
-                            condition = ComparisonType.ABOVE if direction == BiasDirection.BULLISH else ComparisonType.BELOW
+                            condition = ComparisonTypeDTO.ABOVE if direction == BiasDirectionDTO.BULLISH else ComparisonTypeDTO.BELOW
                         
                         # Create bias object
-                        bias = Bias(
+                        bias = BiasDTO(
                             direction=direction,
                             condition=condition,
                             price=price
@@ -318,7 +311,7 @@ class SetupParser:
         
         return None
     
-    def extract_bias_flip(self, text: str) -> Optional[BiasFlip]:
+    def extract_bias_flip(self, text: str) -> Optional[BiasFlipDTO]:
         """
         Extract bias flip conditions from text.
         
@@ -341,9 +334,9 @@ class SetupParser:
                     
                         # Parse direction
                         if direction_str.lower() == "bullish":
-                            direction = BiasDirection.BULLISH
+                            direction = BiasDirectionDTO.BULLISH
                         elif direction_str.lower() == "bearish":
-                            direction = BiasDirection.BEARISH
+                            direction = BiasDirectionDTO.BEARISH
                         else:
                             continue
                         
@@ -351,7 +344,7 @@ class SetupParser:
                         price = float(price_str)
                         
                         # Create bias flip object
-                        return BiasFlip(
+                        return BiasFlipDTO(
                             direction=direction,
                             price_level=price
                         )
@@ -387,28 +380,18 @@ class SetupParser:
         for line in lines:
             line = line.strip()
             if line and any(kw in line.lower() for kw in ['target', 'tgt', 't:', 'price target', 'take profit', 'tp']):
-                for pattern in self.target_line_patterns:
-                    matches = re.findall(pattern, line, re.IGNORECASE)
-                    for match in matches:
-                        try:
-                            target = float(match)
-                            targets.add(target)
-                        except (ValueError, TypeError):
-                            pass
-                
-                # If no match found but there are numbers in the line, use those
-                if not any(re.findall(pattern, line, re.IGNORECASE) for pattern in self.target_line_patterns):
-                    numbers = re.findall(r'(?<!\.)(?<!\d)\d+(?:\.\d+)?(?!\d)(?!\.)', line)
-                    for num in numbers:
-                        try:
-                            target = float(num)
-                            targets.add(target)
-                        except (ValueError, TypeError):
-                            pass
+                # Just extract numbers from target line
+                numbers = re.findall(r'(?<!\.)(?<!\d)\d+(?:\.\d+)?(?!\d)(?!\.)', line)
+                for num in numbers:
+                    try:
+                        target = float(num)
+                        targets.add(target)
+                    except (ValueError, TypeError):
+                        pass
         
         return targets
     
-    def process_ticker_sections(self, sections: Dict[str, str]) -> List[TickerSetup]:
+    def process_ticker_sections(self, sections: Dict[str, str]) -> List[TickerSetupDTO]:
         """
         Process ticker sections to extract signals and biases.
         
@@ -429,7 +412,7 @@ class SetupParser:
             
             # Only create setup if we have signals or bias
             if signals or bias:
-                setup = TickerSetup(
+                setup = TickerSetupDTO(
                     symbol=ticker,
                     signals=signals,
                     bias=bias,
@@ -440,100 +423,24 @@ class SetupParser:
         
         return ticker_setups
     
-    def parse_hardcoded_test_case(self, text: str) -> List[TickerSetup]:
+    def parse_message(self, text: str, message_date: Optional[date] = None, source: str = "unknown") -> Optional[TradeSetupDTO]:
         """
-        Parse a hardcoded test case for multiple tickers.
-        
-        Args:
-            text: The hardcoded test message
-        
-        Returns:
-            List of TickerSetup objects
-        """
-        # This method handles a specific format used in testing
-        ticker_setups = []
-        
-        # Pattern for sections with format "TICKER: action description"
-        pattern = r'([A-Z]{1,5}):\s*(.*?)(?=\n[A-Z]{1,5}:|\Z)'
-        sections = re.findall(pattern, text, re.DOTALL)
-        
-        for ticker, content in sections:
-            content = content.strip()
-            
-            # Check for breakout patterns
-            breakout_match = re.search(r'[Bb]reakout (?:[Aa]bove|[Oo]ver) (\d+(?:\.\d+)?)(?:[\s\n]|$)', content)
-            breakdown_match = re.search(r'[Bb]reakdown (?:[Bb]elow|[Uu]nder) (\d+(?:\.\d+)?)(?:[\s\n]|$)', content)
-            target_match = re.search(r'[Tt]arget:?\s*(\d+(?:\.\d+)?)(?:[\s\n]|$)', content)
-            
-            signals = []
-            bias = None
-            
-            # Process breakout signal
-            if breakout_match:
-                price = float(breakout_match.group(1))
-                targets = {float(target_match.group(1))} if target_match else {price + 5.0}  # Default target
-                
-                signals.append(Signal(
-                    category=SignalCategory.BREAKOUT,
-                    comparison=ComparisonType.ABOVE,
-                    trigger=price,
-                    targets=targets
-                ))
-                
-                # Add bias for breakout
-                bias = Bias(
-                    direction=BiasDirection.BULLISH,
-                    condition=ComparisonType.ABOVE,
-                    price=price
-                )
-            
-            # Process breakdown signal
-            elif breakdown_match:
-                price = float(breakdown_match.group(1))
-                targets = {float(target_match.group(1))} if target_match else {price - 5.0}  # Default target
-                
-                signals.append(Signal(
-                    category=SignalCategory.BREAKDOWN,
-                    comparison=ComparisonType.BELOW,
-                    trigger=price,
-                    targets=targets
-                ))
-                
-                # Add bias for breakdown
-                bias = Bias(
-                    direction=BiasDirection.BEARISH,
-                    condition=ComparisonType.BELOW,
-                    price=price
-                )
-            
-            if signals:
-                ticker_setups.append(TickerSetup(
-                    symbol=ticker,
-                    signals=signals,
-                    bias=bias,
-                    text=content
-                ))
-        
-        return ticker_setups
-    
-    def parse_message(self, text: str, date: date = None, source: str = "unknown") -> Optional[TradeSetupMessage]:
-        """
-        Parse a setup message text into a structured TradeSetupMessage object.
+        Parse a setup message text into a structured TradeSetupDTO object.
         
         Args:
             text: The raw setup message text
-            date: The date of the setup message, defaults to today
+            message_date: The date of the setup message, defaults to today
             source: Source of the message, defaults to 'unknown'
             
         Returns:
-            TradeSetupMessage object if parsing successful, None otherwise
+            TradeSetupDTO object if parsing successful, None otherwise
         """
         if not text or not text.strip():
             return None
         
         # Use today's date if not provided
-        if not date:
-            date = datetime.now().date()
+        current_date = datetime.now().date()
+        effective_date = message_date if message_date else current_date
         
         # Find potential ticker symbols in the message
         ticker_symbols = self.extract_ticker_symbols(text)
@@ -543,24 +450,37 @@ class SetupParser:
         # Try to extract ticker sections
         ticker_sections = self.extract_ticker_sections(text)
         
-        ticker_setups = []
-        
         # If we found sections, process each section
         if ticker_sections:
             ticker_setups = self.process_ticker_sections(ticker_sections)
             logger.info(f"Found {len(ticker_setups)} ticker setups using section-based approach")
-        # Fallback: If section extraction failed but message contains typical patterns
-        elif "Breakout" in text or "Breakdown" in text or "Target" in text:
-            logger.info("Using hardcoded test case format")
-            ticker_setups = self.parse_hardcoded_test_case(text)
+        else:
+            # Fallback: Try simpler approach for single ticker
+            ticker = ticker_symbols[0]
+            signals = self.extract_signals(ticker, text)
+            bias = self.extract_bias(ticker, text)
+            
+            if signals or bias:
+                ticker_setups = [TickerSetupDTO(
+                    symbol=ticker,
+                    signals=signals,
+                    bias=bias,
+                    text=text
+                )]
+                logger.info(f"Found 1 ticker setup using fallback approach")
+            else:
+                ticker_setups = []
         
-        # Create the setup message
-        setup_message = TradeSetupMessage(
-            raw_text=text,
-            date=date,
-            source=source,
-            setups=ticker_setups,
-            created_at=datetime.now()
-        )
+        # Only create the message if we found some ticker setups
+        if ticker_setups:
+            # Create the setup message
+            setup_message = TradeSetupDTO(
+                raw_text=text,
+                date=message_date,
+                source=source,
+                setups=ticker_setups,
+                created_at=datetime.now()
+            )
+            return setup_message
         
-        return setup_message
+        return None

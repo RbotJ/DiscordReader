@@ -1,0 +1,226 @@
+Here’s a step-by-step refactor to eliminate the duplicate-table errors, fix your assignments, and get a minimal webhook endpoint working with Flask-SQLAlchemy.
+
+1. Centralize your db instance
+Create a single common/db.py:
+
+python
+Copy
+Edit
+# common/db.py
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
+No other file should ever call declarative_base() or create another MetaData — everything comes from this one db.
+
+2. Consolidate all ORM models into one module
+Move every table definition into one file, e.g. features/setups/models.py:
+
+python
+Copy
+Edit
+# features/setups/models.py
+from datetime import date
+from common.db import db
+
+class SetupMessage(db.Model):
+    __tablename__ = 'setup_messages'
+
+    id        = db.Column(db.Integer, primary_key=True)
+    date      = db.Column(db.Date,    nullable=False)
+    raw_text  = db.Column(db.Text,    nullable=False)
+
+    ticker_setups = db.relationship('TickerSetup', back_populates='message')
+
+
+class TickerSetup(db.Model):
+    __tablename__ = 'ticker_setups'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('setup_messages.id'), nullable=False)
+    symbol     = db.Column(db.String(10), nullable=False)
+
+    message = db.relationship('SetupMessage', back_populates='ticker_setups')
+    signals = db.relationship('Signal', back_populates='ticker_setup', cascade='all, delete-orphan')
+    bias    = db.relationship('Bias',   back_populates='ticker_setup', uselist=False, cascade='all, delete-orphan')
+
+
+class Signal(db.Model):
+    __tablename__ = 'signals'
+
+    id               = db.Column(db.Integer, primary_key=True)
+    ticker_setup_id  = db.Column(db.Integer, db.ForeignKey('ticker_setups.id'), nullable=False)
+    category         = db.Column(db.String(20), nullable=False)
+    aggressiveness   = db.Column(db.String(20), nullable=False)
+    comparison       = db.Column(db.String(10), nullable=False)
+    trigger_price    = db.Column(db.Float)
+    trigger_low      = db.Column(db.Float)
+    trigger_high     = db.Column(db.Float)
+
+    ticker_setup = db.relationship('TickerSetup', back_populates='signals')
+    targets      = db.relationship('SignalTarget', back_populates='signal', cascade='all, delete-orphan')
+
+
+class SignalTarget(db.Model):
+    __tablename__ = 'signal_targets'
+
+    id        = db.Column(db.Integer, primary_key=True)
+    signal_id = db.Column(db.Integer, db.ForeignKey('signals.id'), nullable=False)
+    level     = db.Column(db.Float,   nullable=False)
+    position  = db.Column(db.Integer, nullable=False)
+
+    signal = db.relationship('Signal', back_populates='targets')
+
+
+class Bias(db.Model):
+    __tablename__ = 'biases'
+
+    id               = db.Column(db.Integer, primary_key=True)
+    ticker_setup_id  = db.Column(db.Integer, db.ForeignKey('ticker_setups.id'), nullable=False)
+    direction        = db.Column(db.String(10), nullable=False)
+    condition        = db.Column(db.String(10), nullable=False)
+    price            = db.Column(db.Float,      nullable=False)
+    flip_comparison  = db.Column(db.String(10))
+    flip_price       = db.Column(db.Float)
+
+    ticker_setup = db.relationship('TickerSetup', back_populates='bias')
+Why this fixes your table-duplication error: now there’s exactly one db.Model for each table, all sharing the same MetaData.
+
+3. Rename your Pydantic DTOs to avoid collision
+If you also have a SetupMessage Pydantic model, rename it to something like TradeSetupDTO:
+
+python
+Copy
+Edit
+# common/schemas.py
+from pydantic import BaseModel
+from datetime import date
+from typing import List, Optional, Union
+
+class TradeSetupDTO(BaseModel):
+    date:     date
+    raw_text: str
+    setups:   List[TickerSetupDTO]
+
+# etc…
+That way SetupMessage always refers to your SQLAlchemy class.
+
+4. Use constructor kwargs (not re-defining columns)
+Instead of:
+
+python
+Copy
+Edit
+db_message = SetupMessage()
+db_message.date = dto.date
+# ➡️ sqlalchemy.Column object, mypy complains
+Do:
+
+python
+Copy
+Edit
+db_message = SetupMessage(
+    date=dto.date,
+    raw_text=dto.raw_text
+)
+SQLAlchemy will map those correctly to the columns.
+
+5. Simple Flask app‐factory + webhook route
+python
+Copy
+Edit
+# main.py
+from flask import Flask
+from common.db import db
+from features.setups.api_webhook import setups_bp
+
+def create_app():
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI']        = 'postgresql://user:pass@localhost/dbname'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    db.init_app(app)
+
+    app.register_blueprint(setups_bp, url_prefix='/setups')
+    return app
+
+if __name__ == '__main__':
+    app = create_app()
+    with app.app_context():
+        db.create_all()   # create tables once
+    app.run(debug=True)
+python
+Copy
+Edit
+# features/setups/api_webhook.py
+from flask import Blueprint, request, jsonify
+from common.db import db
+from common.schemas import TradeSetupDTO
+from features.setups.models import (
+    SetupMessage, TickerSetup, Signal, SignalTarget, Bias
+)
+
+setups_bp = Blueprint('setups', __name__)
+
+@setups_bp.route('/webhook', methods=['POST'])
+def webhook():
+    dto = TradeSetupDTO.parse_obj(request.get_json())
+
+    # create parent message
+    db_message = SetupMessage(date=dto.date, raw_text=dto.raw_text)
+    db.session.add(db_message)
+
+    # for each ticker
+    for ts in dto.setups:
+        db_ts = TickerSetup(symbol=ts.symbol, message=db_message)
+        db.session.add(db_ts)
+
+        # signals
+        for sig in ts.signals:
+            db_sig = Signal(
+                ticker_setup=db_ts,
+                category        = sig.category.value,
+                aggressiveness  = sig.aggressiveness.value,
+                comparison      = sig.comparison.value,
+                trigger_price   = sig.trigger if isinstance(sig.trigger, float) else None,
+                trigger_low     = sig.trigger[0] if isinstance(sig.trigger, list) else None,
+                trigger_high    = sig.trigger[1] if isinstance(sig.trigger, list) else None
+            )
+            db.session.add(db_sig)
+
+            for idx, lvl in enumerate(sig.targets, start=1):
+                db.session.add(SignalTarget(signal=db_sig, level=lvl, position=idx))
+
+        # optional bias
+        if ts.bias:
+            db.session.add(Bias(
+                ticker_setup   = db_ts,
+                direction      = ts.bias.direction,
+                condition      = ts.bias.condition.value,
+                price          = ts.bias.price,
+                flip_comparison= ts.bias.flip.comparison.value if ts.bias.flip else None,
+                flip_price     = ts.bias.flip.price if ts.bias.flip else None
+            ))
+
+    db.session.commit()
+    return jsonify(status='ok'), 201
+6. Clean up other modules
+Remove any model imports or declarative_base() calls from setup_service.py, setup_adapter.py, and multi_ticker_controller.py.
+
+In each of those, import your models from features.setups.models.
+
+They should never define tables again.
+
+Final Checklist
+Only common/db.py defines db = SQLAlchemy().
+
+Only features/setups/models.py calls db.Model for your tables.
+
+Pydantic DTOs live in common/schemas.py (no overlap in class names).
+
+Always use constructor kwargs to set model attributes.
+
+App startup: one db.create_all() under app.app_context().
+
+Each module imports models from features.setups.models, not re-defining them.
+
+With this in place, your “table already defined” errors go away, assignments map cleanly to real columns, and your webhook endpoint will start up without import conflicts. Let me know if any specific error persists!
