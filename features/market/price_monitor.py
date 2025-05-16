@@ -1,411 +1,254 @@
-import logging
-import json
-import threading
-import time
-from typing import Dict, List, Any, Optional, Callable
-import requests
-from datetime import datetime
-from flask import Blueprint, jsonify, request, current_app
-from alpaca.data import StockHistoricalDataClient
-from alpaca.data.live import StockDataStream
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
-from alpaca.data.timeframe import TimeFrame
-from alpaca.data.models import Bar, Quote
-from common.models import MarketData
-from common.redis_utils import RedisClient
+"""
+Market Price Monitor Module
 
-# Configure logging
+This module provides real-time price monitoring via Alpaca WebSocket feed.
+It connects to the Alpaca API, subscribes to tickers, and publishes price
+updates to Redis channels.
+"""
+import asyncio
+import json
+import logging
+import os
+from datetime import datetime
+from typing import Dict, List, Set, Callable, Optional
+
+from alpaca.data.live import StockDataStream
+from common.redis_utils import get_redis_client
+
 logger = logging.getLogger(__name__)
 
-# Initialize Blueprint
-market_routes = Blueprint('market', __name__, url_prefix='/api/market')
+# Redis event channels
+PRICE_UPDATE_CHANNEL = "market.price_update"
+TRADE_UPDATE_CHANNEL = "market.trade_update"
+TICKER_WATCH_CHANNEL = "market.ticker_watch"
+TICKER_UNWATCH_CHANNEL = "market.ticker_unwatch"
+CANDLE_UPDATE_CHANNEL = "market.candle_update"
+SYSTEM_STATUS_CHANNEL = "system.status"
 
-# Redis channels
-PRICE_UPDATE_CHANNEL = "aplus.market.price_update"
-TRIGGER_CHANNEL = "aplus.market.trigger"
-
-# In-memory cache of latest prices
-latest_prices: Dict[str, float] = {}
-# Subscription tracking
-active_subscriptions: Dict[str, bool] = {}
-# Websocket client
-websocket_client = None
-# Background thread for websocket
-websocket_thread = None
-# Watchlist of symbols being monitored
-watchlist: List[str] = []
-# Price triggers with callbacks
-price_triggers: Dict[str, List[Dict[str, Any]]] = {}
-
-
-def initialize_alpaca_client():
-    """Initialize Alpaca API client for market data."""
-    global websocket_client
-    
-    api_key = current_app.config.get("ALPACA_API_KEY", "")
-    api_secret = current_app.config.get("ALPACA_API_SECRET", "")
-    
-    if not api_key or not api_secret:
-        logger.error("Alpaca API credentials not set. Market data features will not work.")
-        return None, None
-    
-    try:
-        # Initialize historical data client
-        historical_client = StockHistoricalDataClient(api_key, api_secret)
+class PriceMonitor:
+    """Real-time price monitor using Alpaca WebSocket API."""
+    def __init__(self, api_key=None, api_secret=None):
+        """
+        Initialize the price monitor.
         
-        # Initialize websocket client
-        websocket_client = StockDataStream(api_key, api_secret)
+        Args:
+            api_key: Alpaca API key (default: from environment)
+            api_secret: Alpaca API secret (default: from environment)
+        """
+        self.api_key = api_key or os.environ.get("ALPACA_API_KEY")
+        self.api_secret = api_secret or os.environ.get("ALPACA_API_SECRET")
         
-        return historical_client, websocket_client
-    except Exception as e:
-        logger.error(f"Error initializing Alpaca client: {str(e)}", exc_info=True)
-        return None, None
-
-
-def start_websocket_thread():
-    """Start a background thread for the websocket connection."""
-    global websocket_thread
-    
-    if websocket_thread and websocket_thread.is_alive():
-        logger.info("Websocket thread already running")
-        return
-    
-    websocket_thread = threading.Thread(target=run_websocket_client)
-    websocket_thread.daemon = True
-    websocket_thread.start()
-    logger.info("Started websocket thread")
-
-
-def run_websocket_client():
-    """Run the websocket client in a background thread."""
-    global websocket_client, active_subscriptions, latest_prices
-    
-    if not websocket_client:
-        logger.error("Websocket client not initialized")
-        return
-    
-    async def _on_trade_update(trade):
-        """Handle trade updates from websocket."""
-        symbol = trade.symbol
-        price = trade.price
+        self.watchlist = set()
+        self.stock_stream = StockDataStream(self.api_key, self.api_secret)
+        self.redis = get_redis_client()
+        self.running = False
         
-        # Update latest price
-        latest_prices[symbol] = price
+        # Callback registrations
+        self.price_callbacks = []
         
-        # Get Redis client
-        redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379/0')
-        redis_client = RedisClient(redis_url)
+    async def start(self):
+        """Start the price monitor."""
+        self.running = True
         
-        # Create market data object
-        market_data = MarketData(
-            symbol=symbol,
-            price=price,
-            timestamp=datetime.now()
-        )
+        # Subscribe to trades for all tickers in watchlist
+        if self.watchlist:
+            # Convert set to list for subscription
+            symbols = list(self.watchlist)
+            self.stock_stream.subscribe_trades(self._process_trade, *symbols)
+            logger.info(f"Subscribed to trade updates for {len(symbols)} symbols")
         
-        # Publish price update
-        redis_client.publish(PRICE_UPDATE_CHANNEL, market_data.dict())
-        
-        # Check price triggers
-        check_price_triggers(symbol, price, redis_client)
+        try:
+            logger.info("Starting Alpaca WebSocket connection...")
+            await self.stock_stream.run()
+        except Exception as e:
+            logger.error(f"Error in WebSocket connection: {e}")
+            self.running = False
+            raise
     
-    # Set up the websocket handlers
-    websocket_client.subscribe_trades(_on_trade_update, *active_subscriptions.keys())
+    def stop(self):
+        """Stop the price monitor."""
+        if self.running:
+            self.running = False
+            try:
+                self.stock_stream.stop()
+                logger.info("Stopped Alpaca WebSocket connection")
+            except Exception as e:
+                logger.error(f"Error stopping WebSocket connection: {e}")
     
-    try:
-        websocket_client.run()
-    except Exception as e:
-        logger.error(f"Websocket error: {str(e)}", exc_info=True)
-        # Try to reconnect after a delay
-        time.sleep(5)
-        run_websocket_client()
-
-
-def check_price_triggers(symbol: str, price: float, redis_client: RedisClient):
-    """Check if the current price triggers any monitored conditions."""
-    global price_triggers
-    
-    if symbol not in price_triggers:
-        return
-    
-    triggers_to_remove = []
-    
-    for i, trigger in enumerate(price_triggers[symbol]):
-        comparison = trigger.get('comparison')
-        trigger_price = trigger.get('price')
+    def _process_trade(self, trade):
+        """
+        Process a trade update from Alpaca.
         
-        is_triggered = False
-        
-        if comparison == 'above' and price >= trigger_price:
-            is_triggered = True
-        elif comparison == 'below' and price <= trigger_price:
-            is_triggered = True
-        elif comparison == 'near':
-            # Consider 'near' if within 0.5% of the price
-            threshold = trigger_price * 0.005
-            is_triggered = abs(price - trigger_price) <= threshold
-        
-        if is_triggered:
-            # Mark for removal
-            triggers_to_remove.append(i)
+        Args:
+            trade: Alpaca trade data
+        """
+        try:
+            symbol = trade.symbol
+            price = trade.price
+            timestamp = trade.timestamp
+            size = trade.size
             
-            # Create trigger event
-            trigger_event = {
-                'symbol': symbol,
-                'price': price,
-                'trigger_price': trigger_price,
-                'comparison': comparison,
-                'trigger_id': trigger.get('id'),
-                'timestamp': datetime.now().isoformat()
-            }
+            logger.debug(f"Trade update: {symbol} @ {price} ({timestamp})")
             
-            # Publish the trigger event
-            redis_client.publish(TRIGGER_CHANNEL, trigger_event)
-            logger.info(f"Price trigger: {symbol} {comparison} {trigger_price} at {price}")
-    
-    # Remove triggered items (in reverse order to maintain indices)
-    for i in sorted(triggers_to_remove, reverse=True):
-        price_triggers[symbol].pop(i)
-
-
-@market_routes.route('/prices', methods=['GET'])
-def get_prices():
-    """Get latest prices for the watchlist or specific symbols."""
-    try:
-        symbols = request.args.get('symbols')
-        
-        # Parse symbols list or use watchlist
-        if symbols:
-            symbol_list = [s.strip().upper() for s in symbols.split(',')]
-        else:
-            symbol_list = watchlist
-        
-        if not symbol_list:
-            return jsonify({"status": "error", "message": "No symbols specified and watchlist is empty"}), 400
-        
-        # Filter latest prices by the requested symbols
-        result = {}
-        for symbol in symbol_list:
-            result[symbol] = latest_prices.get(symbol)
-        
-        return jsonify({
-            "status": "success",
-            "timestamp": datetime.now().isoformat(),
-            "prices": result
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting prices: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@market_routes.route('/watchlist', methods=['GET'])
-def get_watchlist():
-    """Get the current watchlist."""
-    return jsonify({
-        "status": "success",
-        "count": len(watchlist),
-        "symbols": watchlist
-    })
-
-
-@market_routes.route('/watchlist', methods=['POST'])
-def update_watchlist():
-    """Add symbols to the watchlist and subscribe to price updates."""
-    global watchlist, active_subscriptions, websocket_client
-    
-    try:
-        data = request.json
-        
-        if not data or 'symbols' not in data:
-            return jsonify({"status": "error", "message": "Missing symbols field"}), 400
-        
-        new_symbols = [s.strip().upper() for s in data['symbols']]
-        
-        if not new_symbols:
-            return jsonify({"status": "error", "message": "No symbols provided"}), 400
-        
-        # Add to watchlist
-        for symbol in new_symbols:
-            if symbol not in watchlist:
-                watchlist.append(symbol)
-        
-        # Subscribe to price updates
-        for symbol in new_symbols:
-            if symbol not in active_subscriptions:
-                active_subscriptions[symbol] = True
-        
-        # Initialize Alpaca clients if needed
-        if not websocket_client:
-            _, websocket_client = initialize_alpaca_client()
-            
-            if not websocket_client:
-                return jsonify({"status": "error", "message": "Failed to initialize Alpaca client"}), 500
-        
-        # Start websocket thread if needed
-        start_websocket_thread()
-        
-        return jsonify({
-            "status": "success",
-            "message": f"Added {len(new_symbols)} symbols to watchlist",
-            "watchlist": watchlist
-        })
-        
-    except Exception as e:
-        logger.error(f"Error updating watchlist: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@market_routes.route('/triggers', methods=['POST'])
-def add_price_trigger():
-    """Add a price trigger for a symbol."""
-    global price_triggers
-    
-    try:
-        data = request.json
-        
-        if not data or 'symbol' not in data or 'comparison' not in data or 'price' not in data:
-            return jsonify({
-                "status": "error", 
-                "message": "Missing required fields: symbol, comparison, price"
-            }), 400
-        
-        symbol = data['symbol'].strip().upper()
-        comparison = data['comparison'].lower()
-        price = float(data['price'])
-        trigger_id = data.get('id', f"trigger_{datetime.now().timestamp()}")
-        
-        if comparison not in ['above', 'below', 'near']:
-            return jsonify({
-                "status": "error", 
-                "message": "Invalid comparison type. Must be one of: above, below, near"
-            }), 400
-        
-        # Initialize triggers for this symbol if not exists
-        if symbol not in price_triggers:
-            price_triggers[symbol] = []
-        
-        # Add the trigger
-        price_triggers[symbol].append({
-            'comparison': comparison,
-            'price': price,
-            'id': trigger_id,
-            'created_at': datetime.now().isoformat()
-        })
-        
-        # Add to watchlist if not already there
-        if symbol not in watchlist:
-            watchlist.append(symbol)
-        
-        # Subscribe to price updates
-        if symbol not in active_subscriptions:
-            active_subscriptions[symbol] = True
-            
-            # Initialize Alpaca clients if needed
-            if not websocket_client:
-                _, websocket_client = initialize_alpaca_client()
-                
-                if not websocket_client:
-                    return jsonify({"status": "error", "message": "Failed to initialize Alpaca client"}), 500
-            
-            # Start websocket thread if needed
-            start_websocket_thread()
-        
-        return jsonify({
-            "status": "success",
-            "message": f"Added price trigger for {symbol}",
-            "trigger": {
+            # Create trade event
+            event = {
                 "symbol": symbol,
-                "comparison": comparison,
-                "price": price,
-                "id": trigger_id
+                "price": float(price),
+                "size": float(size),
+                "timestamp": timestamp.isoformat(),
+                "event_type": "trade_update"
             }
-        })
+            
+            # Add metadata about this ticker if we have any tracked setups
+            # This will be populated by the signal detector system
+            event["status"] = "monitoring"  # Default status
+            
+            # Publish to Redis - both to the general price update channel and to the ticker-specific channel
+            if self.redis and self.redis.available:
+                # Publish to the general market price update channel
+                self.redis.publish(PRICE_UPDATE_CHANNEL, json.dumps(event))
+                
+                # Also publish to ticker-specific channel for more targeted subscriptions
+                self.redis.publish(f"ticker.{symbol}", json.dumps(event))
+            
+            # Call registered callbacks
+            for callback in self.price_callbacks:
+                try:
+                    callback(symbol, float(price), timestamp)
+                except Exception as e:
+                    logger.error(f"Error in price callback: {e}")
+        except Exception as e:
+            logger.error(f"Error processing trade: {e}")
+    
+    def add_symbols(self, symbols: List[str]):
+        """
+        Add multiple symbols to the watchlist.
         
-    except Exception as e:
-        logger.error(f"Error adding price trigger: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@market_routes.route('/triggers', methods=['GET'])
-def get_price_triggers():
-    """Get all active price triggers."""
-    result = {}
+        Args:
+            symbols: List of ticker symbols to add
+        """
+        if not symbols:
+            return
+            
+        symbols = [s.upper() for s in symbols]
+        new_symbols = []
+        
+        for symbol in symbols:
+            if symbol not in self.watchlist:
+                self.watchlist.add(symbol)
+                new_symbols.append(symbol)
+                
+                # Publish individual ticker watch event for each new symbol
+                if self.redis and self.redis.available:
+                    watch_event = {
+                        "symbol": symbol,
+                        "event_type": "ticker_watch",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    self.redis.publish(TICKER_WATCH_CHANNEL, json.dumps(watch_event))
+                    self.redis.publish(f"ticker.{symbol}.control", json.dumps(watch_event))
+        
+        if new_symbols:
+            # Publish batch ticker watch event
+            if self.redis and self.redis.available and len(new_symbols) > 1:
+                batch_watch_event = {
+                    "symbols": new_symbols,
+                    "event_type": "ticker_watch_batch",
+                    "count": len(new_symbols),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                self.redis.publish(TICKER_WATCH_CHANNEL, json.dumps(batch_watch_event))
+            
+            if self.running:
+                # Resubscribe with updated watchlist
+                self.stock_stream.subscribe_trades(self._process_trade, *new_symbols)
+                
+            logger.info(f"Added {len(new_symbols)} symbols to watchlist: {', '.join(new_symbols)}")
     
-    for symbol, triggers in price_triggers.items():
-        result[symbol] = triggers
-    
-    return jsonify({
-        "status": "success",
-        "count": sum(len(triggers) for triggers in price_triggers.values()),
-        "triggers": result
-    })
-
-
-@market_routes.route('/historical/<symbol>', methods=['GET'])
-def get_historical_data(symbol):
-    """Get historical price data for a symbol."""
-    try:
+    def add_symbol(self, symbol: str):
+        """
+        Add a symbol to the watchlist.
+        
+        Args:
+            symbol: Ticker symbol to add
+        """
         symbol = symbol.upper()
+        if symbol not in self.watchlist:
+            self.watchlist.add(symbol)
+            
+            # Publish ticker watch event
+            if self.redis and self.redis.available:
+                watch_event = {
+                    "symbol": symbol,
+                    "event_type": "ticker_watch",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                self.redis.publish(TICKER_WATCH_CHANNEL, json.dumps(watch_event))
+                self.redis.publish(f"ticker.{symbol}.control", json.dumps(watch_event))
+                logger.debug(f"Published ticker watch event for {symbol}")
+            
+            if self.running:
+                # Resubscribe for this symbol
+                self.stock_stream.subscribe_trades(self._process_trade, symbol)
+            logger.info(f"Added {symbol} to watchlist")
+    
+    def remove_symbol(self, symbol: str):
+        """
+        Remove a symbol from the watchlist.
         
-        # Get query parameters
-        timeframe = request.args.get('timeframe', 'day')
-        limit = int(request.args.get('limit', 10))
+        Args:
+            symbol: Ticker symbol to remove
+        """
+        symbol = symbol.upper()
+        if symbol in self.watchlist:
+            self.watchlist.remove(symbol)
+            
+            # Publish ticker unwatch event
+            if self.redis and self.redis.available:
+                unwatch_event = {
+                    "symbol": symbol,
+                    "event_type": "ticker_unwatch",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                self.redis.publish(TICKER_UNWATCH_CHANNEL, json.dumps(unwatch_event))
+                self.redis.publish(f"ticker.{symbol}.control", json.dumps(unwatch_event))
+                logger.debug(f"Published ticker unwatch event for {symbol}")
+            
+            if self.running:
+                # Unsubscribe from this symbol
+                self.stock_stream.unsubscribe_trades(symbol)
+            logger.info(f"Removed {symbol} from watchlist")
+    
+    def register_price_callback(self, callback: Callable[[str, float, datetime], None]):
+        """
+        Register a callback for price updates.
         
-        # Initialize Alpaca client
-        historical_client, _ = initialize_alpaca_client()
+        Args:
+            callback: Function to call on price updates (symbol, price, timestamp)
+        """
+        self.price_callbacks.append(callback)
+        logger.debug(f"Registered price callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
+    
+    def get_watchlist(self) -> List[str]:
+        """
+        Get the current watchlist.
         
-        if not historical_client:
-            return jsonify({"status": "error", "message": "Failed to initialize Alpaca client"}), 500
-        
-        # Map timeframe string to Alpaca TimeFrame
-        if timeframe == '1min':
-            tf = TimeFrame.Minute
-        elif timeframe == '5min':
-            tf = TimeFrame.Minute
-            limit = limit * 5  # Get 5x the data for 5min bars
-        elif timeframe == '15min':
-            tf = TimeFrame.Minute
-            limit = limit * 15  # Get 15x the data for 15min bars
-        elif timeframe == 'hour':
-            tf = TimeFrame.Hour
-        elif timeframe == 'day':
-            tf = TimeFrame.Day
-        else:
-            tf = TimeFrame.Day
-        
-        # Request historical bars
-        request_params = StockBarsRequest(
-            symbol_or_symbols=symbol,
-            timeframe=tf,
-            limit=limit
-        )
-        
-        bars = historical_client.get_stock_bars(request_params)
-        
-        if symbol not in bars:
-            return jsonify({"status": "error", "message": f"No data found for {symbol}"}), 404
-        
-        # Format the response
-        bar_data = []
-        for bar in bars[symbol]:
-            bar_data.append({
-                "timestamp": bar.timestamp.isoformat(),
-                "open": bar.open,
-                "high": bar.high,
-                "low": bar.low,
-                "close": bar.close,
-                "volume": bar.volume
-            })
-        
-        return jsonify({
-            "status": "success",
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "count": len(bar_data),
-            "bars": bar_data
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting historical data: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        Returns:
+            List of ticker symbols being monitored
+        """
+        return list(self.watchlist)
+
+# Singleton instance
+_price_monitor = None
+
+def get_price_monitor() -> PriceMonitor:
+    """
+    Get the global price monitor instance.
+    
+    Returns:
+        PriceMonitor: Global price monitor instance
+    """
+    global _price_monitor
+    if _price_monitor is None:
+        _price_monitor = PriceMonitor()
+    return _price_monitor

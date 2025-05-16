@@ -30,9 +30,13 @@ ALPACA_API_SECRET = os.environ.get('ALPACA_API_SECRET')
 trading_client = None
 historical_client = None
 
+# Export client instances for use by other modules
+alpaca_trading_client = None
+alpaca_market_client = None
+
 def initialize_clients():
     """Initialize Alpaca clients if credentials are available."""
-    global trading_client, historical_client
+    global trading_client, historical_client, alpaca_trading_client, alpaca_market_client
     
     if not ALPACA_API_KEY or not ALPACA_API_SECRET:
         logger.warning("Alpaca API credentials not found in environment variables")
@@ -44,6 +48,10 @@ def initialize_clients():
         
         # Initialize historical data client
         historical_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
+        
+        # Set the exported client references
+        alpaca_trading_client = trading_client
+        alpaca_market_client = historical_client
         
         logger.info("Alpaca clients initialized successfully")
         return True
@@ -64,16 +72,20 @@ def get_account_info() -> Dict:
     
     try:
         account = trading_client.get_account()
+        
+        # Convert account to dictionary for better handling
+        account_dict = account.to_dict()
+        
         return {
-            'id': str(account.account_id) if hasattr(account, 'account_id') else str(account.id),
-            'status': str(account.status),
-            'equity': float(account.equity),
-            'cash': float(account.cash),
-            'buying_power': float(account.buying_power),
-            'position_market_value': float(account.long_market_value - account.short_market_value),
-            'portfolio_value': float(account.portfolio_value),
-            'trading_blocked': bool(account.trading_blocked),
-            'pattern_day_trader': bool(account.pattern_day_trader)
+            'id': str(account_dict.get('id', '')),
+            'status': str(account_dict.get('status', '')),
+            'equity': float(account_dict.get('equity', 0)),
+            'cash': float(account_dict.get('cash', 0)),
+            'buying_power': float(account_dict.get('buying_power', 0)),
+            'position_market_value': float(account_dict.get('long_market_value', 0)) - float(account_dict.get('short_market_value', 0)),
+            'portfolio_value': float(account_dict.get('portfolio_value', 0)),
+            'trading_blocked': bool(account_dict.get('trading_blocked', False)),
+            'pattern_day_trader': bool(account_dict.get('pattern_day_trader', False))
         }
     except Exception as e:
         logger.error(f"Error getting account info: {e}")
@@ -91,17 +103,29 @@ def get_positions() -> List[Dict]:
         return []
     
     try:
+        # Get all positions from the Alpaca API
         positions = trading_client.get_all_positions()
-        return [{
-            'symbol': str(pos.symbol),
-            'qty': float(pos.qty),
-            'market_value': float(pos.market_value),
-            'avg_entry_price': float(pos.avg_entry_price),
-            'side': 'long' if float(pos.qty) > 0 else 'short',
-            'unrealized_pl': float(pos.unrealized_pl),
-            'unrealized_plpc': float(pos.unrealized_plpc),
-            'current_price': float(pos.current_price)
-        } for pos in positions]
+        position_list = []
+        
+        for pos in positions:
+            # Convert position to dictionary
+            try:
+                pos_dict = pos.to_dict()
+                position_list.append({
+                    'symbol': str(pos_dict.get('symbol', '')),
+                    'qty': float(pos_dict.get('qty', 0)),
+                    'market_value': float(pos_dict.get('market_value', 0)),
+                    'avg_entry_price': float(pos_dict.get('avg_entry_price', 0)),
+                    'side': 'long' if float(pos_dict.get('qty', 0)) > 0 else 'short',
+                    'unrealized_pl': float(pos_dict.get('unrealized_pl', 0)),
+                    'unrealized_plpc': float(pos_dict.get('unrealized_plpc', 0)),
+                    'current_price': float(pos_dict.get('current_price', 0))
+                })
+            except Exception as e:
+                logger.error(f"Error processing position {pos}: {e}")
+                continue
+                
+        return position_list
     except Exception as e:
         logger.error(f"Error getting positions: {e}")
         return []
@@ -427,3 +451,6 @@ def cancel_order(order_id: str) -> bool:
     except Exception as e:
         logger.error(f"Error cancelling order {order_id}: {e}")
         return False
+
+# Initialize clients on module import
+initialize_clients()
