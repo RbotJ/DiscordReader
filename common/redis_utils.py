@@ -9,6 +9,45 @@ from datetime import datetime, date
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Global redis client singleton
+_redis_client = None
+
+def get_redis_client():
+    """Get or create the global redis client."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = RedisClient()
+    return _redis_client
+
+def publish_event(event_type: str, data: Dict[str, Any]) -> bool:
+    """
+    Publish an event to the appropriate Redis channel.
+    
+    Args:
+        event_type: The type of event (from EventType constants)
+        data: The event data to publish
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        event_data = {
+            'type': event_type,
+            'data': data,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        client = get_redis_client()
+        result = client.publish(f'events:{event_type}', event_data)
+        
+        # Also publish to the general events channel
+        client.publish('events', event_data)
+        
+        return result > 0
+    except Exception as e:
+        logger.error(f"Error publishing event {event_type}: {e}")
+        return False
+
 # Type variables for return values
 T = TypeVar('T')
 ResponseT = Union[bytes, str, int, float, List[Any], Dict[str, Any], bool, None]

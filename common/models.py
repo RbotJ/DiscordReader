@@ -56,6 +56,7 @@ class TickerSetup(BaseModel):
     symbol: str
     signals: List[Signal]
     bias: Optional[Bias] = None
+    text: str = ""  # Raw text of the ticker setup for extraction
 
 
 class TradeSetupMessage(BaseModel):
