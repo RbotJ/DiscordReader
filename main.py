@@ -138,9 +138,20 @@ def register_routes(app):
         Get available tickers with trading setups.
         Returns a list of ticker symbols that have active setups.
         """
-        # We'll implement this to fetch tickers from our database later
-        tickers = ["SPY", "AAPL", "MSFT", "NVDA", "TSLA"]
-        return jsonify({'tickers': tickers})
+        try:
+            # Query the database for unique tickers from ticker_setups table
+            from models import TickerSetup
+            ticker_results = db.session.query(TickerSetup.symbol).distinct().all()
+            tickers = [result[0] for result in ticker_results]
+            
+            # If no tickers found in the database, return a few sample tickers
+            if not tickers:
+                tickers = ["SPY", "AAPL", "MSFT", "NVDA", "TSLA"]
+            
+            return jsonify(tickers)
+        except Exception as e:
+            logging.error(f"Error fetching tickers: {e}")
+            return jsonify([])
     
     @app.route('/api/account')
     def get_account():
@@ -148,14 +159,105 @@ def register_routes(app):
         Get account information.
         Returns account balance, buying power, etc.
         """
-        # We'll implement this to fetch from Alpaca later
-        account_info = {
-            'portfolio_value': 100000.00,
-            'cash': 75000.00,
-            'buying_power': 150000.00,
-            'positions_count': 5
-        }
-        return jsonify(account_info)
+        try:
+            # Try to get account info from Alpaca
+            from features.alpaca.client import alpaca_trading_client
+            account = alpaca_trading_client.get_account()
+            return jsonify(account)
+        except Exception as e:
+            logging.error(f"Error fetching account information: {e}")
+            # Return fallback account info if there's an error
+            return jsonify({
+                'id': 'paper-account',
+                'equity': 100000.00,
+                'cash': 75000.00,
+                'buying_power': 150000.00,
+                'portfolio_value': 100000.00,
+                'positions_count': 0,
+                'status': 'ACTIVE'
+            })
+    
+    @app.route('/api/positions')
+    def get_positions():
+        """
+        Get current positions.
+        Returns a list of open positions.
+        """
+        try:
+            # Try to get positions from Alpaca
+            from features.alpaca.client import alpaca_trading_client
+            positions = alpaca_trading_client.get_positions()
+            return jsonify(positions)
+        except Exception as e:
+            logging.error(f"Error fetching positions: {e}")
+            return jsonify([])
+    
+    @app.route('/api/candles/<ticker>')
+    def get_candles(ticker):
+        """
+        Get candle data for a ticker.
+        
+        Args:
+            ticker: Ticker symbol
+            
+        Query params:
+            timeframe: Candle timeframe (default: 1min)
+            limit: Number of candles to return (default: 100)
+        """
+        from flask import request
+        
+        timeframe = request.args.get('timeframe', '1min')
+        limit = int(request.args.get('limit', 100))
+        
+        try:
+            # Try to get candles from Alpaca
+            from features.alpaca.client import alpaca_market_client
+            candles = alpaca_market_client.get_bars(ticker, timeframe, limit)
+            return jsonify(candles)
+        except Exception as e:
+            logging.error(f"Error fetching candles for {ticker}: {e}")
+            return jsonify([])
+    
+    @app.route('/api/signals/<ticker>')
+    def get_signals(ticker):
+        """
+        Get signals for a ticker.
+        
+        Args:
+            ticker: Ticker symbol
+        """
+        try:
+            # Query the database for signals associated with the ticker
+            from models import TickerSetup, Signal
+            
+            # Get the most recent ticker setup
+            ticker_setup = TickerSetup.query.filter_by(symbol=ticker).order_by(TickerSetup.id.desc()).first()
+            
+            if not ticker_setup:
+                return jsonify(None)
+            
+            # Get signals for the ticker setup
+            signals = Signal.query.filter_by(ticker_setup_id=ticker_setup.id).all()
+            
+            if not signals:
+                return jsonify(None)
+            
+            # Return the first signal (we'll enhance this later)
+            signal = signals[0]
+            
+            signal_data = {
+                'id': signal.id,
+                'category': signal.category.value,
+                'aggressiveness': signal.aggressiveness.value,
+                'comparison': signal.comparison.value,
+                'trigger': signal.trigger,
+                'targets': signal.targets
+            }
+            
+            return jsonify(signal_data)
+        except Exception as e:
+            logging.error(f"Error fetching signals for {ticker}: {e}")
+            return jsonify(None)
 
 # Create the application
 app = create_app()

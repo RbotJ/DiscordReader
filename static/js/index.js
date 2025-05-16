@@ -1,15 +1,19 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
+import { createRoot } from 'react-dom/client';
+import Dashboard from './components/Dashboard';
 
-document.addEventListener('DOMContentLoaded', () => {
-  const rootElement = document.getElementById('root');
-  if (rootElement) {
-    const root = ReactDOM.createRoot(rootElement);
-    root.render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>
-    );
-  }
+// Render the application
+const container = document.getElementById('app');
+if (container) {
+  const root = createRoot(container);
+  root.render(
+    <React.StrictMode>
+      <Dashboard />
+    </React.StrictMode>
+  );
+}
+
+// Add event listener for errors
+window.addEventListener('error', (event) => {
+  console.error('Global error caught:', event.error);
 });

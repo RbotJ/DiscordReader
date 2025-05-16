@@ -1,137 +1,161 @@
+import io from 'socket.io-client';
+
 /**
- * WebSocket Service
- * Handles WebSocket connections for real-time data
+ * WebSocketService
+ * Handles WebSocket connections and events
  */
 class WebSocketService {
   constructor() {
     this.socket = null;
     this.connected = false;
-    this.callbacks = {
-      onConnect: null,
-      onDisconnect: null,
-      onMarketData: null,
-      onSignalUpdate: null,
-      onPositionUpdate: null,
-      onAccountUpdate: null,
-      onError: null
+    this.eventHandlers = {
+      'connect': [],
+      'disconnect': [],
+      'price_update': [],
+      'signal_triggered': [],
+      'trade_executed': [],
+      'error': []
     };
   }
-
+  
   /**
-   * Initialize the WebSocket connection
+   * Initialize WebSocket connection
+   * @returns {Promise} Promise that resolves when connected
    */
-  initialize() {
-    try {
-      // Get the protocol (ws or wss) based on the current page protocol
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      const socketUrl = `${protocol}//${host}/socket.io/?EIO=4&transport=websocket`;
-
-      // Create a new WebSocket connection
-      this.socket = io();
-
-      // Set up event listeners
-      this.socket.on('connect', () => {
-        console.log('WebSocket connected');
-        this.connected = true;
-        if (this.callbacks.onConnect) {
-          this.callbacks.onConnect();
+  connect() {
+    return new Promise((resolve, reject) => {
+      try {
+        // If already connected, resolve immediately
+        if (this.socket && this.connected) {
+          resolve();
+          return;
         }
-      });
-
-      this.socket.on('disconnect', () => {
-        console.log('WebSocket disconnected');
-        this.connected = false;
-        if (this.callbacks.onDisconnect) {
-          this.callbacks.onDisconnect();
-        }
-      });
-
-      this.socket.on('market_data', (data) => {
-        if (this.callbacks.onMarketData) {
-          this.callbacks.onMarketData(data);
-        }
-      });
-
-      this.socket.on('signal_update', (data) => {
-        if (this.callbacks.onSignalUpdate) {
-          this.callbacks.onSignalUpdate(data);
-        }
-      });
-
-      this.socket.on('position_update', (data) => {
-        if (this.callbacks.onPositionUpdate) {
-          this.callbacks.onPositionUpdate(data);
-        }
-      });
-
-      this.socket.on('account_update', (data) => {
-        if (this.callbacks.onAccountUpdate) {
-          this.callbacks.onAccountUpdate(data);
-        }
-      });
-      
-      this.socket.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        if (this.callbacks.onError) {
-          this.callbacks.onError(error);
-        }
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error initializing WebSocket:', error);
-      return false;
-    }
+        
+        // Create a new socket instance
+        this.socket = io();
+        
+        // Set up connection event handlers
+        this.socket.on('connect', () => {
+          console.log('WebSocket connected');
+          this.connected = true;
+          this._notifyHandlers('connect');
+          resolve();
+        });
+        
+        this.socket.on('disconnect', () => {
+          console.log('WebSocket disconnected');
+          this.connected = false;
+          this._notifyHandlers('disconnect');
+        });
+        
+        this.socket.on('connect_error', (error) => {
+          console.error('WebSocket connection error:', error);
+          this._notifyHandlers('error', { message: 'Connection error', error });
+          reject(error);
+        });
+        
+        // Set up business event handlers
+        this.socket.on('price_update', (data) => {
+          this._notifyHandlers('price_update', data);
+        });
+        
+        this.socket.on('signal_triggered', (data) => {
+          this._notifyHandlers('signal_triggered', data);
+        });
+        
+        this.socket.on('trade_executed', (data) => {
+          this._notifyHandlers('trade_executed', data);
+        });
+        
+      } catch (error) {
+        console.error('WebSocket initialization error:', error);
+        reject(error);
+      }
+    });
   }
-
+  
   /**
-   * Register callback functions for WebSocket events
-   * @param {Object} callbacks - Object containing callback functions
-   */
-  registerCallbacks(callbacks) {
-    this.callbacks = { ...this.callbacks, ...callbacks };
-  }
-
-  /**
-   * Subscribe to market data for specific tickers
-   * @param {Array} tickers - Array of ticker symbols to subscribe to
-   */
-  subscribeTickers(tickers) {
-    if (!this.connected || !tickers || !tickers.length) {
-      return false;
-    }
-
-    this.socket.emit('subscribe_tickers', { tickers });
-    return true;
-  }
-
-  /**
-   * Send a message to the server
-   * @param {string} eventName - Name of the event
-   * @param {Object} data - Data to send with the event
-   */
-  send(eventName, data) {
-    if (!this.connected) {
-      return false;
-    }
-
-    this.socket.emit(eventName, data);
-    return true;
-  }
-
-  /**
-   * Disconnect the WebSocket connection
+   * Disconnect WebSocket
    */
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
-      this.socket = null;
-      this.connected = false;
     }
+  }
+  
+  /**
+   * Subscribe to ticker updates
+   * @param {Array} tickers - Array of ticker symbols to subscribe to
+   */
+  subscribeTickers(tickers) {
+    if (!this.socket || !this.connected) {
+      console.error('Cannot subscribe: WebSocket not connected');
+      return;
+    }
+    
+    this.socket.emit('subscribe_tickers', { tickers });
+    console.log('Subscribed to tickers:', tickers);
+  }
+  
+  /**
+   * Unsubscribe from ticker updates
+   * @param {Array} tickers - Array of ticker symbols to unsubscribe from
+   */
+  unsubscribeTickers(tickers) {
+    if (!this.socket || !this.connected) {
+      console.error('Cannot unsubscribe: WebSocket not connected');
+      return;
+    }
+    
+    this.socket.emit('unsubscribe_tickers', { tickers });
+    console.log('Unsubscribed from tickers:', tickers);
+  }
+  
+  /**
+   * Register event handler
+   * @param {string} event - Event name
+   * @param {function} handler - Event handler function
+   */
+  on(event, handler) {
+    if (!this.eventHandlers[event]) {
+      this.eventHandlers[event] = [];
+    }
+    
+    this.eventHandlers[event].push(handler);
+    return this;
+  }
+  
+  /**
+   * Remove event handler
+   * @param {string} event - Event name
+   * @param {function} handler - Event handler function to remove
+   */
+  off(event, handler) {
+    if (!this.eventHandlers[event]) return this;
+    
+    this.eventHandlers[event] = this.eventHandlers[event].filter(h => h !== handler);
+    return this;
+  }
+  
+  /**
+   * Notify all registered handlers for an event
+   * @param {string} event - Event name
+   * @param {any} data - Event data
+   * @private
+   */
+  _notifyHandlers(event, data) {
+    if (!this.eventHandlers[event]) return;
+    
+    this.eventHandlers[event].forEach(handler => {
+      try {
+        handler(data);
+      } catch (error) {
+        console.error(`Error in ${event} handler:`, error);
+      }
+    });
   }
 }
 
-// Create and export a singleton instance
+// Export as singleton
 const websocketService = new WebSocketService();
 export default websocketService;
