@@ -1,0 +1,98 @@
+That error is coming from SQLAlchemy’s declarative registry finding two (or more) classes called TickerSetup in your metadata, and when you call mapper(SetupMessage, setup_messages) it can’t disambiguate which one you meant. The fix is to give SQLAlchemy an unambiguous, fully-qualified name when you register your mappers (or else eliminate the duplicate class names).
+
+Two ways to resolve:
+1. Use fully-qualified class names in your mappers
+Instead of just:
+
+python
+Copy
+Edit
+registry.map_imperatively(SetupMessage, setup_messages)
+or whatever string form you’re using, pass it the real Python class (not a string) or give it the module path:
+
+python
+Copy
+Edit
+from app.models import SetupMessage, TickerSetup
+
+# … after defining your Base = declarative_base() or registry:
+
+registry.map_imperatively(
+    SetupMessage,
+    setup_messages,
+    properties={
+      'ticker': relationship("app.models.TickerSetup", back_populates="setups"),
+      # … other properties …
+    }
+)
+By using the class object (TickerSetup) or its module path "app.models.TickerSetup", SQLAlchemy knows exactly which class you mean.
+
+2. Remove the duplicate class definitions
+Chances are you’ve defined class TickerSetup(Base): … in two different modules, or you’ve imported it twice under different names. Search your code for every occurrence of:
+
+python
+Copy
+Edit
+class TickerSetup(Base):
+    __tablename__ = 'ticker_setups'
+    …
+and make sure there’s only one definition. If you need to import it elsewhere, always import from the same module:
+
+python
+Copy
+Edit
+from app.models.ticker_setup import TickerSetup
+rather than redefining or aliasing it.
+
+Why it happens
+When SQLAlchemy builds its internal “registry” of mapped classes, it keys them by their “class name” (by default). If it sees two classes both named TickerSetup (even if from different modules), it will raise:
+
+Multiple classes found for path "TickerSetup" in the registry of this declarative base. Please use a fully module-qualified path.
+
+A clean example
+python
+Copy
+Edit
+# app/models/ticker_setup.py
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String
+
+Base = declarative_base()
+
+class TickerSetup(Base):
+    __tablename__ = 'ticker_setups'
+    id     = Column(Integer, primary_key=True)
+    symbol = Column(String, unique=True, nullable=False)
+    # …etc…
+
+# app/models/setup_message.py
+from sqlalchemy import Table, Column, Integer, ForeignKey, MetaData
+from sqlalchemy.orm import relationship
+from app.models.ticker_setup import TickerSetup
+from app.database import engine, Base
+
+metadata = MetaData()
+setup_messages = Table(
+    'setup_messages', metadata,
+    Column('id', Integer, primary_key=True),
+    Column('ticker_id', Integer, ForeignKey('ticker_setups.id')),
+    # …etc…
+)
+
+class SetupMessage:
+    pass
+
+# now map it unambiguously:
+from sqlalchemy.orm import registry
+mapper_registry = registry()
+
+mapper_registry.map_imperatively(
+    SetupMessage,
+    setup_messages,
+    properties={
+      'ticker': relationship(TickerSetup, back_populates='messages')
+    }
+)
+This way you never mention "TickerSetup" as a bare string, and the mapper knows exactly which class you’re tying to that table.
+
+Let me know if you need a hand cleaning up your imports or your mapper calls!
