@@ -42,13 +42,31 @@ function Dashboard({ account, loading, error }) {
     newSocket.on('market_update', (data) => {
       // Handle market update data
       console.log('Market update received:', data);
-      addEvent('market', `Received update for ${data.symbol}: $${data.price}`);
+      try {
+        if (data && typeof data === 'object' && data.symbol && data.price) {
+          addEvent('market', `Received update for ${data.symbol}: $${data.price}`);
+        } else {
+          addEvent('market', 'Received market update with invalid data format');
+        }
+      } catch (error) {
+        console.error('Error processing market update:', error);
+      }
     });
     
     newSocket.on('signal_update', (data) => {
       // Handle signal updates
       console.log('Signal update received:', data);
-      addEvent('signal', `Signal update for ${data.symbol}: ${data.type} at $${data.price}`);
+      try {
+        if (data && typeof data === 'object' && data.symbol) {
+          const price = data.price ? `$${data.price}` : '';
+          const type = data.type || 'unknown';
+          addEvent('signal', `Signal update for ${data.symbol}: ${type} ${price}`.trim());
+        } else {
+          addEvent('signal', 'Received signal update with invalid data format');
+        }
+      } catch (error) {
+        console.error('Error processing signal update:', error);
+      }
     });
     
     // Save socket to state
