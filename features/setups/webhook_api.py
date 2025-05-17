@@ -6,30 +6,26 @@ and storing them in the database.
 """
 import logging
 from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 
-from common.db import db
-from features.setups.models import (
+from models import (
     SetupMessage, 
     TickerSetup, 
     Signal, 
     Bias,
-    SignalTarget,
+    BiasFlip,
     SignalCategoryEnum,
     AggressivenessEnum,
     ComparisonTypeEnum,
     BiasDirectionEnum
 )
-from features.setups.parser import SetupParser
+from features.setups.parser import parse_setup_message
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 # Create blueprint
-webhook_bp = Blueprint('setup_webhook', __name__, url_prefix='/api/v1/webhooks')
-
-# Initialize parser
-parser = SetupParser()
+webhook_bp = Blueprint('setup_webhook', __name__, url_prefix='/api/webhooks')
 
 def register_routes(app):
     """Register webhook routes with the Flask app."""
@@ -41,422 +37,220 @@ def receive_setup():
     """
     Receive a setup message from a webhook.
     
-    Expects JSON payload with:
-    - text: The raw setup message text
-    - date: (Optional) Date of the setup message (YYYY-MM-DD), defaults to today
-    - source: (Optional) Source of the message, defaults to 'webhook'
+    Expected JSON payload:
+    {
+        "text": "A+ Setups for the day...",
+        "source": "discord",
+        "timestamp": "2023-03-14T12:00:00Z" (optional)
+    }
     
     Returns:
-    - JSON with status and parsed ticker setups
+        JSON response with parsing results
     """
+    # Validate request
+    if not request.is_json:
+        return jsonify({
+            'success': False,
+            'error': 'Request must be JSON',
+            'code': 'INVALID_FORMAT'
+        }), 400
+    
+    data = request.get_json()
+    
+    # Validate required fields
+    if 'text' not in data:
+        return jsonify({
+            'success': False,
+            'error': 'Missing required field: text',
+            'code': 'MISSING_FIELD'
+        }), 400
+    
+    # Get message metadata
+    message_text = data['text']
+    source = data.get('source', 'webhook')
+    timestamp = data.get('timestamp')
+    
     try:
-        # Get and validate JSON data
-        data = request.get_json()
-        if not data:
-            return jsonify({'status': 'error', 'message': 'No JSON data provided'}), 400
+        # Parse the setup message
+        setup_dto = parse_setup_message(message_text, source=source)
         
-        if 'text' not in data or not data['text']:
-            return jsonify({'status': 'error', 'message': 'Missing required field: text'}), 400
-        
-        # Extract data
-        text = data.get('text', '').strip()
-        source = data.get('source', 'webhook')
-        
-        # Handle date
-        try:
-            if 'date' in data and data['date']:
-                message_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
-            else:
-                message_date = datetime.now().date()
-        except ValueError:
-            return jsonify({'status': 'error', 'message': 'Invalid date format. Use YYYY-MM-DD'}), 400
-        
-        # Parse the message
-        setup_dto = parser.parse_message(text, message_date=message_date, source=source)
-        
-        # Check if parsing was successful
-        if not setup_dto or not setup_dto.setups:
+        if not setup_dto.ticker_setups:
             return jsonify({
-                'status': 'error',
-                'message': 'Failed to parse any ticker setups from the message',
-                'raw_text': text
+                'success': False,
+                'error': 'No valid trading setups found in message',
+                'code': 'NO_SETUPS_FOUND'
             }), 400
         
-        # Save to database using the consolidated model approach
-        try:
-            # Create SetupMessage
-            db_message = SetupMessage()
-            db_message.date = setup_dto.date
-            db_message.raw_text = setup_dto.raw_text
-            db_message.source = setup_dto.source
-            db_message.created_at = datetime.utcnow()
+        # Store in database
+        from app import db
+        
+        # Create main setup message
+        setup_message = SetupMessage(
+            date=setup_dto.date,
+            raw_text=setup_dto.raw_text,
+            source=setup_dto.source,
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(setup_message)
+        db.session.flush()  # Get ID without committing
+        
+        # Create ticker setups and signals
+        for ticker_setup_dto in setup_dto.ticker_setups:
+            # Create ticker setup
+            ticker_setup = TickerSetup(
+                symbol=ticker_setup_dto.symbol,
+                text=ticker_setup_dto.text,
+                message_id=setup_message.id
+            )
             
-            # Add to session
-            db.session.add(db_message)
+            db.session.add(ticker_setup)
+            db.session.flush()  # Get ID without committing
             
-            # Flush to get message ID
-            db.session.flush()
+            # Create signals
+            for signal_dto in ticker_setup_dto.signals:
+                signal = Signal(
+                    ticker_setup_id=ticker_setup.id,
+                    category=signal_dto.category,
+                    aggressiveness=signal_dto.aggressiveness,
+                    comparison=signal_dto.comparison,
+                    trigger={"price": signal_dto.trigger, "timeframe": "1D"},
+                    targets=[{"price": t, "percentage": 1.0/len(signal_dto.targets)} for t in signal_dto.targets]
+                )
+                db.session.add(signal)
             
-            # Process each ticker setup
-            for ticker_setup in setup_dto.setups:
-                # Create TickerSetup with direct assignment of setup_id
-                db_ticker = TickerSetup()
-                db_ticker.symbol = ticker_setup.symbol
-                db_ticker.text = ticker_setup.text if ticker_setup.text else ""
-                db_ticker.setup_id = db_message.id  # Direct foreign key assignment
-                db_ticker.created_at = datetime.utcnow()
-                
-                # Add to session
-                db.session.add(db_ticker)
+            # Create bias if present
+            if ticker_setup_dto.bias:
+                bias = Bias(
+                    ticker_setup_id=ticker_setup.id,
+                    direction=ticker_setup_dto.bias.direction,
+                    condition=ticker_setup_dto.bias.condition,
+                    price=ticker_setup_dto.bias.price
+                )
+                db.session.add(bias)
                 db.session.flush()
                 
-                # Add signals
-                for signal_dto in ticker_setup.signals:
-                    # Create Signal with direct assignment of ticker_setup_id
-                    db_signal = Signal()
-                    db_signal.category = signal_dto.category.value  # Store as string instead of enum
-                    db_signal.aggressiveness = signal_dto.aggressiveness.value  # Store as string
-                    db_signal.comparison = signal_dto.comparison.value  # Store as string
-                    db_signal.ticker_setup_id = db_ticker.id  # Direct foreign key assignment
-                    db_signal.created_at = datetime.utcnow()
-                    db_signal.active = True
-                    
-                    # Store trigger as JSON
-                    if isinstance(signal_dto.trigger, (int, float)):
-                        # Single price level
-                        db_signal.trigger_value = {"type": "single", "value": float(signal_dto.trigger)}
-                    else:
-                        # Range
-                        db_signal.trigger_value = {
-                            "type": "range", 
-                            "low": float(signal_dto.trigger[0]), 
-                            "high": float(signal_dto.trigger[1])
-                        }
-                    
-                    # Store targets as JSON array
-                    db_signal.targets = [float(t) for t in signal_dto.targets]
-                    
-                    # Add to session
-                    db.session.add(db_signal)
-                    db.session.flush()
-                    
-                    # Add targets as separate records in signal_targets table for detailed tracking
-                    for i, target_price in enumerate(signal_dto.targets, 1):
-                        target = SignalTarget()
-                        target.price = float(target_price)
-                        target.position = i
-                        target.signal_id = db_signal.id  # Direct foreign key assignment
-                        target.created_at = datetime.utcnow()
-                        
-                        # Add to session
-                        db.session.add(target)
-                
-                # Add bias if present
-                if ticker_setup.bias:
-                    db_bias = Bias()
-                    db_bias.direction = ticker_setup.bias.direction.value  # Store as string
-                    db_bias.condition = ticker_setup.bias.condition.value  # Store as string
-                    db_bias.price = float(ticker_setup.bias.price)
-                    db_bias.ticker_setup_id = db_ticker.id  # Direct foreign key assignment
-                    db_bias.created_at = datetime.utcnow()
-                    
-                    # Add flip details if present
-                    if ticker_setup.bias.flip:
-                        db_bias.flip_direction = ticker_setup.bias.flip.direction.value  # Store as string
-                        db_bias.flip_price_level = float(ticker_setup.bias.flip.price_level)
-                    
-                    # Add to session
-                    db.session.add(db_bias)
-            
-            # Commit all changes
-            db.session.commit()
-            
-            # Send notifications via Discord
-            try:
-                from features.setups.notification_service import process_new_setup_message
-                # Use test_mode=True for testing, False for production
-                process_new_setup_message(db_message.id, test_mode=True)
-                notification_status = 'sent'
-            except Exception as e:
-                logger.warning(f"Failed to send notifications: {e}")
-                notification_status = 'failed'
-                # Continue with success response even if notifications fail
-            
-            # Return success response
-            return jsonify({
-                'status': 'success',
-                'message': 'Setup message successfully processed',
-                'setup_id': db_message.id,
-                'ticker_count': len(list(db_message.ticker_setups)),
-                'tickers': [ts.symbol for ts in list(db_message.ticker_setups)],
-                'notifications': notification_status
-            }), 201
-            
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Database error: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'message': f'Database error: {str(e)}',
-                'parsed': {
-                    'ticker_count': len(setup_dto.setups),
-                    'tickers': [s.symbol for s in setup_dto.setups]
-                }
-            }), 500
-            
-    except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
+                # Add bias flip if present
+                if ticker_setup_dto.bias.flip:
+                    bias_flip = BiasFlip(
+                        bias_id=bias.id,
+                        direction=ticker_setup_dto.bias.flip.direction,
+                        price_level=ticker_setup_dto.bias.flip.price_level
+                    )
+                    db.session.add(bias_flip)
+        
+        # Commit all changes
+        db.session.commit()
+        
+        # Return success response with parsed data
         return jsonify({
-            'status': 'error',
-            'message': f'Error processing webhook: {str(e)}'
+            'success': True,
+            'message_id': setup_message.id,
+            'date': setup_dto.date.isoformat(),
+            'tickers': [setup.symbol for setup in setup_dto.setups],
+            'signal_count': sum(len(setup.signals) for setup in setup_dto.setups)
+        })
+    
+    except Exception as e:
+        logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
+        
+        return jsonify({
+            'success': False,
+            'error': f"Error processing webhook: {str(e)}",
+            'code': 'PROCESSING_ERROR'
         }), 500
 
-@webhook_bp.route('/setups/recent', methods=['GET'])
-def get_recent_setups():
+@webhook_bp.route('/setup/parse', methods=['POST'])
+def parse_setup():
     """
-    Get recent setup messages.
+    Parse a setup message without saving to the database.
     
-    Query parameters:
-    - limit: Maximum number of setups to return (default: 10)
-    - symbol: Filter by ticker symbol (optional)
+    Expected JSON payload:
+    {
+        "text": "A+ Setups for the day...",
+        "source": "test" (optional)
+    }
     
     Returns:
-    - JSON with recent setup messages
+        JSON response with parsing results
     """
-    try:
-        # Get query parameters
-        limit = request.args.get('limit', default=10, type=int)
-        symbol = request.args.get('symbol', default=None, type=str)
-        
-        # Validate limit
-        if limit <= 0 or limit > 100:
-            return jsonify({
-                'status': 'error',
-                'message': 'Limit must be between 1 and 100'
-            }), 400
-        
-        # Build query
-        query = SetupMessage.query.order_by(SetupMessage.created_at.desc())
-        
-        # Add symbol filter if provided
-        if symbol:
-            query = query.join(SetupMessage.ticker_setups).filter(TickerSetup.symbol == symbol)
-        
-        # Get limited results
-        messages = query.limit(limit).all()
-        
-        # Convert to response format
-        result = []
-        for message in messages:
-            message_data = {
-                'id': message.id,
-                'date': message.date.isoformat() if message.date else None,
-                'source': message.source,
-                'created_at': message.created_at.isoformat() if message.created_at else None,
-                'ticker_count': len(message.ticker_setups),
-                'ticker_symbols': [ts.symbol for ts in message.ticker_setups]
-            }
-            result.append(message_data)
-        
+    # Validate request
+    if not request.is_json:
         return jsonify({
-            'status': 'success',
-            'data': result
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error getting recent setups: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Error getting recent setups: {str(e)}'
-        }), 500
-
-@webhook_bp.route('/setups/<int:setup_id>', methods=['GET'])
-def get_setup_by_id(setup_id):
-    """
-    Get a setup message by ID.
+            'success': False,
+            'error': 'Request must be JSON',
+            'code': 'INVALID_FORMAT'
+        }), 400
     
-    Args:
-        setup_id: ID of the setup message
-        
-    Returns:
-    - JSON with setup message details
-    """
+    data = request.get_json()
+    
+    # Validate required fields
+    if 'text' not in data:
+        return jsonify({
+            'success': False,
+            'error': 'Missing required field: text',
+            'code': 'MISSING_FIELD'
+        }), 400
+    
+    # Get message metadata
+    message_text = data['text']
+    source = data.get('source', 'test')
+    
     try:
-        # Get the message
-        message = SetupMessage.query.get(setup_id)
-        if not message:
-            return jsonify({
-                'status': 'error',
-                'message': f'Setup with ID {setup_id} not found'
-            }), 404
+        # Parse the setup message without saving
+        setup_dto = parse_setup_message(message_text, source=source)
         
-        # Convert to response format
-        result = {
-            'id': message.id,
-            'date': message.date.isoformat() if message.date else None,
-            'source': message.source,
-            'created_at': message.created_at.isoformat() if message.created_at else None,
-            'raw_text': message.raw_text,
-            'ticker_setups': []
-        }
-        
-        # Add ticker setups
-        for ts in message.ticker_setups:
-            setup_data = {
-                'id': ts.id,
-                'symbol': ts.symbol,
-                'text': ts.text,
-                'signals': [],
-                'bias': None
-            }
-            
-            # Add signals
-            for signal in ts.signals:
-                # Determine trigger value
-                if signal.trigger_price is not None:
-                    trigger = signal.trigger_price
-                elif signal.trigger_low is not None and signal.trigger_high is not None:
-                    trigger = [signal.trigger_low, signal.trigger_high]
-                else:
-                    trigger = None
-                
-                signal_data = {
-                    'id': signal.id,
+        # Prepare response
+        ticker_details = []
+        for ticker_setup in setup_dto.ticker_setups:
+            # Convert signals to dictionaries
+            signals = []
+            for signal in ticker_setup.signals:
+                signal_dict = {
                     'category': signal.category.value,
-                    'aggressiveness': signal.aggressiveness.value,
                     'comparison': signal.comparison.value,
-                    'trigger': trigger,
-                    'targets': [target.price for target in signal.targets]
+                    'trigger': signal.trigger,
+                    'targets': list(signal.targets),
+                    'aggressiveness': signal.aggressiveness.value
                 }
-                setup_data['signals'].append(signal_data)
+                signals.append(signal_dict)
             
-            # Add bias if present
-            if ts.bias:
-                bias_data = {
-                    'id': ts.bias.id,
-                    'direction': ts.bias.direction.value,
-                    'condition': ts.bias.condition.value,
-                    'price': ts.bias.price,
-                    'flip': None
+            # Convert bias to dictionary if present
+            bias = None
+            if ticker_setup.bias:
+                bias = {
+                    'direction': ticker_setup.bias.direction.value,
+                    'condition': ticker_setup.bias.condition.value,
+                    'price': ticker_setup.bias.price
                 }
                 
-                # Add flip details if present
-                if ts.bias.flip_direction and ts.bias.flip_price:
-                    bias_data['flip'] = {
-                        'direction': ts.bias.flip_direction.value,
-                        'price_level': ts.bias.flip_price
+                # Add flip if present
+                if ticker_setup.bias.flip:
+                    bias['flip'] = {
+                        'direction': ticker_setup.bias.flip.direction.value,
+                        'price_level': ticker_setup.bias.flip.price_level
                     }
-                
-                setup_data['bias'] = bias_data
             
-            result['ticker_setups'].append(setup_data)
-        
-        return jsonify({
-            'status': 'success',
-            'data': result
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error getting setup: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Error getting setup: {str(e)}'
-        }), 500
-
-@webhook_bp.route('/setups/symbol/<symbol>', methods=['GET'])
-def get_setups_by_symbol(symbol):
-    """
-    Get setups for a specific ticker symbol.
-    
-    Args:
-        symbol: Ticker symbol
-        
-    Query parameters:
-    - limit: Maximum number of setups to return (default: 10)
-    
-    Returns:
-    - JSON with setups for the symbol
-    """
-    try:
-        # Get query parameters
-        limit = request.args.get('limit', default=10, type=int)
-        
-        # Validate limit
-        if limit <= 0 or limit > 100:
-            return jsonify({
-                'status': 'error',
-                'message': 'Limit must be between 1 and 100'
-            }), 400
-        
-        # Query ticker setups
-        ticker_setups = (TickerSetup.query
-            .filter(TickerSetup.symbol == symbol)
-            .join(TickerSetup.message)
-            .order_by(SetupMessage.date.desc())
-            .limit(limit)
-            .all())
-        
-        # Convert to response format
-        result = []
-        for ts in ticker_setups:
-            setup_data = {
-                'id': ts.id,
-                'symbol': ts.symbol,
-                'message_id': ts.message_id,
-                'message_date': ts.message.date.isoformat() if ts.message and ts.message.date else None,
-                'text': ts.text,
-                'signals': [],
-                'bias': None
+            # Create ticker detail
+            ticker_detail = {
+                'symbol': ticker_setup.symbol,
+                'signals': signals,
+                'bias': bias
             }
-            
-            # Add signals
-            for signal in ts.signals:
-                # Determine trigger value
-                if signal.trigger_price is not None:
-                    trigger = signal.trigger_price
-                elif signal.trigger_low is not None and signal.trigger_high is not None:
-                    trigger = [signal.trigger_low, signal.trigger_high]
-                else:
-                    trigger = None
-                
-                signal_data = {
-                    'category': signal.category.value,
-                    'aggressiveness': signal.aggressiveness.value,
-                    'comparison': signal.comparison.value,
-                    'trigger': trigger,
-                    'targets': [target.price for target in signal.targets]
-                }
-                setup_data['signals'].append(signal_data)
-            
-            # Add bias if present
-            if ts.bias:
-                bias_data = {
-                    'direction': ts.bias.direction.value,
-                    'condition': ts.bias.condition.value,
-                    'price': ts.bias.price,
-                    'flip': None
-                }
-                
-                # Add flip details if present
-                if ts.bias.flip_direction and ts.bias.flip_price:
-                    bias_data['flip'] = {
-                        'direction': ts.bias.flip_direction.value,
-                        'price_level': ts.bias.flip_price
-                    }
-                
-                setup_data['bias'] = bias_data
-            
-            result.append(setup_data)
+            ticker_details.append(ticker_detail)
         
+        # Return success response with parsed data
         return jsonify({
-            'status': 'success',
-            'data': result,
-            'count': len(result)
-        }), 200
-        
+            'success': True,
+            'date': setup_dto.date.isoformat(),
+            'tickers': ticker_details
+        })
+    
     except Exception as e:
-        logger.error(f"Error getting setups by symbol: {str(e)}")
+        logger.error(f"Error parsing setup message: {str(e)}", exc_info=True)
+        
         return jsonify({
-            'status': 'error',
-            'message': f'Error getting setups by symbol: {str(e)}'
+            'success': False,
+            'error': f"Error parsing setup message: {str(e)}",
+            'code': 'PARSING_ERROR'
         }), 500
