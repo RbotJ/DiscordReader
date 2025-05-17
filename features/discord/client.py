@@ -13,6 +13,12 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import tasks
 
+# Import the message publisher
+from features.discord.message_publisher import (
+    publish_raw_discord_message,
+    publish_setup_message
+)
+
 logger = logging.getLogger(__name__)
 
 # Get configuration from environment variables
