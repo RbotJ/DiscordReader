@@ -378,6 +378,29 @@ def get_channel_messages() -> List[dict]:
                         
                         # Create a combined content that includes info about attachments/embeds
                         combined_content = msg.content
+                        
+                        # Check for forwarded messages in embeds
+                        if hasattr(msg, 'embeds') and msg.embeds:
+                            for embed in msg.embeds:
+                                # Forwarded messages typically store the content in the description
+                                if hasattr(embed, 'description') and embed.description:
+                                    if not combined_content:  # If content is empty, use embed description
+                                        combined_content = embed.description
+                                        logger.info(f"Found content in embed.description: {combined_content[:50]}...")
+                                    else:  # Otherwise append it
+                                        combined_content += f"\n\n{embed.description}"
+                                        
+                                # Some embeds might have fields with additional information
+                                if hasattr(embed, 'fields') and embed.fields:
+                                    for field in embed.fields:
+                                        field_content = f"{field.name}: {field.value}" if hasattr(field, 'name') and hasattr(field, 'value') else ""
+                                        if field_content:
+                                            if combined_content:
+                                                combined_content += f"\n{field_content}"
+                                            else:
+                                                combined_content = field_content
+                        
+                        # Add attachment and embed info
                         if attachments_info or embeds_info:
                             if combined_content:
                                 combined_content += "\n\n"
