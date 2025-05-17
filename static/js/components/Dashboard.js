@@ -94,7 +94,10 @@ function Dashboard({ account, loading, error }) {
         console.error('Error fetching tickers:', error);
         addEvent('error', 'Failed to load tickers');
       });
-      
+  }, []);
+  
+  // Fetch positions separately to avoid closure issues
+  useEffect(() => {
     // Fetch positions
     fetch('/api/positions')
       .then(response => response.json())
@@ -183,19 +186,19 @@ function Dashboard({ account, loading, error }) {
                 <div className="col-md-3">
                   <div className="mb-3">
                     <h6 className="text-muted">Account Value</h6>
-                    <h4>${account ? parseFloat(account.equity).toFixed(2) : '0.00'}</h4>
+                    <h4>${account && account.equity ? parseFloat(account.equity).toFixed(2) : '0.00'}</h4>
                   </div>
                 </div>
                 <div className="col-md-3">
                   <div className="mb-3">
                     <h6 className="text-muted">Buying Power</h6>
-                    <h4>${account ? parseFloat(account.buying_power).toFixed(2) : '0.00'}</h4>
+                    <h4>${account && account.buying_power ? parseFloat(account.buying_power).toFixed(2) : '0.00'}</h4>
                   </div>
                 </div>
                 <div className="col-md-3">
                   <div className="mb-3">
                     <h6 className="text-muted">Open Positions</h6>
-                    <h4>{dashboardState.positions.length}</h4>
+                    <h4>{Array.isArray(dashboardState.positions) ? dashboardState.positions.length : 0}</h4>
                   </div>
                 </div>
                 <div className="col-md-3">
