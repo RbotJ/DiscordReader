@@ -117,11 +117,14 @@ function Dashboard({ account, loading, error }) {
   const addEvent = useCallback((type, message) => {
     // Convert object message to string to avoid React child errors
     const formattedMessage = typeof message === 'object' 
-      ? JSON.stringify(message || {}) 
+      ? message === null ? 'null' : JSON.stringify(message) 
       : String(message || '');
       
+    // Create a truly unique ID using UUID-like approach
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}-${Math.random().toString(36).substring(2, 10)}`;
+    
     const event = {
-      id: Date.now() + '-' + Math.random().toString(36).substr(2, 5), // Ensure true uniqueness
+      id: uniqueId,
       timestamp: new Date().toISOString(),
       type,
       message: formattedMessage
