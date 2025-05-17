@@ -305,210 +305,37 @@ def get_channel_messages() -> List[dict]:
     Returns:
         List of message dictionaries with 'content' and 'timestamp' keys
     """
+    if not client_ready or not discord_client:
+        logger.warning("Discord client not ready")
+        return []
+
     if not CHANNEL_APLUS_SETUPS_ID:
         logger.warning("A+ setups channel ID not configured")
         return []
-    
-    # Check if we have a valid Discord token
-    if not DISCORD_APP_TOKEN:
-        logger.warning("Discord bot token not configured")
-        return []
-    
+
+    async def _fetch_setups() -> List[dict]:
+        chan = discord_client.get_channel(CHANNEL_APLUS_SETUPS_ID)
+        if chan is None:
+            chan = await discord_client.fetch_channel(CHANNEL_APLUS_SETUPS_ID)
+            
+        messages = []
+        async for msg in chan.history(limit=20):
+            # Extract msg.content or fall back to first embed.description
+            text = msg.content or next((e.description for e in msg.embeds if e.description), "")
+            messages.append({
+                "id": str(msg.id),
+                "content": text or "(no text/attachments)",
+                "timestamp": msg.created_at,
+                "author": str(msg.author),
+            })
+        return messages
+
     try:
-        import asyncio
-        import discord
-        
-        async def fetch_latest_messages():
-            # Create a client with message content intent enabled
-            intents = discord.Intents.default()
-            intents.message_content = True  # Required to read message content
-            client = discord.Client(intents=intents)
-            
-            messages = []
-            
-            @client.event
-            async def on_ready():
-                try:
-                    # Try to get the channel from cache, else fetch it
-                    channel = client.get_channel(CHANNEL_APLUS_SETUPS_ID)
-                    if channel is None:
-                        channel = await client.fetch_channel(CHANNEL_APLUS_SETUPS_ID)
-                    
-                    logger.info(f"Fetching messages from Discord channel: #{channel.name} (ID: {CHANNEL_APLUS_SETUPS_ID})")
-                    
-                    # Fetch more messages to ensure we capture all the recent trading setups
-                    message_count = 0
-                    async for msg in channel.history(limit=20):
-                        # Include all messages, even if they have empty content
-                        # This way, we can see what's actually in the channel
-                        message_count += 1
-                        logger.info(f"Found message from Discord: {msg.id} from {msg.author}, content length: {len(msg.content)}")
-                        
-                        # Check for attachments or embeds
-                        attachments_info = []
-                        if msg.attachments:
-                            for attachment in msg.attachments:
-                                attachments_info.append(f"[Attachment: {attachment.filename}]")
-                        
-                        embeds_info = []
-                        if msg.embeds:
-                            for embed in msg.embeds:
-                                embed_desc = embed.description or "No description"
-                                embed_title = embed.title or "No title"
-                                embeds_info.append(f"[Embed: {embed_title} - {embed_desc[:50]}...]")
-                        
-                        # Create a combined content that includes info about attachments/embeds
-                        combined_content = msg.content
-                        
-                        # Check for forwarded messages in embeds
-                        if hasattr(msg, 'embeds') and msg.embeds:
-                            for embed in msg.embeds:
-                                # Forwarded messages typically store the content in the description
-                                if hasattr(embed, 'description') and embed.description:
-                                    if not combined_content:  # If content is empty, use embed description
-                                        combined_content = embed.description
-                                        logger.info(f"Found content in embed.description: {combined_content[:50]}...")
-                                    else:  # Otherwise append it
-                                        combined_content += f"\n\n{embed.description}"
-                                        
-                                # Some embeds might have fields with additional information
-                                if hasattr(embed, 'fields') and embed.fields:
-                                    for field in embed.fields:
-                                        field_content = f"{field.name}: {field.value}" if hasattr(field, 'name') and hasattr(field, 'value') else ""
-                                        if field_content:
-                                            if combined_content:
-                                                combined_content += f"\n{field_content}"
-                                            else:
-                                                combined_content = field_content
-                        
-                        # Add attachment and embed info
-                        if attachments_info or embeds_info:
-                            if combined_content:
-                                combined_content += "\n\n"
-                            combined_content += "\n".join(attachments_info + embeds_info)
-                        
-                        # Check for message_snapshots which might contain the actual content
-                        # Try to extract content from message_snapshots
-                        try:
-                            # Check for message_snapshots - we need to handle these specially
-                            if hasattr(msg, 'message_snapshots') and msg.message_snapshots:
-                                logger.info(f"Found message_snapshots in message {msg.id}")
-                                
-                                # Try to access the raw data of message_snapshots
-                                try:
-                                    if isinstance(msg.message_snapshots, list):
-                                        # Convert to string to see the raw data
-                                        snapshots_str = str(msg.message_snapshots)
-                                        logger.info(f"Message snapshots (raw): {snapshots_str[:200]}...")
-                                        
-                                        # Try to extract content via various methods
-                                        for i, snapshot in enumerate(msg.message_snapshots):
-                                            logger.info(f"Processing snapshot {i}")
-                                            
-                                            # Try using __dict__ to get all attributes
-                                            if hasattr(snapshot, '__dict__'):
-                                                logger.info(f"Snapshot {i} dict: {str(snapshot.__dict__)[:200]}...")
-                                            
-                                            try:
-                                                # Try direct string representation for debugging
-                                                snapshot_str = str(snapshot)
-                                                logger.info(f"Snapshot {i} string: {snapshot_str[:200]}...")
-                                                
-                                                # Look for content in the snapshot string
-                                                if "content" in snapshot_str and "Trade Setups" in snapshot_str:
-                                                    # Extract content from the snapshot string
-                                                    parts = snapshot_str.split("'content': '")
-                                                    if len(parts) > 1:
-                                                        content_part = parts[1].split("'", 1)[0]
-                                                        if content_part:
-                                                            combined_content = content_part
-                                                            logger.info(f"Extracted content from snapshot string: {combined_content[:50]}...")
-                                                            break
-                                            except Exception as extract_err:
-                                                logger.error(f"Error extracting content from snapshot string: {extract_err}")
-                                            
-                                            # Try accessing the message property in different ways
-                                            try:
-                                                # Method 1: Try as dict
-                                                if isinstance(snapshot, dict) and 'message' in snapshot:
-                                                    if isinstance(snapshot['message'], dict) and 'content' in snapshot['message']:
-                                                        combined_content = snapshot['message']['content']
-                                                        logger.info(f"Found content in snapshot['message']['content']: {combined_content[:50]}...")
-                                                        break
-                                                
-                                                # Method 2: Try as object
-                                                if hasattr(snapshot, 'message'):
-                                                    msg_obj = getattr(snapshot, 'message')
-                                                    logger.info(f"Found message object in snapshot: {type(msg_obj)}")
-                                                    
-                                                    if isinstance(msg_obj, dict) and 'content' in msg_obj:
-                                                        combined_content = msg_obj['content']
-                                                        logger.info(f"Found content in snapshot.message dict: {combined_content[:50]}...")
-                                                        break
-                                                    
-                                                    if hasattr(msg_obj, 'content'):
-                                                        content = getattr(msg_obj, 'content')
-                                                        if content:
-                                                            combined_content = content
-                                                            logger.info(f"Found content in snapshot.message.content: {combined_content[:50]}...")
-                                                            break
-                                            except Exception as access_err:
-                                                logger.error(f"Error accessing message in snapshot: {access_err}")
-                                except Exception as list_err:
-                                    logger.error(f"Error processing message_snapshots list: {list_err}")
-                        except Exception as e:
-                            logger.error(f"Error extracting from message_snapshots: {e}")
-                            if hasattr(msg, 'type'):
-                                logger.info(f"Message type: {msg.type}")
-                            if hasattr(msg, 'flags'):
-                                logger.info(f"Message flags: {msg.flags}")
-                        
-                        # If still empty, note that it's empty
-                        if not combined_content:
-                            combined_content = "(Message contains no text content or attachments)"
-                        
-                        messages.append({
-                            'id': str(msg.id),
-                            'content': combined_content,
-                            'timestamp': msg.created_at,
-                            'author': str(msg.author),
-                            'has_snapshots': hasattr(msg, 'message_snapshots') and bool(msg.message_snapshots)
-                        })
-                    
-                    logger.info(f"Fetched {message_count} messages, {len(messages)} with content")
-                    
-                    if not messages:
-                        logger.warning(f"No messages found in channel {CHANNEL_APLUS_SETUPS_ID}")
-                
-                except Exception as e:
-                    logger.error(f"Error fetching messages from Discord: {e}")
-                
-                finally:
-                    # Disconnect once done
-                    await client.close()
-            
-            # Start the client and run it until it disconnects
-            try:
-                await client.start(DISCORD_APP_TOKEN)
-            except Exception as e:
-                logger.error(f"Error starting Discord client: {e}")
-            
-            return messages
-        
-        # Run the async function in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(fetch_latest_messages())
-        loop.close()
-        
-        if result:
-            logger.info(f"Successfully fetched {len(result)} messages from Discord")
-            return result
-        else:
-            logger.warning("No messages found in Discord channel, returning empty list")
-            return []
-    
+        future = asyncio.run_coroutine_threadsafe(
+            _fetch_setups(),
+            discord_client.loop
+        )
+        return future.result(timeout=15)
     except Exception as e:
-        logger.error(f"Error in Discord message fetching: {e}")
-        # Return an empty list if anything fails
+        logger.error(f"Error fetching messages: {e}")
         return []
