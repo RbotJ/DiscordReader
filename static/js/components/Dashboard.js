@@ -18,7 +18,7 @@ function generateId(prefix = 'id') {
   const counter = idCounters[prefix] !== undefined ? 
     ++idCounters[prefix] : 
     ++idCounters.global;
-  
+
   return `${prefix}-${counter}-${Date.now()}`;
 }
 
@@ -107,12 +107,11 @@ function Dashboard({ account, loading, error }) {
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
-          // Transform tickers into objects with stable IDs to avoid key collisions
-          const tickersWithIds = Array.from(new Set(data)).map(ticker => ({
-            id: `ticker-${Date.now()}-${++tickerCounter.current}`,
-            symbol: ticker
-          }));
-          setDashboardState(s => ({ ...s, tickers: tickersWithIds }));
+            const tickersWithIds = Array.from(new Set(data)).map(ticker => ({
+              id: `ticker-${Math.random().toString(36).slice(2)}-${Date.now()}`,
+              symbol: ticker
+            }));
+            setDashboardState(s => ({ ...s, tickers: tickersWithIds }));
         } else {
           addEvent('error', 'Tickers API returned bad format');
         }
@@ -169,19 +168,19 @@ function Dashboard({ account, loading, error }) {
     if (!socket) return;
     socket.emit('subscribe_ticker', { ticker });
     addEvent('user', `Subscribed to ${ticker}`);
-    
+
     setDashboardState(s => {
       // Check if this ticker is already active
       if (s.activeCharts.some(chart => chart.symbol === ticker)) {
         return s; // Already subscribed
       }
-      
+
       // Add as new chart with unique ID
       const newChart = {
         id: `chart-${Date.now()}-${++chartCounter.current}`,
         symbol: ticker
       };
-      
+
       return {
         ...s,
         activeCharts: [...s.activeCharts, newChart]
