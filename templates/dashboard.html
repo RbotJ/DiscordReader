@@ -1,87 +1,43 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>A+ Trading Dashboard</title>
+{% extends "base.html" %}
+
+{% block title %}A+ Trading Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+  .chart-container {
+    width: 100%;
+    height: 300px;
+  }
   
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+  .event-log {
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
   
-  <!-- Bootstrap Icons -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  .status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+  }
   
-  <!-- Custom Styles -->
-  <style>
-    body {
-      background-color: #121212;
-      color: #f8f9fa;
-    }
-    
-    .chart-container {
-      width: 100%;
-      height: 300px;
-    }
-    
-    .event-log {
-      font-family: monospace;
-      font-size: 0.85rem;
-    }
-    
-    /* Add styling for the fallback content */
-    .fallback-dashboard {
-      padding: 2rem 0;
-    }
-    
-    .status-indicator {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      margin-right: 8px;
-    }
-    
-    .status-indicator.active {
-      background-color: #28a745;
-    }
-    
-    .status-indicator.inactive {
-      background-color: #dc3545;
-    }
-    
-    /* Remove any modal backdrops */
-    .clear-backdrops {
-      display: none !important;
-    }
-  </style>
-</head>
-<body>
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="/">
-        <img src="/static/img/logo.svg" alt="A+ Trading" width="30" height="30" class="d-inline-block align-text-top me-2">
-        A+ Trading
-      </a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNav">
-        <ul class="navbar-nav">
-          <li class="nav-item">
-            <a class="nav-link active" href="/dashboard">Dashboard</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/setup">Submit Setup</a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </nav>
+  .status-indicator.active {
+    background-color: #28a745;
+  }
   
-  <!-- React application root element -->
-  <div id="react-root" class="container-fluid py-3">
-    <!-- Fallback dashboard if React loading fails -->
-    <div class="fallback-dashboard">
+  .status-indicator.inactive {
+    background-color: #dc3545;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <!-- React root with fallback content -->
+  <div id="dashboard-root">
+    <div id="dashboard-fallback">
+      <!-- Trading Account Card -->
       <div class="row mb-4">
         <div class="col-12">
           <div class="card">
@@ -120,6 +76,7 @@
         </div>
       </div>
       
+      <!-- System Status Card -->
       <div class="row mb-4">
         <div class="col-12">
           <div class="card">
@@ -146,6 +103,7 @@
         </div>
       </div>
       
+      <!-- Tickers Info -->
       <div class="row mb-4">
         <div class="col-12">
           <div class="alert alert-info">
@@ -156,108 +114,143 @@
       </div>
     </div>
   </div>
-  
-  <!-- Socket.IO -->
-  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
-  
-  <!-- Fallback initialization script -->
-  <script>
-    // Remove any modal backdrops
-    document.addEventListener('DOMContentLoaded', function() {
-      // Clean up any modal backdrops
-      document.querySelectorAll('.modal-backdrop').forEach(function(el) {
-        el.classList.add('clear-backdrops');
-        el.remove();
-      });
-      
-      // Remove modal-open from body if present
-      document.body.classList.remove('modal-open');
-      
-      // Initialize fallback dashboard if React doesn't load
-      setTimeout(function() {
-        if (!window.reactLoaded) {
-          console.log('React app not detected, activating fallback dashboard');
-          fetchAccountInfo();
-          fetchSystemStatus();
-        }
-      }, 3000);
+</div>
+
+<noscript>
+  <div class="alert alert-warning text-center" role="alert">
+    JavaScript is required to view the dashboard. Please enable it in your browser.
+  </div>
+</noscript>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Socket.IO -->
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+
+<!-- Clean up any modal backdrops -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Clean up any modal backdrops
+    document.querySelectorAll('.modal-backdrop').forEach(function(el) {
+      el.remove();
     });
     
-    // Fetch account information
-    function fetchAccountInfo() {
-      fetch('/api/account')
-        .then(function(response) { return response.json(); })
-        .then(function(data) {
-          document.getElementById('account-value').textContent = '$' + parseFloat(data.equity).toFixed(2);
-          document.getElementById('buying-power').textContent = '$' + parseFloat(data.buying_power).toFixed(2);
-          document.getElementById('market-status').textContent = data.market_open ? 'Open' : 'Closed';
-          
-          // Update styling based on market status
-          document.getElementById('market-status').className = data.market_open ? 'text-success' : 'text-danger';
-        })
-        .catch(function(error) {
-          console.error('Error fetching account info:', error);
-          document.getElementById('account-value').textContent = 'Error loading';
-          document.getElementById('buying-power').textContent = 'Error loading';
-          document.getElementById('market-status').textContent = 'Unknown';
-        });
-      
-      fetch('/api/positions')
-        .then(function(response) { return response.json(); })
-        .then(function(data) {
-          document.getElementById('open-positions').textContent = data.length;
-        })
-        .catch(function(error) {
-          console.error('Error fetching positions:', error);
-          document.getElementById('open-positions').textContent = 'Error loading';
-        });
-    }
+    // Remove modal-open from body if present
+    document.body.classList.remove('modal-open');
     
-    // Fetch system status
-    function fetchSystemStatus() {
-      // Check strategy status
-      fetch('/api/strategy/status')
-        .then(function(response) { return response.json(); })
-        .then(function(data) {
-          const isRunning = data.detector?.running || false;
-          const statusElement = document.getElementById('strategy-status');
-          
-          if (isRunning) {
-            statusElement.classList.add('active');
-            statusElement.classList.remove('inactive');
-          } else {
-            statusElement.classList.add('inactive');
-            statusElement.classList.remove('active');
-          }
-        })
-        .catch(function(error) {
-          console.error('Error fetching strategy status:', error);
-          document.getElementById('strategy-status').classList.add('inactive');
-        });
-      
-      // Check execution status
-      fetch('/api/execution/status')
-        .then(function(response) { return response.json(); })
-        .then(function(data) {
-          const isRunning = data.executor?.running || false;
-          const statusElement = document.getElementById('execution-status');
-          
-          if (isRunning) {
-            statusElement.classList.add('active');
-            statusElement.classList.remove('inactive');
-          } else {
-            statusElement.classList.add('inactive');
-            statusElement.classList.remove('active');
-          }
-        })
-        .catch(function(error) {
-          console.error('Error fetching execution status:', error);
-          document.getElementById('execution-status').classList.add('inactive');
-        });
-    }
-  </script>
+    // Fetch basic dashboard data
+    fetchAccountInfo();
+    fetchSystemStatus();
+  });
   
-  <!-- React App -->
-  <script src="{{ url_for('static', filename='js/bundle.js') }}"></script>
-</body>
-</html>
+  // Fetch account information
+  function fetchAccountInfo() {
+    fetch('/api/account')
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        document.getElementById('account-value').textContent = '$' + parseFloat(data.equity).toFixed(2);
+        document.getElementById('buying-power').textContent = '$' + parseFloat(data.buying_power).toFixed(2);
+        document.getElementById('market-status').textContent = data.market_open ? 'Open' : 'Closed';
+        
+        // Update styling based on market status
+        document.getElementById('market-status').className = data.market_open ? 'text-success' : 'text-danger';
+      })
+      .catch(function(error) {
+        console.error('Error fetching account info:', error);
+        document.getElementById('account-value').textContent = 'Error loading';
+        document.getElementById('buying-power').textContent = 'Error loading';
+        document.getElementById('market-status').textContent = 'Unknown';
+      });
+    
+    fetch('/api/positions')
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        document.getElementById('open-positions').textContent = data.length;
+      })
+      .catch(function(error) {
+        console.error('Error fetching positions:', error);
+        document.getElementById('open-positions').textContent = 'Error loading';
+      });
+  }
+  
+  // Fetch system status
+  function fetchSystemStatus() {
+    // Check strategy status
+    fetch('/api/strategy/status')
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        const isRunning = data.detector?.running || false;
+        const statusElement = document.getElementById('strategy-status');
+        
+        if (isRunning) {
+          statusElement.classList.add('active');
+          statusElement.classList.remove('inactive');
+        } else {
+          statusElement.classList.add('inactive');
+          statusElement.classList.remove('active');
+        }
+      })
+      .catch(function(error) {
+        console.error('Error fetching strategy status:', error);
+        document.getElementById('strategy-status').classList.add('inactive');
+      });
+    
+    // Check execution status
+    fetch('/api/execution/status')
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        const isRunning = data.executor?.running || false;
+        const statusElement = document.getElementById('execution-status');
+        
+        if (isRunning) {
+          statusElement.classList.add('active');
+          statusElement.classList.remove('inactive');
+        } else {
+          statusElement.classList.add('inactive');
+          statusElement.classList.remove('active');
+        }
+      })
+      .catch(function(error) {
+        console.error('Error fetching execution status:', error);
+        document.getElementById('execution-status').classList.add('inactive');
+      });
+  }
+</script>
+
+<!-- Hybrid approach - Try to mount React component if available -->
+<script type="module">
+  try {
+    // Check if React and ReactDOM are available
+    if (typeof React !== 'undefined' && typeof ReactDOM !== 'undefined') {
+      document.addEventListener('DOMContentLoaded', () => {
+        // Set a flag to indicate React loaded successfully
+        window.reactLoaded = true;
+        
+        try {
+          const container = document.getElementById('dashboard-root');
+          if (container) {
+            // Create React root and mount Dashboard component
+            if (ReactDOM.createRoot) {
+              // React 18+ approach
+              const root = ReactDOM.createRoot(container);
+              root.render(React.createElement(Dashboard, {}));
+              console.log('React 18 dashboard mounted successfully');
+            } else {
+              // Legacy React approach (React 17 and earlier)
+              ReactDOM.render(React.createElement(Dashboard, {}), container);
+              console.log('Legacy React dashboard mounted successfully');
+            }
+          }
+        } catch (error) {
+          console.error('Error mounting React dashboard:', error);
+        }
+      });
+    }
+  } catch (error) {
+    console.error('React mounting error:', error);
+  }
+</script>
+
+<!-- Load React app bundle -->
+<script src="{{ url_for('static', filename='js/bundle.js') }}"></script>
+{% endblock %}
