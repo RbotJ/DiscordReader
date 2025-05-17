@@ -284,13 +284,19 @@ def store_message_in_redis(message: dict, stream_key: str = "discord:messages") 
         return False
 
 
-def fetch_and_store_setups(limit: int = 50, filename: str = "setups_raw.json") -> int:
+def fetch_and_store_setups(limit: int = 50, filename: str = "setups_raw.json", stream_key: str = "discord:messages") -> int:
     """
     Fetches and stores raw setup messages from the A+ setups Discord channel.
+    
+    Messages are stored in:
+    1. A local JSON file for backup/debugging
+    2. Redis Stream for multiple consumers to access
+    3. A notification is published to notify the parser
     
     Args:
         limit: Maximum number of messages to fetch (default: 50)
         filename: Filename to store the raw JSON (default: setups_raw.json)
+        stream_key: Redis Stream key (default: discord:messages)
         
     Returns:
         Number of messages stored
@@ -314,14 +320,32 @@ def fetch_and_store_setups(limit: int = 50, filename: str = "setups_raw.json") -
             logger.warning("No messages fetched from Discord")
             return 0
         
-        # Store messages to file
-        if store_raw_messages(messages, filename):
-            message_count = len(messages)
-            logger.info(f"Fetched {message_count} messages; stored to {filename}")
-            return message_count
+        # 1. Store messages to file for backup/debugging
+        store_raw_messages(messages, filename)
+        
+        # 2. Store each message in Redis Stream
+        message_count = 0
+        for message in messages:
+            # Only store messages that have content or are forwarded
+            if message['content'] or message.get('is_forwarded', False):
+                if store_message_in_redis(message, stream_key):
+                    message_count += 1
+        
+        if message_count > 0:
+            # 3. Publish a summary event to notify all subscribers
+            summary_event = {
+                'event_type': 'discord.messages.batch_created',
+                'count': message_count,
+                'stream_key': stream_key,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            publish_event('events:discord:batch', summary_event)
+            
+            logger.info(f"Fetched {message_count} messages; stored to {filename} and Redis Stream {stream_key}")
         else:
-            logger.error(f"Failed to store messages to {filename}")
-            return 0
+            logger.warning(f"No relevant messages found to store in Redis Stream {stream_key}")
+            
+        return message_count
         
     except Exception as e:
         logger.error(f"Error fetching and storing setup messages: {e}")
