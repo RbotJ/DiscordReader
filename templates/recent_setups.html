@@ -65,8 +65,8 @@
     <div class="container">
         <div class="row mb-4">
             <div class="col-12">
-                <h1 class="mb-3">Recent Trading Setups</h1>
-                <p class="lead">The most recent trading setups received from Discord.</p>
+                <h1 class="mb-3">Recent Discord Messages</h1>
+                <p class="lead">The most recent messages received from the A+ Trading Discord channel.</p>
             </div>
         </div>
 
@@ -161,7 +161,7 @@
                         <div class="mb-3">
                             <div class="mt-2">${tickerBadges}</div>
                         </div>
-                        <div class="setup-message mb-3">${message.content.replace(/\n/g, '<br>')}</div>
+                        <div class="setup-message mb-3">${message.content.replace(/\n/g, '<br>').replace(/\\n/g, '<br>')}</div>
                     </div>
                     <div class="card-footer text-muted">
                         <small>Message ID: ${message.id}</small>

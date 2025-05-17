@@ -306,7 +306,7 @@ def extract_signals(ticker_text: str, ticker_symbol: str) -> List[Dict[str, Any]
     signals.append(signal)
     return signals
 
-def handle_discord_setup_message(message_content: str, message_timestamp: datetime) -> Optional[SetupModel]:
+def handle_discord_setup_message(message_content: str, message_timestamp: datetime) -> Optional[Any]:
     """
     Process a setup message from Discord.
     
@@ -315,7 +315,7 @@ def handle_discord_setup_message(message_content: str, message_timestamp: dateti
         message_timestamp: The timestamp of the message
     
     Returns:
-        Optional[SetupModel]: The created database model, or None if processing failed
+        Optional[Any]: The parsed setup message, or None if processing failed
     """
     logger.info("Processing Discord setup message")
     
@@ -348,107 +348,6 @@ def handle_discord_setup_message(message_content: str, message_timestamp: dateti
         # Just return the parsed message for display purposes
         logger.info(f"Successfully parsed Discord setup message with {len(setup_message.setups)} ticker setups")
         return setup_message
-            
-            # Create ticker setups
-            ticker_symbols = []
-            created_signals = 0
-            created_biases = 0
-            
-            for ticker_setup in setup_message.setups:
-                ticker = TickerSetupModel()
-                ticker.setup_id = setup.id
-                ticker.symbol = ticker_setup.symbol
-                ticker.created_at = datetime.utcnow()
-                ticker_symbols.append(ticker_setup.symbol)
-                
-                db.session.add(ticker)
-                db.session.flush()  # Flush to get the ID
-                
-                # Extract bias
-                bias_info = extract_bias(ticker_setup.text)
-                if bias_info:
-                    bias = BiasModel()
-                    bias.ticker_setup_id = ticker.id
-                    bias.direction = bias_info['direction']
-                    bias.condition = bias_info['condition']
-                    bias.price = bias_info['price']
-                    bias.flip_direction = bias_info['flip_direction']
-                    bias.flip_price_level = bias_info['flip_price_level']
-                    bias.created_at = datetime.utcnow()
-                    
-                    db.session.add(bias)
-                    created_biases += 1
-                    
-                    # Publish bias event
-                    try:
-                        publish_event(EventType.BIAS_CREATED, {
-                            'bias_id': bias.id,
-                            'ticker_setup_id': ticker.id,
-                            'symbol': ticker.symbol,
-                            'direction': bias.direction,
-                            'price': bias.price
-                        })
-                    except Exception as e:
-                        logger.error(f"Error publishing bias event: {e}")
-                
-                # Extract signals
-                signals_info = extract_signals(ticker_setup.text, ticker_setup.symbol)
-                for signal_info in signals_info:
-                    signal = SignalModel()
-                    signal.ticker_setup_id = ticker.id
-                    signal.category = signal_info['category']
-                    signal.aggressiveness = signal_info['aggressiveness']
-                    signal.comparison = signal_info['comparison']
-                    signal.trigger_value = signal_info['trigger_value']
-                    signal.targets = signal_info['targets']
-                    signal.active = True
-                    signal.created_at = datetime.utcnow()
-                    
-                    db.session.add(signal)
-                    created_signals += 1
-                    
-                    # Publish signal event
-                    try:
-                        publish_event(EventType.SIGNAL_CREATED, {
-                            'signal_id': signal.id,
-                            'ticker_setup_id': ticker.id,
-                            'symbol': ticker.symbol,
-                            'category': signal.category,
-                            'trigger_value': signal.trigger_value
-                        })
-                    except Exception as e:
-                        logger.error(f"Error publishing signal event: {e}")
-            
-            # Publish setup event
-            try:
-                publish_event(EventType.SETUP_CREATED, {
-                    'setup_id': setup.id,
-                    'date': setup.date.isoformat(),
-                    'source': setup.source,
-                    'ticker_count': len(ticker_symbols)
-                })
-            except Exception as e:
-                logger.error(f"Error publishing setup event: {e}")
-            
-            # Send status update to Discord
-            status_msg = (f"Processed new trading setup for {setup.date.strftime('%Y-%m-%d')} with "
-                          f"{len(ticker_symbols)} tickers: {', '.join(ticker_symbols[:5])}"
-                          f"{' and more' if len(ticker_symbols) > 5 else ''}")
-            
-            if created_signals > 0 or created_biases > 0:
-                status_msg += f" | Created {created_signals} signals and {created_biases} biases"
-                
-            send_status_update(status_msg)
-            
-            logger.info(f"Successfully processed Discord setup message with ID {setup.id}")
-            return setup
-            
+    
     except Exception as e:
-        logger.exception(f"Error processing Discord setup message: {e}")
-        send_error_notification("Setup Processing", f"Failed to process setup message: {str(e)}")
-        return None
-
-def register_discord_setup_handler():
-    """Register the callback for Discord setup messages."""
-    register_setup_callback(handle_discord_setup_message)
-    logger.info("Registered Discord setup message handler")
+        logger.error(f"Error processing Discord setup message: {e}")
