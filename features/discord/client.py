@@ -327,65 +327,65 @@ def get_channel_messages() -> List[dict]:
     if not CHANNEL_APLUS_SETUPS_ID:
         logger.warning("A+ setups channel ID not configured")
         return []
+    
+    # Check if we have a valid Discord token
+    if not DISCORD_APP_TOKEN:
+        logger.warning("Discord bot token not configured")
+        return []
+    
+    try:
+        # Use synchronous REST API approach to fetch messages
+        import requests
         
-    # Since we can't properly connect to Discord without privileged intents
-    # being enabled in the Discord Developer Portal, we'll use sample data
-    # for demonstration purposes
-    
-    # In a production environment, you would need to:
-    # 1. Go to Discord Developer Portal
-    # 2. Enable the Message Content Intent for your bot
-    # 3. Use discord.py to fetch actual messages
-    
-    logger.warning("Using sample messages while waiting for Discord privileged intents to be enabled")
-    sample_messages = [
-        {
-            'id': '123456789',
-            'content': """
-A+ Trade Setups - Wed, May 15:
-
-1. SPY: Rejection near 520.8. Looking for possible breakdown below 518.2. 
-Targets: 514.5, 512.3
-Bias: Bearish below 520.8
-
-2. AAPL: Breakout above 186.4. Looking for continuation to 190+. 
-Targets: 188.7, 190.2, 192.5
-Bias: Bullish above 186.4
-            """,
-            'timestamp': datetime.utcnow() - timedelta(days=1)
-        },
-        {
-            'id': '123456790',
-            'content': """
-A+ Trade Setups - Thu, May 16:
-
-1. NVDA: Bounce from 950.2 support. Looking for move back to 980-990 range.
-Targets: 965.8, 975.3, 985.7
-Bias: Bullish above 950.2, flips bearish below 945.5
-
-2. TSLA: Breakdown below 174.5. Looking for continuation to 165 area.
-Targets: 170.2, 167.8, 165.3
-Bias: Bearish below 174.5, flips bullish above 177.8
-            """,
-            'timestamp': datetime.utcnow() - timedelta(hours=12)
-        },
-        {
-            'id': '123456791',
-            'content': """
-A+ Trade Setups - Fri, May 17:
-
-1. AMZN: Consolidation in 180-185 range. Watching for breakout direction.
-Targets (breakout): 187.5, 190.0
-Targets (breakdown): 178.5, 175.0
-Bias: Neutral, bullish above 185.0, bearish below 180.0
-
-2. MSFT: Strong rejection at 425.75. Looking for pullback to 415-420 range.
-Targets: 420.5, 417.3, 415.1
-Bias: Bearish below 425.75
-            """,
-            'timestamp': datetime.utcnow() - timedelta(hours=2)
+        # Discord API endpoint for channel messages
+        api_url = f"https://discord.com/api/v10/channels/{CHANNEL_APLUS_SETUPS_ID}/messages"
+        
+        # Set up headers with authorization
+        headers = {
+            "Authorization": f"Bot {DISCORD_APP_TOKEN}",
+            "Content-Type": "application/json"
         }
-    ]
+        
+        # Parameters to limit to recent messages
+        params = {
+            "limit": 5  # Fetch last 5 messages
+        }
+        
+        # Make the API request
+        response = requests.get(api_url, headers=headers, params=params)
+        
+        # Check if request was successful
+        if response.status_code == 200:
+            discord_messages = response.json()
+            
+            # Transform the Discord API response into our expected format
+            messages = []
+            for msg in discord_messages:
+                # Skip bot messages and messages without content
+                if msg.get('author', {}).get('bot', False) or not msg.get('content'):
+                    continue
+                    
+                # Check if message looks like a trading setup
+                if "A+ Trade Setups" in msg.get('content', ''):
+                    # Parse the timestamp
+                    timestamp = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
+                    
+                    messages.append({
+                        'id': msg['id'],
+                        'content': msg['content'],
+                        'timestamp': timestamp
+                    })
+            
+            if messages:
+                logger.info(f"Successfully fetched {len(messages)} messages from Discord API")
+                return messages
+            else:
+                logger.warning("No A+ Trade Setups messages found in recent Discord messages")
+        else:
+            logger.error(f"Error fetching Discord messages: Status code {response.status_code}, Response: {response.text}")
     
-    logger.info(f"Returning {len(sample_messages)} sample messages from A+ setups channel")
-    return sample_messages
+    except Exception as e:
+        logger.error(f"Error fetching Discord messages: {e}")
+    
+    # Return an empty list if anything fails
+    return []
