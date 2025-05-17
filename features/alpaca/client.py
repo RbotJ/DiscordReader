@@ -300,51 +300,57 @@ def get_bars(
         
     try:
         # Map timeframe string to TimeFrame object
-        tf = TimeFrame.MINUTE
+        from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+        
+        # Use proper TimeFrame instances
+        tf = TimeFrame(1, TimeFrameUnit.Minute)  # Default 1 minute
+        
         if timeframe.endswith('Min'):
             # Extract number of minutes
             mins = int(timeframe[:-3])
             if mins == 1:
-                tf = TimeFrame.MINUTE
+                tf = TimeFrame(1, TimeFrameUnit.Minute)
             elif mins == 5:
-                tf = TimeFrame.MINUTE_5
+                tf = TimeFrame(5, TimeFrameUnit.Minute)
             elif mins == 15:
-                tf = TimeFrame.MINUTE_15
+                tf = TimeFrame(15, TimeFrameUnit.Minute)
             elif mins == 30:
-                tf = TimeFrame.MINUTE_30
+                tf = TimeFrame(30, TimeFrameUnit.Minute)
             else:
                 logger.warning(f"Unsupported minute timeframe: {timeframe}, using 1Min")
-                tf = TimeFrame.MINUTE
+                tf = TimeFrame(1, TimeFrameUnit.Minute)
         elif timeframe == '1Hour' or timeframe == '1H':
-            tf = TimeFrame.HOUR
+            tf = TimeFrame(1, TimeFrameUnit.Hour)
         elif timeframe == '1Day' or timeframe == '1D':
-            tf = TimeFrame.DAY
+            tf = TimeFrame(1, TimeFrameUnit.Day)
         
         # Calculate start and end dates
         end = datetime.now()
         
         # Create request
+        from alpaca.data.enums import Adjustment
+        
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
             timeframe=tf,
             limit=limit,
-            adjustment="all"
+            adjustment=Adjustment.ALL
         )
         
         # Get bars
         response = data_client.get_stock_bars(request)
         
         # Convert to list of dictionaries
-        if symbol not in response:
-            return []
-            
         bars = []
-        for bar in response[symbol]:
-            bar_dict = serialize_object(bar)
-            # Rename timestamp to t for consistency
-            if 'timestamp' in bar_dict:
-                bar_dict['t'] = bar_dict['timestamp']
-            bars.append(bar_dict)
+        
+        # Check if we got a response and it has our symbol
+        if response and hasattr(response, 'get') and response.get(symbol):
+            for bar in response[symbol]:
+                bar_dict = serialize_object(bar)
+                # Rename timestamp to t for consistency
+                if 'timestamp' in bar_dict:
+                    bar_dict['t'] = bar_dict['timestamp']
+                bars.append(bar_dict)
             
         return bars
         
