@@ -6,6 +6,7 @@ for paper trading and market data.
 """
 import os
 import logging
+import json
 from typing import Dict, List, Optional, Union, Any
 from datetime import datetime, date, timedelta
 
@@ -31,10 +32,11 @@ ALPACA_API_SECRET = os.environ.get('ALPACA_API_SECRET')
 # Global clients
 trading_client = None
 data_client = None
+alpaca_market_client = None  # Alias for data_client
 
 def initialize_clients() -> bool:
     """Initialize Alpaca clients if credentials are available."""
-    global trading_client, data_client
+    global trading_client, data_client, alpaca_market_client
 
     if not ALPACA_API_KEY or not ALPACA_API_SECRET:
         logger.warning("Alpaca API credentials not found in environment variables")
@@ -46,12 +48,46 @@ def initialize_clients() -> bool:
 
         # Initialize data client
         data_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
+        alpaca_market_client = data_client  # Create alias for compatibility
 
         logger.info("Alpaca clients initialized successfully")
         return True
     except Exception as e:
         logger.error(f"Error initializing Alpaca clients: {e}")
         return False
+
+def serialize_object(obj: Any) -> Dict:
+    """
+    Serialize an Alpaca API object to a dictionary.
+    
+    Args:
+        obj: Alpaca API object
+        
+    Returns:
+        Dictionary representation of the object
+    """
+    if hasattr(obj, "__dict__"):
+        # Convert object to dict if it has __dict__
+        return {k: serialize_object(v) for k, v in obj.__dict__.items() 
+                if not k.startswith('_')}
+    elif hasattr(obj, "dict"):
+        # Use .dict() method if available (Pydantic models)
+        return obj.dict()
+    elif isinstance(obj, dict):
+        # Recursively serialize dict values
+        return {k: serialize_object(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        # Recursively serialize list items
+        return [serialize_object(item) for item in obj]
+    elif isinstance(obj, (str, int, float, bool, type(None))):
+        # Return primitive types as is
+        return obj
+    else:
+        # Try to convert to string for other types
+        try:
+            return str(obj)
+        except:
+            return None
 
 def get_account_info() -> Dict:
     """
@@ -66,7 +102,7 @@ def get_account_info() -> Dict:
 
     try:
         account = trading_client.get_account()
-        return account._raw
+        return serialize_object(account)
     except Exception as e:
         logger.error(f"Error getting account info: {e}")
         return {}
@@ -84,14 +120,17 @@ def get_positions() -> List[Dict]:
 
     try:
         positions = trading_client.get_all_positions()
-        return [p._raw for p in positions]
+        return [serialize_object(p) for p in positions]
     except Exception as e:
         logger.error(f"Error getting positions: {e}")
         return []
 
-def get_open_orders() -> List[Dict]:
+def get_orders(status: Optional[str] = 'open') -> List[Dict]:
     """
-    Get open orders from Alpaca.
+    Get orders from Alpaca with the specified status.
+
+    Args:
+        status: Order status ('open', 'closed', 'all')
 
     Returns:
         List of order dictionaries
@@ -101,11 +140,34 @@ def get_open_orders() -> List[Dict]:
         return []
 
     try:
-        orders = trading_client.get_all_orders(status=QueryOrderStatus.OPEN)
-        return [o._raw for o in orders]
+        # Map status string to enum
+        status_enum = None
+        if status == 'open':
+            status_enum = QueryOrderStatus.OPEN
+        elif status == 'closed':
+            status_enum = QueryOrderStatus.CLOSED
+        
+        # Create request
+        request = GetOrdersRequest(
+            status=status_enum,
+            limit=100
+        )
+        
+        # Get orders
+        orders = trading_client.get_orders(filter=request)
+        return [serialize_object(o) for o in orders]
     except Exception as e:
-        logger.error(f"Error getting open orders: {e}")
+        logger.error(f"Error getting orders with status {status}: {e}")
         return []
+
+def get_open_orders() -> List[Dict]:
+    """
+    Get open orders from Alpaca.
+
+    Returns:
+        List of order dictionaries
+    """
+    return get_orders(status='open')
 
 def get_latest_quote(symbol: str) -> Optional[Dict]:
     """
@@ -124,7 +186,7 @@ def get_latest_quote(symbol: str) -> Optional[Dict]:
     try:
         req = StockLatestQuoteRequest(symbol_or_symbols=symbol)
         resp = data_client.get_stock_latest_quote(req)
-        return resp[symbol]._raw
+        return serialize_object(resp[symbol])
     except Exception as e:
         logger.error(f"Error getting latest quote for {symbol}: {e}")
         return None
@@ -138,14 +200,17 @@ def submit_market_order(symbol: str, qty: int, side: str) -> Optional[Dict]:
         return None
 
     try:
-        req = MarketOrderRequest(
+        # Create market order request
+        order_request = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
             side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
             time_in_force=TimeInForce.DAY
         )
-        order = trading_client.submit_order(market_order_request=req)
-        return order._raw
+        
+        # Submit order
+        order = trading_client.submit_order(order_data=order_request)
+        return serialize_object(order)
 
     except Exception as e:
         logger.error(f"Error submitting market order: {e}")
@@ -190,8 +255,8 @@ def submit_limit_order(
         )
 
         # Submit order
-        order = trading_client.submit_order(order_data)
-        return order._raw
+        order = trading_client.submit_order(order_data=order_data)
+        return serialize_object(order)
 
     except Exception as e:
         logger.error(f"Error submitting limit order: {e}")
@@ -206,12 +271,119 @@ def cancel_order(order_id: str) -> bool:
         return False
 
     try:
-        trading_client.cancel_order_by_id(order_id)
+        trading_client.cancel_order_by_id(order_id=order_id)
         logger.info(f"Order cancelled: {order_id}")
         return True
     except Exception as e:
         logger.error(f"Error cancelling order {order_id}: {e}")
         return False
+
+def get_bars(
+    symbol: str,
+    timeframe: str = '1Min',
+    limit: int = 100
+) -> List[Dict]:
+    """
+    Get historical bars for a symbol.
+    
+    Args:
+        symbol: Ticker symbol
+        timeframe: Bar timeframe (e.g., '1Min', '5Min', '15Min', '1Day')
+        limit: Maximum number of bars to return
+        
+    Returns:
+        List of bar dictionaries
+    """
+    if not data_client:
+        logger.warning("Data client not initialized")
+        return []
+        
+    try:
+        # Map timeframe string to TimeFrame object
+        tf = TimeFrame.MINUTE
+        if timeframe.endswith('Min'):
+            # Extract number of minutes
+            mins = int(timeframe[:-3])
+            if mins == 1:
+                tf = TimeFrame.MINUTE
+            elif mins == 5:
+                tf = TimeFrame.MINUTE_5
+            elif mins == 15:
+                tf = TimeFrame.MINUTE_15
+            elif mins == 30:
+                tf = TimeFrame.MINUTE_30
+            else:
+                logger.warning(f"Unsupported minute timeframe: {timeframe}, using 1Min")
+                tf = TimeFrame.MINUTE
+        elif timeframe == '1Hour' or timeframe == '1H':
+            tf = TimeFrame.HOUR
+        elif timeframe == '1Day' or timeframe == '1D':
+            tf = TimeFrame.DAY
+        
+        # Calculate start and end dates
+        end = datetime.now()
+        
+        # Create request
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=tf,
+            limit=limit,
+            adjustment="all"
+        )
+        
+        # Get bars
+        response = data_client.get_stock_bars(request)
+        
+        # Convert to list of dictionaries
+        if symbol not in response:
+            return []
+            
+        bars = []
+        for bar in response[symbol]:
+            bar_dict = serialize_object(bar)
+            # Rename timestamp to t for consistency
+            if 'timestamp' in bar_dict:
+                bar_dict['t'] = bar_dict['timestamp']
+            bars.append(bar_dict)
+            
+        return bars
+        
+    except Exception as e:
+        logger.error(f"Error getting bars for {symbol}: {e}")
+        return []
+
+def get_latest_bars(symbol: str, timeframe: str = '1Min', limit: int = 1) -> List[Dict]:
+    """
+    Get the latest bars for a symbol.
+    
+    Args:
+        symbol: Ticker symbol
+        timeframe: Bar timeframe
+        limit: Number of latest bars to get
+        
+    Returns:
+        List of bar dictionaries
+    """
+    return get_bars(symbol, timeframe, limit)
+
+def get_historical_candles(
+    symbol: str,
+    timeframe: str = '1Min',
+    limit: int = 100
+) -> List[Dict]:
+    """
+    Get historical candles for a symbol.
+    This is an alias for get_bars for compatibility.
+    
+    Args:
+        symbol: Ticker symbol
+        timeframe: Candle timeframe
+        limit: Maximum number of candles to return
+        
+    Returns:
+        List of candle dictionaries
+    """
+    return get_bars(symbol, timeframe, limit)
 
 def calculate_position_size(symbol: str, risk_amount: float = 500.0) -> int:
     """
@@ -226,8 +398,8 @@ def calculate_position_size(symbol: str, risk_amount: float = 500.0) -> int:
     """
     try:
         # Get account information and buying power
-        account = trading_client.get_account()._raw
-        buying_power = float(account["buying_power"])
+        account = get_account_info()
+        buying_power = float(account.get("buying_power", 0))
 
         # Check if we have enough buying power for minimum risk
         if buying_power < risk_amount:
@@ -235,12 +407,13 @@ def calculate_position_size(symbol: str, risk_amount: float = 500.0) -> int:
             return 0
 
         # Fetch latest option quote
-        quote = data_client.get_stock_latest_quote(
-            StockLatestQuoteRequest(symbol_or_symbols=symbol)
-        )[symbol]._raw
+        quote = get_latest_quote(symbol)
+        if not quote:
+            logger.warning(f"Could not get quote for {symbol}")
+            return 1
 
         # Get ask price for conservative sizing
-        ask_price = float(quote["ask_price"])
+        ask_price = float(quote.get("ask_price", 0))
         if ask_price <= 0:
             logger.warning(f"Invalid ask price (${ask_price}) for {symbol}")
             return 1

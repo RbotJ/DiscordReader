@@ -12,8 +12,11 @@ from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Union, Tuple
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
+from alpaca.trading.requests import (
+    MarketOrderRequest, LimitOrderRequest, ClosePositionRequest
+)
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
+from alpaca.trading.models import Order, Position
 
 from common.constants import OptionType, TradeDirection, SignalState
 from common.redis_utils import get_redis_client, publish_event
@@ -25,16 +28,107 @@ logger = logging.getLogger(__name__)
 API_KEY = os.environ.get("ALPACA_API_KEY")
 API_SECRET = os.environ.get("ALPACA_API_SECRET")
 
-trading_client = None
-options_fetcher = None
+# Global clients (singleton pattern)
+_trading_client = None
+_options_fetcher = None
 
-if API_KEY and API_SECRET:
-    try:
-        trading_client = TradingClient(API_KEY, API_SECRET, paper=True)
-        options_fetcher = get_options_fetcher()
-        logger.info("Options trader initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing options trader: {e}")
+
+def get_trading_client() -> Optional[TradingClient]:
+    """
+    Get a singleton TradingClient instance.
+    
+    Returns:
+        TradingClient instance or None if unavailable
+    """
+    global _trading_client
+    
+    if _trading_client is None:
+        if not API_KEY or not API_SECRET:
+            logger.error("Alpaca API credentials not set in environment")
+            return None
+            
+        try:
+            _trading_client = TradingClient(API_KEY, API_SECRET, paper=True)
+        except Exception as e:
+            logger.error(f"Error initializing trading client: {e}")
+            return None
+            
+    return _trading_client
+
+
+def map_side(side_str: str) -> OrderSide:
+    """
+    Map side string to OrderSide enum.
+    
+    Args:
+        side_str: Side string ('buy' or 'sell')
+        
+    Returns:
+        OrderSide enum
+    """
+    return OrderSide[side_str.upper()]
+
+
+def map_tif(tif_str: str) -> TimeInForce:
+    """
+    Map time-in-force string to TimeInForce enum.
+    
+    Args:
+        tif_str: Time-in-force string
+        
+    Returns:
+        TimeInForce enum
+    """
+    return TimeInForce[tif_str.upper()]
+
+
+def order_to_dict(order: Order) -> Dict:
+    """
+    Convert Order object to dictionary.
+    
+    Args:
+        order: Order object
+        
+    Returns:
+        Dictionary representation
+    """
+    return {
+        'id': order.id,
+        'client_order_id': order.client_order_id,
+        'symbol': order.symbol,
+        'side': order.side.value if hasattr(order.side, 'value') else str(order.side),
+        'qty': float(order.qty) if order.qty else None,
+        'filled_qty': float(order.filled_qty) if order.filled_qty else None,
+        'type': order.order_type.value if hasattr(order.order_type, 'value') else str(order.order_type),
+        'status': order.status.value if hasattr(order.status, 'value') else str(order.status),
+        'created_at': str(order.created_at) if hasattr(order, 'created_at') else None,
+        'filled_at': str(order.filled_at) if hasattr(order, 'filled_at') else None,
+        'filled_price': float(order.filled_avg_price) if hasattr(order, 'filled_avg_price') and order.filled_avg_price else None,
+    }
+
+
+def position_to_dict(position: Position) -> Dict:
+    """
+    Convert Position object to dictionary.
+    
+    Args:
+        position: Position object
+        
+    Returns:
+        Dictionary representation
+    """
+    return {
+        'symbol': position.symbol,
+        'qty': float(position.qty),
+        'market_value': float(position.market_value) if position.market_value else None,
+        'avg_entry_price': float(position.avg_entry_price) if position.avg_entry_price else None,
+        'side': position.side,
+        'unrealized_pl': float(position.unrealized_pl) if position.unrealized_pl else None,
+        'unrealized_plpc': float(position.unrealized_plpc) if position.unrealized_plpc else None,
+        'current_price': float(position.current_price) if position.current_price else None,
+        'asset_id': position.asset_id,
+        'asset_class': position.asset_class,
+    }
 
 
 class OptionsTrader:
@@ -58,9 +152,16 @@ class OptionsTrader:
         if not api_key or not api_secret:
             raise ValueError("Alpaca API credentials required")
             
-        self.trading_client = trading_client or TradingClient(api_key, api_secret, paper=paper)
-        self.options_fetcher = options_fetcher or get_options_fetcher()
+        # Use singleton clients
+        self.trading_client = get_trading_client()
+        self.options_fetcher = _options_fetcher or get_options_fetcher()
         self.redis = get_redis_client()
+        
+        if not self.trading_client:
+            raise ValueError("Failed to initialize trading client")
+            
+        if not self.options_fetcher:
+            raise ValueError("Failed to initialize options fetcher")
         
         # Default risk parameters
         self.max_position_size = 1  # Default to 1 contract per trade
@@ -215,7 +316,7 @@ class OptionsTrader:
                 logger.error("Contract missing symbol")
                 return None
                 
-            # Create market order request
+            # Create market order request using Pydantic model
             order_request = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
@@ -224,22 +325,11 @@ class OptionsTrader:
             )
             
             # Submit the order
-            order = self.trading_client.submit_order(order_request)
+            order = self.trading_client.submit_order(order_data=order_request)
             
-            # Format the response
-            formatted_order = {
-                'id': order.id,
-                'client_order_id': order.client_order_id,
-                'symbol': order.symbol,
-                'option_symbol': symbol,
-                'side': side.value,
-                'qty': qty,
-                'type': 'market',
-                'status': order.status.value,
-                'created_at': str(order.created_at) if hasattr(order, 'created_at') else None,
-                'filled_at': str(order.filled_at) if hasattr(order, 'filled_at') else None,
-                'filled_price': order.filled_avg_price if hasattr(order, 'filled_avg_price') else None,
-            }
+            # Format the response using standard helper
+            formatted_order = order_to_dict(order)
+            formatted_order['option_symbol'] = symbol  # Add option-specific field
             
             logger.info(f"Submitted {side.value} order for {qty} {symbol}: {formatted_order['id']}")
             return formatted_order
@@ -276,7 +366,7 @@ class OptionsTrader:
             exit_orders = []
             entry_qty = int(entry_order.get('qty', 0))
             
-            # Process each target
+            # Process each target in a transaction
             remaining_qty = entry_qty
             for target in targets:
                 # Get target price and percentage allocation
@@ -321,51 +411,40 @@ class OptionsTrader:
             Success status
         """
         try:
-            self.trading_client.cancel_order(order_id)
+            self.trading_client.cancel_order(order_id=order_id)
             logger.info(f"Cancelled order {order_id}")
             return True
         except Exception as e:
             logger.error(f"Error cancelling order {order_id}: {e}")
             return False
             
-    def close_position(self, symbol: str) -> Optional[Dict]:
+    def close_position(self, symbol: str, percentage: float = 1.0) -> Optional[Dict]:
         """
         Close an existing position.
         
         Args:
             symbol: Symbol of the position to close
+            percentage: Percentage of position to close (default: 100%)
             
         Returns:
             Order information or None if execution failed
         """
         try:
-            # Get current position
-            position = self.trading_client.get_position(symbol)
-            
-            # Determine side for closing
-            side = OrderSide.SELL if position.side == 'long' else OrderSide.BUY
-            
-            # Create market order to close
-            order_request = MarketOrderRequest(
-                symbol=symbol,
-                qty=position.qty,
-                side=side,
-                time_in_force=TimeInForce.DAY
+            # Use the proper ClosePositionRequest
+            close_request = ClosePositionRequest(
+                percentage=percentage
             )
             
-            # Submit the order
-            order = self.trading_client.submit_order(order_request)
+            # Submit the close position request
+            order = self.trading_client.close_position(
+                symbol_or_asset_id=symbol,
+                close_options=close_request
+            )
             
             logger.info(f"Closed position for {symbol}: {order.id}")
             
-            # Format the response
-            return {
-                'id': order.id,
-                'symbol': order.symbol,
-                'qty': order.qty,
-                'side': side.value,
-                'status': order.status.value
-            }
+            # Format the response using standard helper
+            return order_to_dict(order)
             
         except Exception as e:
             logger.error(f"Error closing position for {symbol}: {e}")
@@ -397,12 +476,20 @@ def init_options_trader() -> bool:
     Returns:
         Success status
     """
+    global _trading_client, _options_fetcher
+    
     try:
-        trader = get_options_trader()
-        if not trader:
-            logger.error("Failed to initialize options trader")
+        # Initialize the singleton clients
+        _trading_client = get_trading_client()
+        _options_fetcher = get_options_fetcher()
+        
+        if not _trading_client or not _options_fetcher:
+            logger.error("Failed to initialize options trader clients")
             return False
             
+        # Create a test trader instance to verify
+        trader = OptionsTrader()
+        
         logger.info("Options trader initialized successfully")
         return True
     except Exception as e:
