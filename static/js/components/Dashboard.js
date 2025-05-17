@@ -82,7 +82,8 @@ function Dashboard({ account, loading, error }) {
     const counter = counters.current[prefix];
     const random = Math.random().toString(36).slice(2, 10);
     
-    return `${prefix}-${timestamp}-${counter}-${random}`;
+    // Make sure the result is a completely unique string by combining all parts
+    return `${prefix}_${timestamp}_${counter}_${random}`;
   }, []);
 
   useEffect(() => {
@@ -182,14 +183,14 @@ function Dashboard({ account, loading, error }) {
       id: generateStableId('event'),
       timestamp: new Date().toISOString(),
       type,
-      message
+      message: message // Ensure message is always a string
     };
 
     setDashboardState(s => ({
       ...s,
       events: [event, ...s.events].slice(0, 100) // Keep last 100 events
     }));
-  }, []);
+  }, [generateStableId]);
 
   const handleSubscribeTicker = (ticker) => {
     if (!socket) return;
@@ -376,7 +377,9 @@ function Dashboard({ account, loading, error }) {
                       }`}>
                         {event.type}
                       </span>
-                      {event.message}
+                      {typeof event.message === 'string' 
+                        ? event.message 
+                        : JSON.stringify(event.message)}
                     </div>
                   ))
                 ) : (
