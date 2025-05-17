@@ -48,6 +48,11 @@ class SignalProcessor:
         """
         if not self.initialized:
             return {'status': 'error', 'message': 'Alpaca client not initialized'}
+            
+        # Refresh account info
+        self.account_info = get_account_info()
+        if not self.account_info:
+            return {'status': 'error', 'message': 'Could not get account information'}
         
         try:
             # Get the signal and associated ticker setup
@@ -102,6 +107,45 @@ class SignalProcessor:
             logger.error(f"Error processing signal {signal_id}: {e}")
             return {'status': 'error', 'message': f'Error processing signal: {str(e)}'}
     
+    def _parse_trigger(self, trigger_raw) -> float:
+        """
+        Normalize trigger formats to a single float value.
+        
+        Args:
+            trigger_raw: Raw trigger value in various formats
+            
+        Returns:
+            float: Normalized trigger value or 0 if invalid
+        """
+        try:
+            if not trigger_raw:
+                return 0
+                
+            if isinstance(trigger_raw, (int, float)):
+                return float(trigger_raw)
+                
+            if isinstance(trigger_raw, str):
+                return float(trigger_raw)
+                
+            if isinstance(trigger_raw, dict):
+                if 'type' in trigger_raw:
+                    if trigger_raw['type'] == 'single':
+                        return float(trigger_raw.get('value', 0))
+                    elif trigger_raw['type'] == 'range':
+                        low = float(trigger_raw.get('low', 0))
+                        high = float(trigger_raw.get('high', 0))
+                        return (low + high) / 2
+                return float(next(iter(trigger_raw.values())))
+                
+            if hasattr(trigger_raw, '__iter__') and not isinstance(trigger_raw, str):
+                return float(next(iter(trigger_raw)))
+                
+            return 0
+            
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing trigger value: {e}")
+            return 0
+            
     def _determine_trade_direction(self, signal: Signal, quote: Dict, ticker_setup: TickerSetup) -> Tuple[Optional[str], float]:
         """
         Determine the trade direction (buy/sell) based on the signal.
@@ -288,7 +332,7 @@ class SignalProcessor:
         self, symbol: str, qty: int, side: str, entry_price: float, stop_price: float
     ) -> Dict:
         """
-        Execute a trade based on the calculated parameters.
+        Execute a trade based on the calculated parameters using typed OrderRequest classes.
         
         Args:
             symbol: Ticker symbol
@@ -301,54 +345,55 @@ class SignalProcessor:
             Order result dictionary
         """
         try:
-            # Submit market order
-            order = submit_market_order(
+            from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
+            from alpaca.trading.enums import OrderSide, TimeInForce
+            
+            # Create market order request
+            mkt_req = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
-                side=side,
-                time_in_force='day',
+                side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
+                time_in_force=TimeInForce.DAY,
                 client_order_id=f"signal_{datetime.now().strftime('%Y%m%d%H%M%S')}"
             )
             
-            if not order:
+            # Submit market order
+            entry_order = self.trading_client.submit_order(order_data=mkt_req)
+            if not entry_order:
                 return {
                     'status': 'error',
                     'message': f'Failed to submit {side} order for {symbol}'
                 }
             
-            # Create a stop loss order for risk management
+            result = {
+                'status': 'success',
+                'message': f'Executed {side} {qty} shares of {symbol}',
+                'symbol': symbol,
+                'side': side,
+                'qty': qty,
+                'entry_price': entry_price,
+                'entry_order_id': entry_order.id
+            }
+            
+            # Create stop loss order if specified
             if stop_price > 0:
-                stop_side = 'sell' if side == 'buy' else 'buy'
-                stop_order = submit_limit_order(
+                stop_req = LimitOrderRequest(
                     symbol=symbol,
                     qty=qty,
-                    side=stop_side,
+                    side=OrderSide.SELL if side == "buy" else OrderSide.BUY,
+                    time_in_force=TimeInForce.GTC,
                     limit_price=stop_price,
-                    time_in_force='gtc',
                     client_order_id=f"stop_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 )
                 
-                return {
-                    'status': 'success',
-                    'message': f'Executed {side} {qty} shares of {symbol}',
-                    'symbol': symbol,
-                    'side': side,
-                    'qty': qty,
-                    'entry_price': entry_price,
-                    'entry_order_id': order.get('id'),
-                    'stop_price': stop_price,
-                    'stop_order_id': stop_order.get('id') if stop_order else None
-                }
-            else:
-                return {
-                    'status': 'success',
-                    'message': f'Executed {side} {qty} shares of {symbol}',
-                    'symbol': symbol,
-                    'side': side,
-                    'qty': qty,
-                    'entry_price': entry_price,
-                    'entry_order_id': order.get('id')
-                }
+                stop_order = self.trading_client.submit_order(order_data=stop_req)
+                if stop_order:
+                    result.update({
+                        'stop_price': stop_price,
+                        'stop_order_id': stop_order.id
+                    })
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Error executing trade: {e}")
