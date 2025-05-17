@@ -167,12 +167,14 @@ def get_setup(setup_id):
 def add_sample_data():
     """Add sample setup messages to demonstrate functionality."""
     try:
-        # Check if we already have setup messages
+        # Clear existing setup messages if requested by the query param
+        force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+        
         existing_count = models.SetupMessage.query.count()
-        if existing_count > 0:
+        if existing_count > 0 and not force_refresh:
             return jsonify({
                 'status': 'info',
-                'message': f'Sample data already exists ({existing_count} records found)'
+                'message': f'Sample data already exists ({existing_count} records found). Use ?refresh=true to reload.'
             })
             
         # Import fully qualified models to avoid naming conflicts
@@ -210,9 +212,10 @@ def add_sample_data():
                 logger.error(f"Error processing Discord message: {e}")
                 
         if processed_count == 0:
+            logger.warning("No Discord messages were successfully processed")
             return jsonify({
                 'status': 'error',
-                'message': 'Failed to process any Discord messages'
+                'message': 'Failed to process any Discord messages. This could be due to message format issues or database conflicts.'
             }), 500
         
         # Commit changes and return response

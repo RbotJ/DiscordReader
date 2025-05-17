@@ -327,9 +327,17 @@ def get_channel_messages() -> List[dict]:
     if not CHANNEL_APLUS_SETUPS_ID:
         logger.warning("A+ setups channel ID not configured")
         return []
+        
+    # Since we can't properly connect to Discord without privileged intents
+    # being enabled in the Discord Developer Portal, we'll use sample data
+    # for demonstration purposes
     
-    # Sample messages for development/testing
-    # In production, you would use discord.py to fetch actual messages
+    # In a production environment, you would need to:
+    # 1. Go to Discord Developer Portal
+    # 2. Enable the Message Content Intent for your bot
+    # 3. Use discord.py to fetch actual messages
+    
+    logger.warning("Using sample messages while waiting for Discord privileged intents to be enabled")
     sample_messages = [
         {
             'id': '123456789',
