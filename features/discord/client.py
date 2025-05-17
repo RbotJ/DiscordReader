@@ -383,6 +383,14 @@ def get_channel_messages() -> List[dict]:
                                 combined_content += "\n\n"
                             combined_content += "\n".join(attachments_info + embeds_info)
                         
+                        # Check for message_snapshots which might contain the actual content
+                        if not combined_content and hasattr(msg, 'message_snapshots') and msg.message_snapshots:
+                            for snapshot in msg.message_snapshots:
+                                if 'message' in snapshot and 'content' in snapshot['message'] and snapshot['message']['content']:
+                                    combined_content = snapshot['message']['content']
+                                    logger.info(f"Found content in message_snapshots: {combined_content[:50]}...")
+                                    break
+                        
                         # If still empty, note that it's empty
                         if not combined_content:
                             combined_content = "(Message contains no text content or attachments)"
@@ -391,7 +399,8 @@ def get_channel_messages() -> List[dict]:
                             'id': str(msg.id),
                             'content': combined_content,
                             'timestamp': msg.created_at,
-                            'author': str(msg.author)
+                            'author': str(msg.author),
+                            'has_snapshots': hasattr(msg, 'message_snapshots') and bool(msg.message_snapshots)
                         })
                     
                     logger.info(f"Fetched {message_count} messages, {len(messages)} with content")
