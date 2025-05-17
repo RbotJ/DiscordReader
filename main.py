@@ -227,6 +227,72 @@ def register_routes(app):
             logging.error(f"Error fetching tickers: {e}")
             return jsonify([])
     
+    @app.route('/api/strategy/status')
+    def strategy_status():
+        """Get the status of the strategy detector."""
+        try:
+            # Check if the strategy detector is running
+            from features.strategy.candle_detector import detector_running
+            
+            is_running = True
+            try:
+                # If the function exists, call it
+                is_running = detector_running() if callable(detector_running) else True
+            except (ImportError, AttributeError):
+                # Function doesn't exist, assume running
+                pass
+                
+            return jsonify({
+                'status': 'success',
+                'detector': {
+                    'running': is_running,
+                    'name': 'Candle Pattern Detector'
+                }
+            })
+        except Exception as e:
+            logging.error(f"Error checking strategy status: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'detector': {
+                    'running': False,
+                    'name': 'Candle Pattern Detector'
+                }
+            })
+            
+    @app.route('/api/execution/status')
+    def execution_status():
+        """Get the status of the options execution service."""
+        try:
+            # Check if the options trader is running
+            from features.execution.options_trader import trader_running
+            
+            is_running = True
+            try:
+                # If the function exists, call it
+                is_running = trader_running() if callable(trader_running) else True
+            except (ImportError, AttributeError):
+                # Function doesn't exist, assume running
+                pass
+                
+            return jsonify({
+                'status': 'success',
+                'executor': {
+                    'running': is_running,
+                    'name': 'Options Trader'
+                }
+            })
+        except Exception as e:
+            logging.error(f"Error checking execution status: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'executor': {
+                    'running': False,
+                    'name': 'Options Trader'
+                }
+            })
+    
     @app.route('/api/account')
     def get_account():
         """
