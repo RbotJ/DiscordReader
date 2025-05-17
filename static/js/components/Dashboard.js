@@ -346,7 +346,7 @@ function Dashboard({ account, loading, error }) {
                 return (
                   <div key={key} className="col-md-6 mb-3">
                     <ChartErrorBoundary>
-                    <div className="card">
+                      <div className="card">
                       <div className="card-header d-flex justify-content-between align-items-center">
                         <h5 className="mb-0">{chart.symbol}</h5>
                         <button 
@@ -371,7 +371,8 @@ function Dashboard({ account, loading, error }) {
                     </div>
                   </ChartErrorBoundary>
                 </div>
-              ))
+              );
+            }) 
             ) : (
               <div className="col-12">
                 <div className="alert alert-info">
