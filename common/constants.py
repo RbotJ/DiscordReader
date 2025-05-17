@@ -79,6 +79,9 @@ class RedisChannel(str, Enum):
     # System channels
     SYSTEM_EVENTS = "system:events"
     
+    # Strategy channels
+    STRATEGY_CHANNEL = "strategy:events"
+    
     # Account channels
     ACCOUNT_UPDATES = "account:updates"
     POSITION_UPDATES = "positions:updates"

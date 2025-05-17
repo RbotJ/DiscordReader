@@ -161,8 +161,8 @@ def register_routes(app):
         """
         try:
             # Try to get account info from Alpaca
-            from features.alpaca.client import alpaca_trading_client
-            account = alpaca_trading_client.get_account()
+            from features.alpaca.client import get_account_info
+            account = get_account_info()
             return jsonify(account)
         except Exception as e:
             logging.error(f"Error fetching account information: {e}")
@@ -185,8 +185,8 @@ def register_routes(app):
         """
         try:
             # Try to get positions from Alpaca
-            from features.alpaca.client import alpaca_trading_client
-            positions = alpaca_trading_client.get_positions()
+            from features.alpaca.client import get_positions
+            positions = get_positions()
             return jsonify(positions)
         except Exception as e:
             logging.error(f"Error fetching positions: {e}")
@@ -206,14 +206,23 @@ def register_routes(app):
         """
         from flask import request
         
-        timeframe = request.args.get('timeframe', '1min')
+        timeframe = request.args.get('timeframe', '1Min')
         limit = int(request.args.get('limit', 100))
         
         try:
-            # Try to get candles from Alpaca
-            from features.alpaca.client import alpaca_market_client
-            candles = alpaca_market_client.get_bars(ticker, timeframe, limit)
-            return jsonify(candles)
+            # First try to get candles from historical data provider
+            try:
+                from features.market.historical_data import get_historical_candles
+                candles = get_historical_candles(ticker, timeframe, limit)
+                if candles and len(candles) > 0:
+                    return jsonify(candles)
+            except ImportError:
+                logging.warning(f"Could not import historical data provider for {ticker}")
+            
+            # Fall back to Alpaca client if historical data not available
+            from features.alpaca.client import get_bars
+            candles = get_bars(ticker, timeframe, limit)
+            return jsonify(candles or [])
         except Exception as e:
             logging.error(f"Error fetching candles for {ticker}: {e}")
             return jsonify([])

@@ -18,6 +18,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockQuotesRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.common.exceptions import APIError
+from common.constants import Timeframe
 
 # Configure logger
 logger = logging.getLogger(__name__)
