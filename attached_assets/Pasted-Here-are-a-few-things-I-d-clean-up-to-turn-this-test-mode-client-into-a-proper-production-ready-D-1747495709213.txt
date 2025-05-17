@@ -1,0 +1,109 @@
+Here are a few things I’d clean up to turn this “test-mode” client into a proper, production-ready Discord module (and strip out all the mocks/fallbacks):
+
+Always spin up the real APlusTradingClient, don’t log and early-return
+Replace your entire “test mode” branch in initialize_discord_client() with code that actually creates and runs the APlusTradingClient. If you must host inside a Flask app, you can spawn it in its own thread or use asyncio:
+
+python
+Copy
+Edit
+@requires_discord
+def initialize_discord_client() -> bool:
+    global discord_client
+    if not DISCORD_APP_TOKEN:
+        logger.warning("Discord bot token not found")
+        return False
+    if not (CHANNEL_BOT_DIALOGUE_ID and CHANNEL_APLUS_SETUPS_ID):
+        logger.warning("Discord channels not configured")
+        return False
+
+    try:
+        discord_client = APlusTradingClient()
+        # run the bot in a background thread
+        def _run():
+            discord_client.run(DISCORD_APP_TOKEN)
+        import threading
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+
+        logger.info("Discord client initialized and running")
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing Discord client: {e}")
+        return False
+Simplify your send_message to use the bot instance
+Drop all the “http.send_message” hacks—once you have a live discord_client, just do:
+
+python
+Copy
+Edit
+@requires_discord
+def send_message(channel_id: int, content: str) -> bool:
+    if not client_ready or not discord_client:
+        logger.warning("Discord client not ready")
+        return False
+
+    chan = discord_client.get_channel(channel_id)
+    if not chan:
+        logger.error(f"Channel {channel_id} not found")
+        return False
+
+    # schedule the send on the event loop
+    fut = asyncio.run_coroutine_threadsafe(chan.send(content),
+                                          discord_client.loop)
+    try:
+        fut.result(timeout=10)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        return False
+Remove all “TEST MODE” branches
+Since you now always have a real client, you can delete:
+
+is_discord_available flag
+
+the “simplified client that just logs” comments
+
+any code paths that logger.info("TEST MODE: …")
+
+Unify your “fetch latest messages” logic to reuse the same client
+Instead of spinning up a separate Client() inside get_channel_messages(), just:
+
+python
+Copy
+Edit
+@requires_discord
+async def _fetch_setups_from_discord() -> List[dict]:
+    chan = discord_client.get_channel(CHANNEL_APLUS_SETUPS_ID)
+    if not chan:
+        return []
+
+    messages = []
+    async for msg in chan.history(limit=20, oldest_first=False):
+        # ...extract msg.content or from msg.embeds[0].description...
+        messages.append({...})
+    return messages
+
+def get_channel_messages() -> List[dict]:
+    if not initialize_discord_client():
+        return []
+    # run the coroutine on the bot’s loop
+    fut = asyncio.run_coroutine_threadsafe(_fetch_setups_from_discord(),
+                                          discord_client.loop)
+    return fut.result(timeout=15)
+Prune unused imports & mocks
+
+You don’t need setup_checks = self.check_for_setups.start() in __init__: call check_for_setups.start() in on_ready() instead.
+
+Delete CHANNEL_TEST / send_test_message if you don’t use them in production.
+
+In summary:
+
+Always run your real APlusTradingClient
+
+Remove all the “test mode” logs and branches
+
+Use asyncio.run_coroutine_threadsafe to drive your send/fetch methods on the bot’s loop
+
+Simplify send_message to call channel.send and await it
+
+With those changes, you’ll have a single, real client maintaining a socket connection and you’ll no longer have any mock or fake-data pathways.
