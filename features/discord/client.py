@@ -160,33 +160,22 @@ def initialize_discord_client():
         return False
     
     try:
-        # Due to constraints of running in a non-async environment,
-        # we'll implement a simplified client that just logs messages
-        # but simulates the real behavior for our testing
+        discord_client = APlusTradingClient()
         
-        logger.info(f"Discord client would initialize with token: {DISCORD_APP_TOKEN[:5]}*** (truncated)")
-        logger.info(f"Bot dialogue channel ID: {CHANNEL_BOT_DIALOGUE_ID}")
-        logger.info(f"A+ setups channel ID: {CHANNEL_APLUS_SETUPS_ID}")
-        logger.info(f"Test channel ID: {CHANNEL_TEST_ID}")
+        # Run the bot in a separate thread to avoid blocking
+        def _run_bot():
+            try:
+                discord_client.run(DISCORD_APP_TOKEN)
+            except Exception as e:
+                logger.error(f"Error in Discord bot thread: {e}")
+                
+        import threading
+        thread = threading.Thread(target=_run_bot, daemon=True)
+        thread.start()
         
-        # For real Discord integration in production:
-        # 1. Use an async framework like FastAPI instead of Flask
-        # 2. Initialize discord.py client properly in an event loop
-        # 3. Use client.loop.create_task() for non-blocking operations
-        
-        # For this demonstration, we'll set up a simplified client
-        # that doesn't require an event loop
-        
-        # Set client_ready to true for our implementation
-        global client_ready
-        client_ready = True
-        
-        # In real implementation, you would initialize discord_client here
-        # discord_client = APlusTradingClient()
-        # discord_client.run(DISCORD_APP_TOKEN, bot=True)
-        
-        logger.info("Discord client initialized in test mode")
+        logger.info("Discord client initialized and running")
         return True
+        
     except Exception as e:
         logger.error(f"Error initializing Discord client: {e}")
         return False
@@ -211,22 +200,18 @@ def send_message(channel_id: int, message: str) -> bool:
         # Log the message we're about to send
         logger.info(f"Sending message to channel {channel_id}: {message}")
         
-        # Actually send the message to Discord
-        # If we have a client instance
+        # Send the message using the Discord client
         global discord_client
-        if discord_client and hasattr(discord_client, 'http') and discord_client.http:
+        if discord_client and hasattr(discord_client, 'http'):
             try:
-                # Use the Discord.py HTTP API directly to send the message
-                # This is non-blocking and doesn't require event loops
                 discord_client.http.send_message(channel_id, message)
                 logger.info(f"Message sent to channel {channel_id}")
             except Exception as e:
-                logger.error(f"Error using Discord API to send message: {e}")
-                # Fall back to just logging in test mode
-                logger.info(f"TEST MODE: Would send to channel {channel_id}: {message}")
+                logger.error(f"Error sending Discord message: {e}")
+                return False
         else:
-            # If no client, just log in test mode
-            logger.info(f"TEST MODE: Would send to channel {channel_id}: {message}")
+            logger.error("Discord client not properly initialized")
+            return False
             
         return True
     except Exception as e:
