@@ -323,16 +323,30 @@ def register_routes(app):
             
             # Fall back to database signals if no active candle signals
             try:
-                from models import TickerSetup, Signal
+                from sqlalchemy import text
+                import json
                 
-                # Get the most recent ticker setup
-                ticker_setup = TickerSetup.query.filter_by(symbol=ticker).order_by(TickerSetup.id.desc()).first()
+                # Use raw SQL to avoid model registry conflicts
+                # First get the most recent ticker setup ID
+                setup_query = text("""
+                    SELECT id FROM ticker_setups 
+                    WHERE symbol = :symbol 
+                    ORDER BY id DESC LIMIT 1
+                """)
+                setup_result = db.session.execute(setup_query, {"symbol": ticker}).fetchone()
                 
-                if not ticker_setup:
+                if not setup_result:
                     return jsonify([])
                 
-                # Get signals for the ticker setup
-                signals = Signal.query.filter_by(ticker_setup_id=ticker_setup.id).all()
+                setup_id = setup_result[0]
+                
+                # Then get signals for that ticker setup
+                signals_query = text("""
+                    SELECT id, category, aggressiveness, comparison, trigger, targets, created_at
+                    FROM signals
+                    WHERE ticker_setup_id = :setup_id
+                """)
+                signals = db.session.execute(signals_query, {"setup_id": setup_id}).fetchall()
                 
                 if not signals:
                     return jsonify([])
@@ -341,20 +355,24 @@ def register_routes(app):
                 signal_list = []
                 for signal in signals:
                     try:
+                        # Parse JSON fields
+                        trigger = json.loads(signal[4]) if isinstance(signal[4], str) else signal[4]
+                        targets = json.loads(signal[5]) if isinstance(signal[5], str) else signal[5]
+                        
                         signal_data = {
-                            'id': signal.id,
+                            'id': signal[0],
                             'ticker': ticker,
-                            'category': signal.category.value if hasattr(signal.category, 'value') else str(signal.category),
-                            'aggressiveness': signal.aggressiveness.value if hasattr(signal.aggressiveness, 'value') else str(signal.aggressiveness),
-                            'comparison': signal.comparison.value if hasattr(signal.comparison, 'value') else str(signal.comparison),
-                            'trigger': signal.trigger,
-                            'targets': signal.targets,
+                            'category': signal[1],
+                            'aggressiveness': signal[2],
+                            'comparison': signal[3],
+                            'trigger': trigger,
+                            'targets': targets,
                             'status': 'pending',  # Default status
                             'source': 'database'
                         }
                         signal_list.append(signal_data)
                     except Exception as signal_error:
-                        logging.error(f"Error processing signal {signal.id}: {signal_error}")
+                        logging.error(f"Error processing signal {signal[0]}: {signal_error}")
                         continue
                 
                 return jsonify(signal_list)
