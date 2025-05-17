@@ -30,12 +30,29 @@ const EventLog = forwardRef((props, ref) => {
   // Method to add a new log message
   const addLog = (type, message, data = null) => {
     const timestamp = new Date().toISOString();
+    
+    // Ensure data is a string or null
+    let processedData = null;
+    if (data !== null) {
+      if (typeof data === 'string') {
+        processedData = data;
+      } else if (typeof data === 'object') {
+        try {
+          processedData = JSON.stringify(data);
+        } catch (e) {
+          processedData = String(data);
+        }
+      } else {
+        processedData = String(data);
+      }
+    }
+    
     const entry = {
-      id: Date.now(),
+      id: Date.now() + Math.random().toString(36).substring(2, 8),
       timestamp,
       type,
       message,
-      data
+      data: processedData
     };
     
     addLogEntry(entry);
@@ -93,10 +110,27 @@ const EventLog = forwardRef((props, ref) => {
     clearLog
   }));
   
-  // Add test logs on initial render
+  // Add test logs on initial render with guaranteed unique IDs
   useEffect(() => {
-    addLog('info', 'Event log initialized');
-    addLog('info', 'Waiting for market data...');
+    const uniqueId1 = `init_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    const uniqueId2 = `wait_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    
+    setLogs([
+      {
+        id: uniqueId1,
+        timestamp: new Date().toISOString(),
+        type: 'info',
+        message: 'Event log initialized',
+        data: null
+      },
+      {
+        id: uniqueId2,
+        timestamp: new Date().toISOString(),
+        type: 'info',
+        message: 'Waiting for market data...',
+        data: null
+      }
+    ]);
   }, []);
   
   return (

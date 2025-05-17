@@ -43,16 +43,18 @@ const Dashboard = () => {
     
     const handleMarketData = (data) => {
       if (eventLogRef.current && Math.random() < 0.1) { // Log only 10% of market data to avoid flooding
-        eventLogRef.current.addLog('info', `Market data for ${data.ticker}`, `Price: ${data.price}`);
+        const price = data.price ? data.price.toString() : 'unknown';
+        eventLogRef.current.addLog('info', `Market data for ${data.ticker}`, `Price: ${price}`);
       }
     };
     
     const handleSignalUpdate = (data) => {
       if (eventLogRef.current) {
+        const price = data.price ? data.price.toString() : 'unknown';
         eventLogRef.current.addLog(
           'trade', 
           `Signal triggered for ${data.ticker}`, 
-          `${data.category} at ${data.price}`
+          `${data.category} at ${price}`
         );
       }
     };
