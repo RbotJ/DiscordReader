@@ -336,7 +336,7 @@ function Dashboard({ account, loading, error }) {
                         </button>
                       </div>
                       <div className="card-body p-0">
-                        <div className="chart-container" id={`chart-${chart.symbol}`}>
+                        <div className="chart-container" id={`container-${chart.id}`}>
                           <div className="d-flex align-items-center justify-content-center h-100">
                             <p className="text-muted mb-0">Loading chart...</p>
                           </div>
@@ -376,9 +376,7 @@ function Dashboard({ account, loading, error }) {
                       }`}>
                         {event.type}
                       </span>
-                      {typeof event.message === 'string' 
-                        ? event.message 
-                        : JSON.stringify(event.message)}
+                      {event.message}
                     </div>
                   ))
                 ) : (
