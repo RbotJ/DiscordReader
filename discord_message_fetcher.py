@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 async def fetch_discord_message():
     """Fetch the most recent message from the configured Discord channel."""
     # Grab token and channel ID from environment
-    token = os.getenv('DISCORD_TOKEN')
+    token = os.getenv('DISCORD_APP_TOKEN') or os.getenv('DISCORD_BOT_TOKEN')
     channel_id = os.getenv('DISCORD_CHANNEL_APLUS_SETUPS')
     
     if not token:
-        logger.error("DISCORD_TOKEN environment variable not set")
+        logger.error("DISCORD_APP_TOKEN or DISCORD_BOT_TOKEN environment variable not set")
         return None
         
     if not channel_id:
@@ -56,15 +56,23 @@ async def fetch_discord_message():
                 
             logger.info(f"Fetching messages from channel: #{channel.name} (ID: {channel_id})")
             
-            # Pull the last message that contains "A+ Trade Setups"
-            async for msg in channel.history(limit=10):
-                if "A+ Trade Setups" in msg.content:
+            # Pull the latest messages
+            messages_found = 0
+            async for msg in channel.history(limit=5):
+                # Print out what we found to help debug
+                logger.info(f"Found message: {msg.id} from {msg.author}")
+                logger.info(f"Content length: {len(msg.content)}")
+                if len(msg.content) > 0:
+                    logger.info(f"Content: {msg.content}")
+                
+                # Store the first message (most recent)
+                if messages_found == 0:
                     message_data['id'] = str(msg.id)
                     message_data['author'] = str(msg.author)
                     message_data['timestamp'] = msg.created_at.isoformat()
                     message_data['content'] = msg.content
-                    logger.info(f"Found trading setup message (ID: {msg.id})")
-                    break
+                    
+                messages_found += 1
             
             if not message_data:
                 logger.warning(f"No trading setup messages found in channel {channel_id}")
