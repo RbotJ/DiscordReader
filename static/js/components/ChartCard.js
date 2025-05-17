@@ -170,12 +170,22 @@ const ChartCard = ({ ticker, onClose }) => {
       
       data.forEach(signal => {
         // Add trigger level
-        addPriceLevel(signal.trigger, '#ff9800');
+        if (typeof signal.trigger === 'object' && signal.trigger.value) {
+          addPriceLevel(signal.trigger.value, '#ff9800');
+        } else if (typeof signal.trigger === 'number') {
+          addPriceLevel(signal.trigger, '#ff9800');
+        }
         
         // Add target levels
-        signal.targets.forEach((target, index) => {
-          addPriceLevel(target, '#4caf50');
-        });
+        if (Array.isArray(signal.targets)) {
+          signal.targets.forEach((target, index) => {
+            if (typeof target === 'object' && target.price) {
+              addPriceLevel(target.price, '#4caf50');
+            } else if (typeof target === 'number') {
+              addPriceLevel(target, '#4caf50');
+            }
+          });
+        }
       });
       
     } catch (err) {

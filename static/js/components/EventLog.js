@@ -72,7 +72,9 @@ const EventLog = forwardRef((props, ref) => {
         <span className="log-message ms-2">{message}</span>
         {data && (
           <span className="log-data ms-2 text-muted">
-            {typeof data === 'string' ? data : JSON.stringify(data)}
+            {typeof data === 'string' ? data : (
+              typeof data === 'object' ? JSON.stringify(data) : String(data)
+            )}
           </span>
         )}
       </div>
