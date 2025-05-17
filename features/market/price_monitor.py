@@ -1,254 +1,267 @@
 """
-Market Price Monitor Module
+Price Monitor Module
 
-This module provides real-time price monitoring via Alpaca WebSocket feed.
-It connects to the Alpaca API, subscribes to tickers, and publishes price
-updates to Redis channels.
+This module provides real-time price monitoring for tracked symbols
+and publishes price updates to Redis channels.
 """
-import asyncio
-import json
 import logging
-import os
+import threading
+import time
 from datetime import datetime
-from typing import Dict, List, Set, Callable, Optional
+from typing import Dict, List, Set, Any, Optional
 
-from alpaca.data.live import StockDataStream
-from common.redis_utils import get_redis_client
+from common.redis_utils import RedisClient
+from features.alpaca.client import get_latest_quote, alpaca_market_client
 
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Redis event channels
-PRICE_UPDATE_CHANNEL = "market.price_update"
-TRADE_UPDATE_CHANNEL = "market.trade_update"
-TICKER_WATCH_CHANNEL = "market.ticker_watch"
-TICKER_UNWATCH_CHANNEL = "market.ticker_unwatch"
-CANDLE_UPDATE_CHANNEL = "market.candle_update"
-SYSTEM_STATUS_CHANNEL = "system.status"
+# Redis client for publishing price updates
+redis_client = RedisClient()
 
-class PriceMonitor:
-    """Real-time price monitor using Alpaca WebSocket API."""
-    def __init__(self, api_key=None, api_secret=None):
-        """
-        Initialize the price monitor.
-        
-        Args:
-            api_key: Alpaca API key (default: from environment)
-            api_secret: Alpaca API secret (default: from environment)
-        """
-        self.api_key = api_key or os.environ.get("ALPACA_API_KEY")
-        self.api_secret = api_secret or os.environ.get("ALPACA_API_SECRET")
-        
-        self.watchlist = set()
-        self.stock_stream = StockDataStream(self.api_key, self.api_secret)
-        self.redis = get_redis_client()
-        self.running = False
-        
-        # Callback registrations
-        self.price_callbacks = []
-        
-    async def start(self):
-        """Start the price monitor."""
-        self.running = True
-        
-        # Subscribe to trades for all tickers in watchlist
-        if self.watchlist:
-            # Convert set to list for subscription
-            symbols = list(self.watchlist)
-            self.stock_stream.subscribe_trades(self._process_trade, *symbols)
-            logger.info(f"Subscribed to trade updates for {len(symbols)} symbols")
-        
-        try:
-            logger.info("Starting Alpaca WebSocket connection...")
-            await self.stock_stream.run()
-        except Exception as e:
-            logger.error(f"Error in WebSocket connection: {e}")
-            self.running = False
-            raise
-    
-    def stop(self):
-        """Stop the price monitor."""
-        if self.running:
-            self.running = False
-            try:
-                self.stock_stream.stop()
-                logger.info("Stopped Alpaca WebSocket connection")
-            except Exception as e:
-                logger.error(f"Error stopping WebSocket connection: {e}")
-    
-    def _process_trade(self, trade):
-        """
-        Process a trade update from Alpaca.
-        
-        Args:
-            trade: Alpaca trade data
-        """
-        try:
-            symbol = trade.symbol
-            price = trade.price
-            timestamp = trade.timestamp
-            size = trade.size
-            
-            logger.debug(f"Trade update: {symbol} @ {price} ({timestamp})")
-            
-            # Create trade event
-            event = {
-                "symbol": symbol,
-                "price": float(price),
-                "size": float(size),
-                "timestamp": timestamp.isoformat(),
-                "event_type": "trade_update"
-            }
-            
-            # Add metadata about this ticker if we have any tracked setups
-            # This will be populated by the signal detector system
-            event["status"] = "monitoring"  # Default status
-            
-            # Publish to Redis - both to the general price update channel and to the ticker-specific channel
-            if self.redis and self.redis.available:
-                # Publish to the general market price update channel
-                self.redis.publish(PRICE_UPDATE_CHANNEL, json.dumps(event))
-                
-                # Also publish to ticker-specific channel for more targeted subscriptions
-                self.redis.publish(f"ticker.{symbol}", json.dumps(event))
-            
-            # Call registered callbacks
-            for callback in self.price_callbacks:
-                try:
-                    callback(symbol, float(price), timestamp)
-                except Exception as e:
-                    logger.error(f"Error in price callback: {e}")
-        except Exception as e:
-            logger.error(f"Error processing trade: {e}")
-    
-    def add_symbols(self, symbols: List[str]):
-        """
-        Add multiple symbols to the watchlist.
-        
-        Args:
-            symbols: List of ticker symbols to add
-        """
-        if not symbols:
-            return
-            
-        symbols = [s.upper() for s in symbols]
-        new_symbols = []
-        
-        for symbol in symbols:
-            if symbol not in self.watchlist:
-                self.watchlist.add(symbol)
-                new_symbols.append(symbol)
-                
-                # Publish individual ticker watch event for each new symbol
-                if self.redis and self.redis.available:
-                    watch_event = {
-                        "symbol": symbol,
-                        "event_type": "ticker_watch",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    self.redis.publish(TICKER_WATCH_CHANNEL, json.dumps(watch_event))
-                    self.redis.publish(f"ticker.{symbol}.control", json.dumps(watch_event))
-        
-        if new_symbols:
-            # Publish batch ticker watch event
-            if self.redis and self.redis.available and len(new_symbols) > 1:
-                batch_watch_event = {
-                    "symbols": new_symbols,
-                    "event_type": "ticker_watch_batch",
-                    "count": len(new_symbols),
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                self.redis.publish(TICKER_WATCH_CHANNEL, json.dumps(batch_watch_event))
-            
-            if self.running:
-                # Resubscribe with updated watchlist
-                self.stock_stream.subscribe_trades(self._process_trade, *new_symbols)
-                
-            logger.info(f"Added {len(new_symbols)} symbols to watchlist: {', '.join(new_symbols)}")
-    
-    def add_symbol(self, symbol: str):
-        """
-        Add a symbol to the watchlist.
-        
-        Args:
-            symbol: Ticker symbol to add
-        """
-        symbol = symbol.upper()
-        if symbol not in self.watchlist:
-            self.watchlist.add(symbol)
-            
-            # Publish ticker watch event
-            if self.redis and self.redis.available:
-                watch_event = {
-                    "symbol": symbol,
-                    "event_type": "ticker_watch",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                self.redis.publish(TICKER_WATCH_CHANNEL, json.dumps(watch_event))
-                self.redis.publish(f"ticker.{symbol}.control", json.dumps(watch_event))
-                logger.debug(f"Published ticker watch event for {symbol}")
-            
-            if self.running:
-                # Resubscribe for this symbol
-                self.stock_stream.subscribe_trades(self._process_trade, symbol)
-            logger.info(f"Added {symbol} to watchlist")
-    
-    def remove_symbol(self, symbol: str):
-        """
-        Remove a symbol from the watchlist.
-        
-        Args:
-            symbol: Ticker symbol to remove
-        """
-        symbol = symbol.upper()
-        if symbol in self.watchlist:
-            self.watchlist.remove(symbol)
-            
-            # Publish ticker unwatch event
-            if self.redis and self.redis.available:
-                unwatch_event = {
-                    "symbol": symbol,
-                    "event_type": "ticker_unwatch",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                self.redis.publish(TICKER_UNWATCH_CHANNEL, json.dumps(unwatch_event))
-                self.redis.publish(f"ticker.{symbol}.control", json.dumps(unwatch_event))
-                logger.debug(f"Published ticker unwatch event for {symbol}")
-            
-            if self.running:
-                # Unsubscribe from this symbol
-                self.stock_stream.unsubscribe_trades(symbol)
-            logger.info(f"Removed {symbol} from watchlist")
-    
-    def register_price_callback(self, callback: Callable[[str, float, datetime], None]):
-        """
-        Register a callback for price updates.
-        
-        Args:
-            callback: Function to call on price updates (symbol, price, timestamp)
-        """
-        self.price_callbacks.append(callback)
-        logger.debug(f"Registered price callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
-    
-    def get_watchlist(self) -> List[str]:
-        """
-        Get the current watchlist.
-        
-        Returns:
-            List of ticker symbols being monitored
-        """
-        return list(self.watchlist)
+# Thread control variables
+_monitor_thread = None
+_thread_running = False
+_monitored_symbols: Set[str] = set()
 
-# Singleton instance
-_price_monitor = None
+# Price cache to avoid unnecessary updates
+_price_cache: Dict[str, Dict[str, Any]] = {}
 
-def get_price_monitor() -> PriceMonitor:
+def init_price_monitor() -> bool:
     """
-    Get the global price monitor instance.
+    Initialize the price monitor.
     
     Returns:
-        PriceMonitor: Global price monitor instance
+        bool: Success status
     """
-    global _price_monitor
-    if _price_monitor is None:
-        _price_monitor = PriceMonitor()
-    return _price_monitor
+    global _monitor_thread, _thread_running
+    
+    try:
+        if not alpaca_market_client:
+            logger.warning("Alpaca market client not initialized")
+            return False
+        
+        # Check if monitor thread is already running
+        if _monitor_thread and _monitor_thread.is_alive():
+            logger.info("Price monitor thread already running")
+            return True
+        
+        # Start price monitor thread
+        _monitor_thread = threading.Thread(
+            target=_price_monitor_thread,
+            daemon=True,
+            name="PriceMonitorThread"
+        )
+        _thread_running = True
+        _monitor_thread.start()
+        
+        # Wait a moment to ensure thread starts
+        time.sleep(0.1)
+        
+        if _monitor_thread.is_alive():
+            logger.info("Price monitor thread started successfully")
+            return True
+        else:
+            logger.error("Price monitor thread failed to start")
+            return False
+    except Exception as e:
+        logger.error(f"Error initializing price monitor: {e}")
+        return False
+
+def _price_monitor_thread() -> None:
+    """Price monitor thread function."""
+    global _thread_running
+    
+    logger.info("Price monitor thread started")
+    
+    while _thread_running:
+        try:
+            if not _monitored_symbols:
+                # No symbols to monitor, sleep and check again
+                time.sleep(1)
+                continue
+            
+            # Get quotes for all monitored symbols
+            for symbol in list(_monitored_symbols):
+                try:
+                    # Get the latest quote
+                    quote = get_latest_quote(symbol)
+                    
+                    if not quote:
+                        continue
+                    
+                    # Create price update with enhanced metadata
+                    timestamp = datetime.now().isoformat()
+                    
+                    # Use bid and ask if available, otherwise use last price
+                    bid_price = quote.get('bid_price')
+                    ask_price = quote.get('ask_price')
+                    
+                    # Calculate mid price
+                    if bid_price is not None and ask_price is not None:
+                        price = (float(bid_price) + float(ask_price)) / 2
+                    else:
+                        # Fallback to last price (if available)
+                        price = quote.get('last_price', 0)
+                    
+                    # Check if price has changed
+                    if (symbol in _price_cache and 
+                        abs(_price_cache[symbol].get('price', 0) - price) < 0.0001):
+                        # Price hasn't changed significantly, skip update
+                        continue
+                    
+                    # Update price cache
+                    _price_cache[symbol] = {
+                        'price': price,
+                        'timestamp': timestamp
+                    }
+                    
+                    # Create price update message
+                    price_update = {
+                        'ticker': symbol,
+                        'price': price,
+                        'bid_price': bid_price,
+                        'ask_price': ask_price,
+                        'timestamp': timestamp,
+                        'event_type': 'price_update',
+                        'status': 'active'
+                    }
+                    
+                    # Publish to Redis channel for this symbol
+                    redis_client.publish(f"price:{symbol}", price_update)
+                    
+                    # Also publish to the general price channel
+                    redis_client.publish("price:all", price_update)
+                except Exception as e:
+                    logger.error(f"Error getting quote for {symbol}: {e}")
+            
+            # Sleep to avoid excessive API calls
+            time.sleep(1)
+        except Exception as e:
+            logger.error(f"Error in price monitor thread: {e}")
+            time.sleep(5)  # Sleep longer on error
+    
+    logger.info("Price monitor thread stopped")
+
+def add_symbol(symbol: str) -> bool:
+    """
+    Add a symbol to the price monitor.
+    
+    Args:
+        symbol: Ticker symbol to monitor
+        
+    Returns:
+        bool: Success status
+    """
+    global _monitored_symbols
+    
+    try:
+        # Add symbol to the set of monitored symbols
+        _monitored_symbols.add(symbol.upper())
+        
+        # Publish watch event
+        watch_event = {
+            'ticker': symbol.upper(),
+            'event_type': 'watch',
+            'timestamp': datetime.now().isoformat(),
+            'status': 'active'
+        }
+        redis_client.publish(f"events:{symbol.upper()}", watch_event)
+        redis_client.publish("events:all", watch_event)
+        
+        logger.info(f"Added symbol to price monitor: {symbol}")
+        return True
+    except Exception as e:
+        logger.error(f"Error adding symbol to price monitor: {e}")
+        return False
+
+def add_symbols(symbols: List[str]) -> bool:
+    """
+    Add multiple symbols to the price monitor.
+    
+    Args:
+        symbols: List of ticker symbols to monitor
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        for symbol in symbols:
+            add_symbol(symbol)
+        return True
+    except Exception as e:
+        logger.error(f"Error adding symbols to price monitor: {e}")
+        return False
+
+def remove_symbol(symbol: str) -> bool:
+    """
+    Remove a symbol from the price monitor.
+    
+    Args:
+        symbol: Ticker symbol to stop monitoring
+        
+    Returns:
+        bool: Success status
+    """
+    global _monitored_symbols
+    
+    try:
+        # Remove symbol from the set of monitored symbols
+        if symbol.upper() in _monitored_symbols:
+            _monitored_symbols.remove(symbol.upper())
+        
+        # Also remove from price cache
+        if symbol.upper() in _price_cache:
+            del _price_cache[symbol.upper()]
+        
+        # Publish unwatch event
+        unwatch_event = {
+            'ticker': symbol.upper(),
+            'event_type': 'unwatch',
+            'timestamp': datetime.now().isoformat(),
+            'status': 'inactive'
+        }
+        redis_client.publish(f"events:{symbol.upper()}", unwatch_event)
+        redis_client.publish("events:all", unwatch_event)
+        
+        logger.info(f"Removed symbol from price monitor: {symbol}")
+        return True
+    except Exception as e:
+        logger.error(f"Error removing symbol from price monitor: {e}")
+        return False
+
+def get_monitored_symbols() -> List[str]:
+    """
+    Get the list of currently monitored symbols.
+    
+    Returns:
+        List[str]: List of monitored symbols
+    """
+    return list(_monitored_symbols)
+
+def shutdown() -> bool:
+    """
+    Shutdown the price monitor.
+    
+    Returns:
+        bool: Success status
+    """
+    global _thread_running, _monitor_thread
+    
+    try:
+        # Signal thread to stop
+        _thread_running = False
+        
+        # Wait for thread to stop (with timeout)
+        if _monitor_thread and _monitor_thread.is_alive():
+            _monitor_thread.join(timeout=5.0)
+            
+            if _monitor_thread.is_alive():
+                logger.warning("Price monitor thread did not stop gracefully")
+                return False
+        
+        logger.info("Price monitor shut down successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error shutting down price monitor: {e}")
+        return False

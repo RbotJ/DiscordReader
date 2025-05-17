@@ -1,332 +1,347 @@
+"""
+Redis Utilities Module
+
+This module provides Redis client utilities with fallback implementation
+for reliable event handling even when Redis is not available.
+"""
 import json
 import logging
 import subprocess
+import threading
 import time
-from typing import Any, Dict, List, Optional, Union, TypeVar, cast, Awaitable
-import redis
-from datetime import datetime, date
+from collections import defaultdict
+from typing import Any, Dict, List, Set, Optional, Union, Callable
 
-# Configure logging
+import redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Global redis client singleton
-_redis_client = None
+# Redis configuration
+REDIS_HOST = "127.0.0.1"
+REDIS_PORT = 6379
+REDIS_DB = 0
+REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
-def get_redis_client():
-    """Get or create the global redis client."""
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = RedisClient()
-    return _redis_client
+# Maximum number of messages to store in memory (per channel)
+MAX_FALLBACK_MESSAGES = 1000
 
-def publish_event(event_type: str, data: Dict[str, Any]) -> bool:
+# Fallback in-memory message store
+# Structure: {channel: [messages]}
+_fallback_messages: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+
+# Subscribers for fallback mode
+# Structure: {channel: [callback_functions]}
+_fallback_subscribers: Dict[str, List[Callable]] = defaultdict(list)
+
+# Lock for thread-safe operations on fallback structures
+_fallback_lock = threading.Lock()
+
+def _start_redis_server() -> bool:
     """
-    Publish an event to the appropriate Redis channel.
+    Attempt to start the Redis server if it's not running.
     
-    Args:
-        event_type: The type of event (from EventType constants)
-        data: The event data to publish
-        
     Returns:
-        bool: Success status
+        bool: True if Redis server started successfully, False otherwise
     """
     try:
-        event_data = {
-            'type': event_type,
-            'data': data,
-            'timestamp': datetime.utcnow().isoformat()
-        }
+        # Try to start Redis server using the script
+        result = subprocess.run(
+            ["bash", "./start_redis.sh"],
+            capture_output=True,
+            text=True,
+            timeout=5.0
+        )
         
-        client = get_redis_client()
-        result = client.publish(f'events:{event_type}', event_data)
-        
-        # Also publish to the general events channel
-        client.publish('events', event_data)
-        
-        return result > 0
+        if result.returncode == 0:
+            logger.info("Redis server started successfully")
+            # Give it a moment to initialize
+            time.sleep(1)
+            return True
+        else:
+            logger.error(f"Failed to start Redis server: {result.stderr}")
+            return False
     except Exception as e:
-        logger.error(f"Error publishing event {event_type}: {e}")
+        logger.error(f"Error starting Redis server: {e}")
         return False
 
-# Type variables for return values
-T = TypeVar('T')
-ResponseT = Union[bytes, str, int, float, List[Any], Dict[str, Any], bool, None]
-
-# Global redis client instance
-redis_client = None
-
-def ensure_redis_is_running() -> bool:
-    """Ensure Redis server is running, attempt to start it if not."""
-    try:
-        # Try to check if Redis is already running
-        client = redis.Redis(host='127.0.0.1', port=6379)
-        client.ping()
-        logger.info("Redis server is already running")
-        return True
-    except (redis.ConnectionError, redis.RedisError):
-        logger.info("Redis not running, attempting to start it...")
+class FallbackPubSub:
+    """
+    Fallback implementation of Redis PubSub functionality for when
+    Redis is not available. Implements a compatible interface.
+    """
+    
+    def __init__(self, channels: List[str]):
+        """
+        Initialize the fallback PubSub.
         
-        try:
-            # Attempt to kill any existing Redis processes
-            subprocess.run(['pkill', '-f', 'redis-server'], 
-                          stderr=subprocess.DEVNULL, 
-                          check=False)
-            
-            # Start Redis server with suitable configuration
-            subprocess.Popen(
-                ['redis-server', '--daemonize', 'yes', '--protected-mode', 'no', 
-                 '--maxmemory', '100mb', '--maxmemory-policy', 'allkeys-lru'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            
-            # Wait for Redis to start
-            for i in range(10):
-                time.sleep(0.5)
-                try:
-                    client = redis.Redis(host='127.0.0.1', port=6379)
-                    client.ping()
-                    logger.info("Successfully started Redis server")
-                    return True
-                except (redis.ConnectionError, redis.RedisError):
-                    pass
-            
-            logger.error("Failed to start Redis server after multiple attempts")
-            return False
-        except Exception as e:
-            logger.error(f"Error starting Redis server: {e}")
-            return False
-
-# Custom JSON encoder for serializing datetime and date objects
-class DateTimeEncoder(json.JSONEncoder):
-    def default(self, o: Any) -> Any:
-        if isinstance(o, (datetime, date)):
-            return o.isoformat()
-        return super().default(o)
-
-
-class MockPubSub:
-    """Mock implementation of Redis PubSub for fallback when Redis is unavailable."""
-    def __init__(self):
-        self.channels = []
+        Args:
+            channels: List of channels to subscribe to
+        """
+        self.channels = set(channels)
+        self.running = True
         
-    def subscribe(self, *channels):
-        """Mock subscribe to channels."""
-        self.channels.extend(channels)
+        # Register with the fallback system
+        with _fallback_lock:
+            for channel in self.channels:
+                if self._message_callback not in _fallback_subscribers[channel]:
+                    _fallback_subscribers[channel].append(self._message_callback)
         
-    def get_message(self, timeout=None):
-        """Mock get_message that returns None."""
-        return None
+        # Message queue for this subscriber
+        self.message_queue: List[Dict[str, Any]] = []
+        
+        # Lock for thread-safe operations on the message queue
+        self.queue_lock = threading.Lock()
+    
+    def _message_callback(self, message: Dict[str, Any]) -> None:
+        """
+        Callback for receiving messages from the fallback system.
+        
+        Args:
+            message: Message dictionary
+        """
+        if not self.running:
+            return
+            
+        with self.queue_lock:
+            self.message_queue.append(message)
+    
+    def get_message(self, timeout: float = 0.01) -> Optional[Dict[str, Any]]:
+        """
+        Get a message from the queue.
+        
+        Args:
+            timeout: Timeout in seconds (used for API compatibility)
+            
+        Returns:
+            Message dictionary or None if no message
+        """
+        # timeout is ignored in fallback mode since we just check the queue
+        with self.queue_lock:
+            if self.message_queue:
+                return self.message_queue.pop(0)
+            return None
+    
+    def unsubscribe(self, *args) -> None:
+        """
+        Unsubscribe from channels.
+        
+        Args:
+            *args: Channel names to unsubscribe from, or all if none provided
+        """
+        channels_to_unsub = set(args) if args else self.channels
+        
+        with _fallback_lock:
+            for channel in channels_to_unsub:
+                if channel in self.channels:
+                    self.channels.remove(channel)
+                    
+                if channel in _fallback_subscribers:
+                    if self._message_callback in _fallback_subscribers[channel]:
+                        _fallback_subscribers[channel].remove(self._message_callback)
+        
+        self.running = len(self.channels) > 0
 
 class RedisClient:
-    def __init__(self, redis_url: str = "redis://127.0.0.1:6379/0"):
-        """Initialize Redis client with the given URL."""
-        self.redis_url = redis_url
-        self.available = False
-        
-        # Try to ensure Redis is running before connecting
-        try:
-            self._attempt_to_start_redis()
-        except Exception as e:
-            logger.warning(f"Failed to start Redis server: {e}")
-        
-        # Now try to connect
-        try:
-            self.redis = redis.from_url(redis_url)
-            # Test the connection
-            self.redis.ping()
-            self.available = True
-            logger.info(f"Redis client initialized with URL: {redis_url}")
-        except (redis.ConnectionError, redis.RedisError) as e:
-            logger.warning(f"Could not connect to Redis at {redis_url}. Using fallback mode: {e}")
-            self.redis = None
+    """
+    Redis client wrapper with fallback implementation for when
+    Redis is not available.
+    """
     
-    def _attempt_to_start_redis(self):
-        """Attempt to start Redis server if not already running."""
-        ensure_redis_is_running()
+    def __init__(self, url: str = REDIS_URL, max_retries: int = 5):
+        """
+        Initialize the Redis client.
         
-    def publish(self, channel: str, message: Union[str, Dict, List]) -> int:
-        """Publish a message to a Redis channel."""
-        if not isinstance(message, str):
-            message = json.dumps(message, cls=DateTimeEncoder)
+        Args:
+            url: Redis URL (default: redis://127.0.0.1:6379/0)
+            max_retries: Maximum number of retries for connecting to Redis
+        """
+        self.url = url
+        self.client = None
+        self.fallback_mode = False
         
-        if not self.available:
-            logger.debug(f"Redis unavailable, skipping publish to channel {channel}")
-            return 0
-            
-        try:
-            if self.redis is None:
-                logger.debug(f"Redis client is None, skipping publish to channel {channel}")
-                return 0
+        # Try to connect to Redis
+        self._connect(max_retries)
+    
+    def _connect(self, max_retries: int = 5) -> None:
+        """
+        Connect to Redis with retries.
+        
+        Args:
+            max_retries: Maximum number of retries
+        """
+        retries = 0
+        
+        while retries < max_retries:
+            try:
+                self.client = redis.from_url(self.url)
+                # Test connection
+                self.client.ping()
+                self.fallback_mode = False
+                return
+            except redis.exceptions.ConnectionError:
+                retries += 1
                 
-            result = self.redis.publish(channel, message)
-            logger.debug(f"Published message to channel {channel}")
-            return int(result) if result is not None else 0
-        except Exception as e:
-            logger.error(f"Error publishing to channel {channel}: {e}")
-            return 0
-    
-    def subscribe(self, channels: Union[str, List[str]]):
-        """Subscribe to one or more Redis channels."""
-        if isinstance(channels, str):
-            channels = [channels]
-        
-        if not self.available or self.redis is None:
-            logger.debug(f"Redis unavailable, returning mock PubSub for channels: {channels}")
-            mock_pubsub = MockPubSub()
-            mock_pubsub.subscribe(*channels)
-            return mock_pubsub
-        
-        try:
-            pubsub = self.redis.pubsub()
-            pubsub.subscribe(*channels)
-            logger.debug(f"Subscribed to channels: {channels}")
-            return pubsub
-        except Exception as e:
-            logger.error(f"Error subscribing to channels {channels}: {e}")
-            mock_pubsub = MockPubSub()
-            mock_pubsub.subscribe(*channels)
-            return mock_pubsub
-    
-    def set(self, key: str, value: Union[str, Dict, List], expiration: Optional[int] = None) -> bool:
-        """Set a key-value pair in Redis with optional expiration in seconds."""
-        if not isinstance(value, str):
-            value = json.dumps(value, cls=DateTimeEncoder)
-        
-        if not self.available or self.redis is None:
-            logger.debug(f"Redis unavailable, skipping set key {key}")
-            return False
-        
-        try:
-            result = self.redis.set(key, value, ex=expiration)
-            logger.debug(f"Set key {key} in Redis")
-            return bool(result) if result is not None else False
-        except Exception as e:
-            logger.error(f"Error setting key {key} in Redis: {e}")
-            return False
-    
-    def get(self, key: str, as_json: bool = False) -> Any:
-        """Get a value from Redis by key, optionally parsing as JSON."""
-        if not self.available or self.redis is None:
-            logger.debug(f"Redis unavailable, returning None for key {key}")
-            return None
-        
-        try:
-            value = self.redis.get(key)
-            
-            if value is None:
-                return None
-            
-            # Handle both Redis values and async Redis values
-            if isinstance(value, bytes):
-                value_str = value.decode('utf-8')
-            elif hasattr(value, 'decode'):
-                value_str = value.decode('utf-8')
-            else:
-                # Handle potential non-string values returned by some Redis clients
-                logger.warning(f"Unexpected Redis value type: {type(value)}")
-                value_str = str(value)
-            
-            if as_json:
-                try:
-                    return json.loads(value_str)
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse Redis value as JSON: {value_str}")
-                    return value_str
-            
-            return value_str
-        except Exception as e:
-            logger.error(f"Error getting key {key} from Redis: {e}")
-            return None
-    
-    def delete(self, key: str) -> int:
-        """Delete a key from Redis."""
-        if not self.available or self.redis is None:
-            logger.debug(f"Redis unavailable, skipping delete key {key}")
-            return 0
-        
-        try:
-            result = self.redis.delete(key)
-            logger.debug(f"Deleted key {key} from Redis")
-            return int(result) if result is not None else 0
-        except Exception as e:
-            logger.error(f"Error deleting key {key} from Redis: {e}")
-            return 0
-    
-    def list_push(self, key: str, value: Union[str, Dict, List]) -> int:
-        """Push a value to a Redis list."""
-        if not isinstance(value, str):
-            value = json.dumps(value, cls=DateTimeEncoder)
-        
-        if not self.available or self.redis is None:
-            logger.debug(f"Redis unavailable, skipping push to list {key}")
-            return 0
-        
-        try:
-            result = self.redis.rpush(key, value)
-            logger.debug(f"Pushed value to list {key} in Redis")
-            return int(result) if result is not None else 0
-        except Exception as e:
-            logger.error(f"Error pushing to list {key} in Redis: {e}")
-            return 0
-    
-    def list_get_all(self, key: str, as_json: bool = False) -> List:
-        """Get all values from a Redis list, optionally parsing as JSON."""
-        if not self.available or self.redis is None:
-            logger.debug(f"Redis unavailable, returning empty list for key {key}")
-            return []
-        
-        try:
-            values = self.redis.lrange(key, 0, -1)
-            
-            # Handle the case where values might be an awaitable
-            if hasattr(values, '__await__'):
-                logger.warning(f"Received awaitable for lrange on key {key}, returning empty list")
-                return []
-                
-            if not values:
-                return []
-                
-            if as_json:
-                result = []
-                for value in values:
-                    if value is None:
+                if retries == 1:
+                    # On first failure, try to start Redis server
+                    logger.info("Redis not running, attempting to start it...")
+                    if _start_redis_server():
+                        # Retry immediately if server started
                         continue
-                        
+                
+                time.sleep(1)
+        
+        # If we get here, we couldn't connect after max_retries
+        self.client = None
+        self.fallback_mode = True
+        logger.warning(f"Could not connect to Redis at {self.url}. Using fallback mode")
+    
+    def publish(self, channel: str, data: Union[Dict[str, Any], str]) -> bool:
+        """
+        Publish a message to a channel.
+        
+        Args:
+            channel: Channel name
+            data: Message data (dictionary or string)
+            
+        Returns:
+            bool: Success status
+        """
+        # Ensure data is serializable
+        if isinstance(data, dict):
+            try:
+                message_str = json.dumps(data)
+            except (TypeError, ValueError) as e:
+                logger.error(f"Error serializing message: {e}")
+                return False
+        else:
+            message_str = str(data)
+        
+        if not self.fallback_mode and self.client:
+            try:
+                return bool(self.client.publish(channel, message_str))
+            except Exception as e:
+                logger.error(f"Error publishing to Redis: {e}")
+                # Switch to fallback mode on error
+                self.fallback_mode = True
+        
+        # Fallback mode
+        try:
+            # Parse message string to dictionary if possible
+            try:
+                message_data = json.loads(message_str)
+            except json.JSONDecodeError:
+                message_data = {"data": message_str}
+            
+            # Create standard message format
+            message = {
+                "type": "message",
+                "channel": channel,
+                "data": message_data
+            }
+            
+            with _fallback_lock:
+                # Add to message store
+                _fallback_messages[channel].append(message_data)
+                
+                # Trim message store if needed
+                if len(_fallback_messages[channel]) > MAX_FALLBACK_MESSAGES:
+                    _fallback_messages[channel] = _fallback_messages[channel][-MAX_FALLBACK_MESSAGES:]
+                
+                # Notify subscribers
+                for callback in _fallback_subscribers.get(channel, []):
                     try:
-                        # Handle both bytes and string values
-                        if isinstance(value, bytes):
-                            decoded_value = value.decode('utf-8')
-                        elif hasattr(value, 'decode'):
-                            decoded_value = value.decode('utf-8')
-                        else:
-                            decoded_value = str(value)
-                            
-                        result.append(json.loads(decoded_value))
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to parse Redis list value as JSON: {value}")
-                        if isinstance(value, bytes):
-                            result.append(value.decode('utf-8'))
-                        elif hasattr(value, 'decode'):
-                            result.append(value.decode('utf-8'))
-                        else:
-                            result.append(str(value))
-                return result
+                        callback(message)
+                    except Exception as e:
+                        logger.error(f"Error in fallback subscriber callback: {e}")
             
-            # Handle both bytes and string values for non-JSON return
-            result = []
-            for value in values:
-                if value is None:
-                    continue
-                    
-                if isinstance(value, bytes):
-                    result.append(value.decode('utf-8'))
-                elif hasattr(value, 'decode'):
-                    result.append(value.decode('utf-8'))
-                else:
-                    result.append(str(value))
-            return result
-            
+            return True
         except Exception as e:
-            logger.error(f"Error getting list {key} from Redis: {e}")
-            return []
+            logger.error(f"Error in fallback publish: {e}")
+            return False
+    
+    def subscribe(self, *channels) -> Union[redis.client.PubSub, FallbackPubSub]:
+        """
+        Subscribe to one or more channels.
+        
+        Args:
+            *channels: Channel names to subscribe to
+            
+        Returns:
+            PubSub object
+        """
+        if not self.fallback_mode and self.client:
+            try:
+                pubsub = self.client.pubsub()
+                pubsub.subscribe(*channels)
+                return pubsub
+            except Exception as e:
+                logger.error(f"Error subscribing to Redis channels: {e}")
+                # Switch to fallback mode on error
+                self.fallback_mode = True
+        
+        # Fallback mode
+        return FallbackPubSub(list(channels))
+    
+    def get(self, key: str) -> Optional[str]:
+        """
+        Get a value from Redis.
+        
+        Args:
+            key: Key to get
+            
+        Returns:
+            Value or None if not found
+        """
+        if not self.fallback_mode and self.client:
+            try:
+                return self.client.get(key)
+            except Exception as e:
+                logger.error(f"Error getting value from Redis: {e}")
+                # Switch to fallback mode on error
+                self.fallback_mode = True
+        
+        # No fallback for get operation
+        return None
+    
+    def set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
+        """
+        Set a value in Redis.
+        
+        Args:
+            key: Key to set
+            value: Value to set
+            ex: Expiration time in seconds
+            
+        Returns:
+            bool: Success status
+        """
+        if not self.fallback_mode and self.client:
+            try:
+                self.client.set(key, value, ex=ex)
+                return True
+            except Exception as e:
+                logger.error(f"Error setting value in Redis: {e}")
+                # Switch to fallback mode on error
+                self.fallback_mode = True
+        
+        # No fallback for set operation
+        return False
+
+def ensure_redis_is_running() -> bool:
+    """
+    Ensure the Redis server is running.
+    
+    Returns:
+        bool: True if Redis server is running, False otherwise
+    """
+    try:
+        # Try to connect to Redis
+        client = redis.from_url(REDIS_URL)
+        # Test connection
+        client.ping()
+        return True
+    except Exception:
+        # Redis is not running, try to start it
+        return _start_redis_server()

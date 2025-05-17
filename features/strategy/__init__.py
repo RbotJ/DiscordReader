@@ -1,65 +1,72 @@
 """
-Strategy detection and execution module initialization.
+Strategy Module
 
-This module handles the detection of trading signals based on price triggers
-and candle patterns, as well as order execution based on those signals.
+This module provides access to trading strategy components,
+including signal detection and candle pattern detection.
 """
 import logging
-from flask import Blueprint
+from typing import Dict, List, Any, Optional
 
-from features.strategy.detector import strategy_routes
 from features.strategy.candle_detector import (
-    start_candle_detector,
-    stop_candle_detector,
-    get_candle_detector
+    init_candle_detector, 
+    add_signal, 
+    remove_signal, 
+    get_active_signals,
+    shutdown as _shutdown_candle_detector
 )
 
-# Export blueprint
-__all__ = ["strategy_routes", "initialize_strategy", "shutdown_strategy"]
-
-# Configure logger
 logger = logging.getLogger(__name__)
 
+def start_candle_detector() -> bool:
+    """
+    Start the candle detector.
+    
+    Returns:
+        bool: Success status
+    """
+    return init_candle_detector()
 
-def initialize_strategy():
-    """Initialize and start strategy components."""
-    try:
-        # Start candle detector
-        start_candle_detector()
-        logger.info("Candle detector started")
-        
-        # Initialize options trader if available
-        try:
-            from features.execution.options_trader import start_options_trader
-            start_options_trader()
-            logger.info("Options trader started")
-        except ImportError:
-            logger.warning("Options trader module not found")
-        
-        logger.info("Strategy components initialized successfully")
-        return True
-    except Exception as e:
-        logger.error(f"Error initializing strategy components: {e}")
-        return False
+def stop_candle_detector() -> bool:
+    """
+    Stop the candle detector.
+    
+    Returns:
+        bool: Success status
+    """
+    return _shutdown_candle_detector()
 
+def get_candle_signals(symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Get active candle signals.
+    
+    Args:
+        symbol: Optional ticker symbol filter
+        
+    Returns:
+        List of signal dictionaries
+    """
+    return get_active_signals(symbol)
 
-def shutdown_strategy():
-    """Shutdown strategy components."""
-    try:
-        # Stop candle detector
-        stop_candle_detector()
-        logger.info("Candle detector stopped")
+def add_candle_signal(signal_data: Dict[str, Any]) -> bool:
+    """
+    Add a candle signal to be monitored.
+    
+    Args:
+        signal_data: Signal data dictionary
         
-        # Stop options trader if available
-        try:
-            from features.execution.options_trader import stop_options_trader
-            stop_options_trader()
-            logger.info("Options trader stopped")
-        except ImportError:
-            logger.warning("Options trader module not found")
+    Returns:
+        bool: Success status
+    """
+    return add_signal(signal_data)
+
+def remove_candle_signal(signal_id: str) -> bool:
+    """
+    Remove a candle signal by ID.
+    
+    Args:
+        signal_id: Signal ID to remove
         
-        logger.info("Strategy components shutdown successfully")
-        return True
-    except Exception as e:
-        logger.error(f"Error shutting down strategy components: {e}")
-        return False
+    Returns:
+        bool: Success status
+    """
+    return remove_signal(signal_id)

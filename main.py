@@ -269,9 +269,8 @@ with app.app_context():
 
 def initialize_app_components():
     """Initialize app components on first request."""
-    # Initialize Discord integration (when implemented)
+    # Initialize Discord integration
     try:
-        # Import Discord initialization
         from features.discord import init_discord
         success = init_discord()
         if success:
@@ -280,6 +279,58 @@ def initialize_app_components():
             logging.warning("Discord integration initialization failed")
     except ImportError as e:
         logging.warning(f"Could not initialize Discord integration: {e}")
+
+    # Initialize market data components
+    try:
+        from features.market.price_monitor import init_price_monitor
+        success = init_price_monitor()
+        if success:
+            logging.info("Price monitor initialized")
+        else:
+            logging.warning("Price monitor initialization failed")
+    except ImportError as e:
+        logging.warning(f"Could not initialize price monitor: {e}")
+    
+    # Initialize historical data provider
+    try:
+        from features.market.historical_data import init_historical_data_provider
+        success = init_historical_data_provider()
+        if success:
+            logging.info("Historical data provider initialized")
+        else:
+            logging.warning("Historical data provider initialization failed")
+    except ImportError as e:
+        logging.warning(f"Could not initialize historical data provider: {e}")
+    
+    # Initialize signal detection components
+    try:
+        from features.strategy.candle_detector import init_candle_detector
+        success = init_candle_detector()
+        if success:
+            logging.info("Candle detector initialized")
+        else:
+            logging.warning("Candle detector initialization failed")
+    except ImportError as e:
+        logging.warning(f"Could not initialize candle detector: {e}")
+    
+    # Initialize options trading components
+    try:
+        from features.execution.options_trader import init_options_trader
+        success = init_options_trader()
+        if success:
+            logging.info("Options trader initialized")
+        else:
+            logging.warning("Options trader initialization failed")
+    except ImportError as e:
+        logging.warning(f"Could not initialize options trader: {e}")
+    
+    # Schedule end-of-day position cleanup
+    try:
+        from features.alpaca.position_management import schedule_eod_cleanup
+        schedule_eod_cleanup()
+        logging.info("End-of-day position cleanup scheduled")
+    except ImportError as e:
+        logging.warning(f"Could not schedule end-of-day position cleanup: {e}")
 
 # Initialize components after database creation
 with app.app_context():
