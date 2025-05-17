@@ -10,6 +10,11 @@ import logging
 import asyncio
 from datetime import datetime
 import discord
+import redis
+import time
+
+from common.redis_utils import get_redis_client, publish_event
+from common.event_constants import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +230,57 @@ def store_raw_messages(messages: list, filename: str = "setups_raw.json") -> boo
         return True
     except Exception as e:
         logger.error(f"Error storing messages to {filename}: {e}")
+        return False
+
+def store_message_in_redis(message: dict, stream_key: str = "discord:messages") -> bool:
+    """
+    Store a single message in Redis Stream.
+    
+    Args:
+        message: Message dictionary to store
+        stream_key: Redis Stream key (default: discord:messages)
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get Redis client
+        redis_client = get_redis_client()
+        
+        # Convert message to flat structure for Redis Stream
+        # Redis Streams require data in the form of field-value pairs
+        flat_message = {
+            'id': message['id'],
+            'author': message['author'],
+            'content': message['content'],
+            'timestamp': message['timestamp'],
+            'json_data': json.dumps(message)  # Store the full JSON object
+        }
+        
+        # Add message to Redis Stream
+        if not redis_client.fallback_mode:
+            # Use native Redis
+            message_id = redis_client.client.xadd(stream_key, flat_message)
+            logger.info(f"Added message {message['id']} to Redis Stream {stream_key} with ID {message_id}")
+        else:
+            # Using fallback mode, store in a sorted set with timestamp as score
+            timestamp = time.time()
+            key = f"{stream_key}:{timestamp}:{message['id']}"
+            redis_client.set(key, json.dumps(message))
+            logger.info(f"Added message {message['id']} to fallback storage with key {key}")
+        
+        # Publish an event to notify consumers
+        event_data = {
+            'event_type': 'discord.message.created',
+            'message_id': message['id'],
+            'stream_key': stream_key,
+            'timestamp': message['timestamp']
+        }
+        publish_event('events:discord:message', event_data)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error storing message in Redis: {e}")
         return False
 
 
