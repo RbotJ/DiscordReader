@@ -178,11 +178,17 @@ class OptionsChainFetcher:
         result = []
         
         try:
-            # Process different possible response formats
-            if hasattr(raw_chain, 'data') and isinstance(raw_chain.data, dict):
+            # Process different possible response formats for OptionsSnapshot objects
+            if hasattr(raw_chain, 'snapshots') and raw_chain.snapshots:
+                # This is likely a response from the new Alpaca options API
+                contracts = raw_chain.snapshots
+            # Process standard dict formats
+            elif hasattr(raw_chain, 'data') and isinstance(raw_chain.data, dict):
                 contracts = raw_chain.data
             elif isinstance(raw_chain, dict) and 'data' in raw_chain:
                 contracts = raw_chain['data']
+            elif isinstance(raw_chain, dict) and 'snapshots' in raw_chain:
+                contracts = raw_chain['snapshots']
             elif isinstance(raw_chain, dict):
                 contracts = raw_chain
             else:
@@ -191,24 +197,49 @@ class OptionsChainFetcher:
                 
             # Process each contract
             for symbol, contract_data in contracts.items():
-                contract = {
-                    'symbol': symbol,
-                    'underlying_symbol': contract_data.get('underlying_symbol', ''),
-                    'strike_price': float(contract_data.get('strike_price', 0)),
-                    'expiration': contract_data.get('expiration_date', ''),
-                    'option_type': 'call' if contract_data.get('type') == 'call' else 'put',
-                    'bid': float(contract_data.get('bid_price', 0) or 0),
-                    'ask': float(contract_data.get('ask_price', 0) or 0),
-                    'last': float(contract_data.get('last_price', 0) or 0),
-                    'volume': int(contract_data.get('volume', 0) or 0),
-                    'open_interest': int(contract_data.get('open_interest', 0) or 0),
-                    'iv': float(contract_data.get('implied_volatility', 0) or 0),
-                    'delta': float(contract_data.get('delta', 0) or 0),
-                    'gamma': float(contract_data.get('gamma', 0) or 0),
-                    'theta': float(contract_data.get('theta', 0) or 0),
-                    'vega': float(contract_data.get('vega', 0) or 0),
-                    'updated_at': contract_data.get('updated_at', ''),
-                }
+                # Determine if we're dealing with a standard dict or an object with attributes
+                if hasattr(contract_data, 'details'):
+                    # Handle OptionSnapshot objects with .details attribute
+                    details = contract_data.details
+                    greeks = getattr(contract_data, 'greeks', None) or {}
+                    contract = {
+                        'symbol': symbol,
+                        'underlying_symbol': getattr(details, 'underlying_symbol', ''),
+                        'strike_price': float(getattr(details, 'strike_price', 0) or 0),
+                        'expiration': getattr(details, 'expiration_date', ''),
+                        'option_type': 'call' if getattr(details, 'contract_type', '') == 'call' else 'put',
+                        'bid': float(getattr(contract_data, 'bid_price', 0) or 0),
+                        'ask': float(getattr(contract_data, 'ask_price', 0) or 0),
+                        'last': float(getattr(contract_data, 'latest_trade_price', 0) or 0),
+                        'volume': int(getattr(contract_data, 'volume', 0) or 0),
+                        'open_interest': int(getattr(contract_data, 'open_interest', 0) or 0),
+                        'iv': float(getattr(contract_data, 'implied_volatility', 0) or 0),
+                        'delta': float(getattr(greeks, 'delta', 0) or 0),
+                        'gamma': float(getattr(greeks, 'gamma', 0) or 0),
+                        'theta': float(getattr(greeks, 'theta', 0) or 0),
+                        'vega': float(getattr(greeks, 'vega', 0) or 0),
+                        'updated_at': getattr(contract_data, 'timestamp', ''),
+                    }
+                else:
+                    # Handle standard dictionary format
+                    contract = {
+                        'symbol': symbol,
+                        'underlying_symbol': contract_data.get('underlying_symbol', ''),
+                        'strike_price': float(contract_data.get('strike_price', 0) or 0),
+                        'expiration': contract_data.get('expiration_date', ''),
+                        'option_type': 'call' if contract_data.get('type') == 'call' else 'put',
+                        'bid': float(contract_data.get('bid_price', 0) or 0),
+                        'ask': float(contract_data.get('ask_price', 0) or 0),
+                        'last': float(contract_data.get('last_price', 0) or 0),
+                        'volume': int(contract_data.get('volume', 0) or 0),
+                        'open_interest': int(contract_data.get('open_interest', 0) or 0),
+                        'iv': float(contract_data.get('implied_volatility', 0) or 0),
+                        'delta': float(contract_data.get('delta', 0) or 0),
+                        'gamma': float(contract_data.get('gamma', 0) or 0),
+                        'theta': float(contract_data.get('theta', 0) or 0),
+                        'vega': float(contract_data.get('vega', 0) or 0),
+                        'updated_at': contract_data.get('updated_at', ''),
+                    }
                 result.append(contract)
                 
         except Exception as e:
