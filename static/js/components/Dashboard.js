@@ -4,11 +4,10 @@ import io from 'socket.io-client';
 /** 
  * Generate a truly unique ID, using crypto.randomUUID when available.
  */
-function generateId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'id-' + Math.random().toString(36).slice(2);
+// Simple counter-based ID generation to ensure uniqueness
+let idCounter = 0;
+function generateId(prefix = 'id') {
+  return `${prefix}-${++idCounter}`;
 }
 
 /**
@@ -94,9 +93,12 @@ function Dashboard({ account, loading, error }) {
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
-          // Filter out any duplicate tickers using Set
-          const uniqueTickers = Array.from(new Set(data));
-          setDashboardState(s => ({ ...s, tickers: uniqueTickers }));
+          // Transform tickers into objects with stable IDs to avoid key collisions
+          const tickersWithIds = Array.from(new Set(data)).map(ticker => ({
+            id: generateId('ticker'),
+            symbol: ticker
+          }));
+          setDashboardState(s => ({ ...s, tickers: tickersWithIds }));
         } else {
           addEvent('error', 'Tickers API returned bad format');
         }
@@ -154,12 +156,24 @@ function Dashboard({ account, loading, error }) {
     if (!socket) return;
     socket.emit('subscribe_ticker', { ticker });
     addEvent('user', `Subscribed to ${ticker}`);
-    setDashboardState(s => ({
-      ...s,
-      activeCharts: s.activeCharts.includes(ticker)
-        ? s.activeCharts
-        : [...s.activeCharts, ticker]
-    }));
+    
+    setDashboardState(s => {
+      // Check if this ticker is already active
+      if (s.activeCharts.some(chart => chart.symbol === ticker)) {
+        return s; // Already subscribed
+      }
+      
+      // Add as new chart with unique ID
+      const newChart = {
+        id: generateId('chart'),
+        symbol: ticker
+      };
+      
+      return {
+        ...s,
+        activeCharts: [...s.activeCharts, newChart]
+      };
+    });
   };
 
   if (loading) {
@@ -242,13 +256,13 @@ function Dashboard({ account, loading, error }) {
             <div className="card-body p-0">
               <div className="list-group list-group-flush">
                 {dashboardState.tickers.length > 0 ? (
-                  dashboardState.tickers.map((ticker, index) => (
+                  dashboardState.tickers.map((ticker) => (
                     <button
-                      key={`ticker-${ticker}-${index}`}
-                      className={`list-group-item list-group-item-action ${dashboardState.activeCharts.includes(ticker) ? 'active' : ''}`}
-                      onClick={() => handleSubscribeTicker(ticker)}
+                      key={ticker.id}
+                      className={`list-group-item list-group-item-action ${dashboardState.activeCharts.some(chart => chart.symbol === ticker.symbol) ? 'active' : ''}`}
+                      onClick={() => handleSubscribeTicker(ticker.symbol)}
                     >
-                      {ticker}
+                      {ticker.symbol}
                     </button>
                   ))
                 ) : (
