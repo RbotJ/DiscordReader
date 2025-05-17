@@ -48,14 +48,15 @@ class ChartErrorBoundary extends Component {
 function Dashboard({ account, loading, error }) {
   const [dashboardState, setDashboardState] = useState({
     tickers: [],
-    positions: [],
+    positions: [], 
     activeCharts: [],
     events: []
   });
   const [socket, setSocket] = useState(null);
-  // used to dedupe exact same messages and to hand out truly unique IDs
-  const seenEventSignatures = useRef(new Set());
+  // Used for generating unique event IDs
   const eventCounter = useRef(0);
+  // Used to dedupe exact same messages
+  const seenEventSignatures = useRef(new Set());
 
   useEffect(() => {
     setDashboardState({
@@ -150,7 +151,6 @@ function Dashboard({ account, loading, error }) {
     }
     seenEventSignatures.current.add(signature);
 
-    // Use simple incremental IDs to ensure uniqueness
     const event = {
       id: `evt-${++eventCounter.current}`,
       timestamp: new Date().toISOString(),
