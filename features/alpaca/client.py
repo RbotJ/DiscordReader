@@ -536,13 +536,13 @@ def get_latest_bars(symbols: Union[List[str], str], timeframe: str = '1Day', lim
         if isinstance(symbols, str):
             symbols = [symbols]
         
-        # Map timeframe string to TimeFrame enum using correct format
+        # Map timeframe string to TimeFrame enum using correct format for alpaca-py
         if timeframe == '1Day':
             tf = TimeFrame.Day
         elif timeframe == '1Hour':
             tf = TimeFrame.Hour
         elif timeframe == '1Min':
-            tf = TimeFrame(amount=1, unit='Min')
+            tf = TimeFrame.Minute
         elif timeframe == '5Min':
             tf = TimeFrame(amount=5, unit='Min')
         elif timeframe == '15Min':
