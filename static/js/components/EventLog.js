@@ -60,13 +60,26 @@ const EventLog = forwardRef((props, ref) => {
   
   // Log entry component
   const LogEntry = ({ entry }) => {
+    if (!entry || typeof entry !== 'object') {
+      console.error("Invalid log entry:", entry);
+      return null;
+    }
+    
     const { timestamp, type, message, data } = entry;
     
-    // Format timestamp
-    const formattedTime = new Date(timestamp).toLocaleTimeString();
+    // Format timestamp - with error handling
+    let formattedTime = '';
+    try {
+      formattedTime = new Date(timestamp).toLocaleTimeString();
+    } catch (err) {
+      console.error("Invalid timestamp:", timestamp);
+      formattedTime = new Date().toLocaleTimeString();
+    }
     
     // Get CSS class based on log type
     const getTypeClass = () => {
+      if (!type) return '';
+      
       switch (type) {
         case 'error':
           return 'text-danger';
@@ -83,15 +96,34 @@ const EventLog = forwardRef((props, ref) => {
       }
     };
     
+    // Format data safely
+    const formatData = (data) => {
+      if (data === null || data === undefined) {
+        return null;
+      }
+      
+      if (typeof data === 'string') {
+        return data;
+      }
+      
+      try {
+        if (typeof data === 'object') {
+          return JSON.stringify(data);
+        }
+        return String(data);
+      } catch (err) {
+        console.error("Error formatting log data:", err);
+        return "[Error: Unable to format data]";
+      }
+    };
+    
     return (
       <div className={`log-entry small ${getTypeClass()}`}>
         <span className="log-timestamp text-muted">[{formattedTime}]</span>
-        <span className="log-message ms-2">{message}</span>
+        <span className="log-message ms-2">{message || 'No message'}</span>
         {data && (
           <span className="log-data ms-2 text-muted">
-            {typeof data === 'string' ? data : (
-              typeof data === 'object' ? JSON.stringify(data) : String(data)
-            )}
+            {formatData(data)}
           </span>
         )}
       </div>
