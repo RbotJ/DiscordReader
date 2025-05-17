@@ -6,52 +6,61 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './components/App';
+import reportWebVitals from './reportWebVitals';
 
 // Log initialization
 console.log('Dashboard initialized');
 
-// Clear any orphaned modal backdrops
-function clearOrphanedModals() {
-  // Remove any leftover backdrops
-  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-  // Restore body scrolling if it was disabled
+// Immediately clean up any orphaned Bootstrap modal backdrops
+(function clearOrphanedModals() {
+  const backdrops = document.querySelectorAll('.modal-backdrop');
+  backdrops.forEach(el => el.remove());
   document.body.classList.remove('modal-open');
+})();
+
+// Ensure our React root container exists
+const ROOT_ID = 'react-root';
+let rootContainer = document.getElementById(ROOT_ID);
+
+if (!rootContainer) {
+  console.log('React root container not found, creating one');
+  rootContainer = document.createElement('div');
+  rootContainer.id = ROOT_ID;
+  
+  // Prefer mounting inside a <main> or fallback to body
+  const mainSection = document.querySelector('main') || document.body;
+  mainSection.appendChild(rootContainer);
+} else {
+  console.log('Found existing React root container');
+  
+  // Clear any fallback content
+  const fallback = document.getElementById('dashboard-fallback');
+  if (fallback) {
+    console.log('Removing fallback dashboard content');
+    fallback.style.display = 'none';
+  }
 }
 
-// Mount the React application
-document.addEventListener('DOMContentLoaded', () => {
-  // Clean up any modal issues first
-  clearOrphanedModals();
-  
-  // Try various possible container IDs
-  const containerSelectors = ['#react-root', '#dashboard-root', '#app-container', '#root'];
-  let container = null;
-  
-  for (const selector of containerSelectors) {
-    container = document.querySelector(selector);
-    if (container) {
-      console.log(`Found React container with selector: ${selector}`);
-      break;
-    }
+// Set a flag to indicate React loaded successfully
+window.reactLoaded = true;
+
+// Mount the React application under StrictMode for better development experience
+try {
+  const root = createRoot(rootContainer);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+  console.log('React application mounted successfully');
+} catch (error) {
+  console.error('Error mounting React application:', error);
+  // Keep fallback content visible on error
+  const fallback = document.getElementById('dashboard-fallback');
+  if (fallback) {
+    fallback.style.display = 'block';
   }
-  
-  // If no container found, create one
-  if (!container) {
-    console.log('Creating React root container');
-    container = document.createElement('div');
-    container.id = 'react-root';
-    
-    // Get main content area or append to body as fallback
-    const mainContent = document.querySelector('.container-fluid') || document.body;
-    mainContent.appendChild(container);
-  }
-  
-  // Mount React app to the container
-  try {
-    const root = createRoot(container);
-    root.render(<App />);
-    console.log('React application mounted successfully');
-  } catch (error) {
-    console.error('Error mounting React application:', error);
-  }
-});
+}
+
+// Optional: measure performance metrics
+reportWebVitals();
