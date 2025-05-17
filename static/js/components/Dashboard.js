@@ -93,8 +93,13 @@ function Dashboard({ account, loading, error }) {
     fetch('/api/tickers')
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) setDashboardState(s => ({ ...s, tickers: data }));
-        else addEvent('error', 'Tickers API returned bad format');
+        if (Array.isArray(data)) {
+          // Filter out any duplicate tickers using Set
+          const uniqueTickers = Array.from(new Set(data));
+          setDashboardState(s => ({ ...s, tickers: uniqueTickers }));
+        } else {
+          addEvent('error', 'Tickers API returned bad format');
+        }
       })
       .catch(() => addEvent('error', 'Failed to load tickers'));
   }, []);
