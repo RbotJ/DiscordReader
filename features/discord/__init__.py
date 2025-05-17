@@ -16,15 +16,21 @@ logger = logging.getLogger(__name__)
 
 def init_discord():
     """Initialize Discord integration features."""
-    if not is_discord_available:
-        logger.warning("Discord integration disabled due to missing configuration")
-        return False
+    from .client import initialize_discord_client, client_ready
     
     # Initialize the Discord client
     client_initialized = initialize_discord_client()
     if not client_initialized:
         logger.error("Failed to initialize Discord client")
         return False
+        
+    # Wait briefly for client to become ready
+    max_wait = 10
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        if client_ready:
+            break
+        time.sleep(0.5)
     
     # Register the setup message handler
     register_discord_setup_handler()
