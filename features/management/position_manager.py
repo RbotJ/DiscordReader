@@ -430,7 +430,7 @@ def get_position(symbol: str) -> Optional[Dict[str, Any]]:
     return None
 
 def close_position(symbol: str) -> Dict[str, Any]:
-    """Close a position by symbol."""
+    """Close a position by symbol using Alpaca's close_position method."""
     if not trading_client:
         return {
             "success": False,
@@ -438,8 +438,8 @@ def close_position(symbol: str) -> Dict[str, Any]:
         }
     
     try:
-        # Try to close the position through Alpaca
-        result = trading_client.close_position(symbol)
+        # Close the position through Alpaca's direct method
+        trading_client.close_position(symbol)
         
         # Mark as closed in our database
         position = PositionModel.query.filter_by(symbol=symbol, closed_at=None).first()

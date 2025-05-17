@@ -21,7 +21,7 @@ _thread_running = False
 
 def close_all_positions() -> bool:
     """
-    Close all open positions.
+    Close all open positions using Alpaca's close_position method.
     
     Returns:
         bool: Success status
@@ -40,28 +40,12 @@ def close_all_positions() -> bool:
         # Close each position
         for position in positions:
             symbol = position.get('symbol')
-            qty = abs(float(position.get('qty', 0)))
-            side = 'sell' if position.get('side') == 'long' else 'buy'
-            
-            if qty <= 0:
-                logger.warning(f"Invalid quantity for position {symbol}: {qty}")
-                continue
-            
-            logger.info(f"Closing position: {symbol} - {qty} shares - {side}")
-            
-            # Submit order to close the position
-            order = submit_market_order(
-                symbol=symbol,
-                qty=int(qty),  # Convert to int as required by the API
-                side=side,
-                time_in_force='day',
-                client_order_id=f"eod_close_{symbol}_{int(time.time())}"
-            )
-            
-            if order:
-                logger.info(f"Successfully submitted order to close position: {symbol}")
-            else:
-                logger.error(f"Failed to submit order to close position: {symbol}")
+            try:
+                logger.info(f"Closing position: {symbol}")
+                trading_client.close_position(symbol)
+                logger.info(f"Successfully closed position: {symbol}")
+            except Exception as e:
+                logger.error(f"Failed to close position {symbol}: {e}")
                 success = False
         
         return success
