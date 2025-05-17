@@ -109,14 +109,18 @@ class OptionsChainFetcher:
                 contract_type = ContractType.PUT
 
         # Build the request
-        req = OptionChainRequest(
-            underlying_symbol=symbol,
-            expiration_date=expiration,
-            strike_price_gte=strike_price,
-            strike_price_lte=strike_price,
-            type=contract_type,
-            feed=OptionsFeed.OPRA,  # or OptionsFeed.INDICATIVE if you don't have OPRA access
-        )
+        # Try OPRA first, but fall back to INDICATIVE if OPRA access isn't available
+        try_opra_first = True
+        
+        if try_opra_first:
+            req = OptionChainRequest(
+                underlying_symbol=symbol,
+                expiration_date=expiration,
+                strike_price_gte=strike_price,
+                strike_price_lte=strike_price,
+                type=contract_type,
+                feed=OptionsFeed.OPRA
+            )
 
         # Fetch and format
         try:
@@ -130,7 +134,35 @@ class OptionsChainFetcher:
             return formatted
 
         except Exception as e:
-            logger.error(f"Error fetching options chain for {symbol}: {e}")
+            error_msg = str(e)
+            logger.error(f"Error fetching options chain for {symbol}: {error_msg}")
+            
+            # Check if it's the OPRA agreement error and try with INDICATIVE feed
+            if "OPRA agreement is not signed" in error_msg and try_opra_first:
+                logger.info(f"Falling back to INDICATIVE feed for {symbol}")
+                try:
+                    req = OptionChainRequest(
+                        underlying_symbol=symbol,
+                        expiration_date=expiration,
+                        strike_price_gte=strike_price,
+                        strike_price_lte=strike_price,
+                        type=contract_type,
+                        feed=OptionsFeed.INDICATIVE
+                    )
+                    
+                    raw_chain = self.client.get_option_chain(req)
+                    formatted = self._format_options_chain(raw_chain)
+                    
+                    # Cache the result
+                    if self.redis:
+                        self.redis.set(cache_key, json.dumps(formatted), ex=CACHE_TTL)
+                        
+                    return formatted
+                    
+                except Exception as fallback_error:
+                    logger.error(f"Error using INDICATIVE feed fallback: {fallback_error}")
+            
+            # If we reach here, both attempts failed or it was a different error
             return []
 
     def _format_options_chain(self, raw_chain: Dict) -> List[Dict]:
@@ -197,12 +229,25 @@ class OptionsChainFetcher:
         today = date.today()
         
         try:
-            # Get all expirations
-            req = OptionChainRequest(
-                underlying_symbol=symbol,
-                feed=OptionsFeed.OPRA,
-            )
-            raw_chain = self.client.get_option_chain(req)
+            # Try OPRA first, then fall back to INDICATIVE if needed
+            try:
+                req = OptionChainRequest(
+                    underlying_symbol=symbol,
+                    feed=OptionsFeed.OPRA,
+                )
+                raw_chain = self.client.get_option_chain(req)
+            except Exception as e:
+                error_msg = str(e)
+                if "OPRA agreement is not signed" in error_msg:
+                    logger.info(f"Falling back to INDICATIVE feed for expirations of {symbol}")
+                    req = OptionChainRequest(
+                        underlying_symbol=symbol,
+                        feed=OptionsFeed.INDICATIVE,
+                    )
+                    raw_chain = self.client.get_option_chain(req)
+                else:
+                    # Re-raise if it's not the OPRA error
+                    raise
             
             # Extract unique expiration dates
             expirations = set()
@@ -254,12 +299,33 @@ class OptionsChainFetcher:
                 logger.error(f"Could not find suitable expiration for {symbol}")
                 return None
         
-        # Get chain with filters
-        chain = self.get_chain(
-            symbol=symbol,
-            expiration=expiration,
-            option_type=option_type
-        )
+        # Try with fallback to INDICATIVE feed if needed
+        try:
+            chain = self.get_chain(
+                symbol=symbol,
+                expiration=expiration,
+                option_type=option_type
+            )
+        except Exception as e:
+            error_msg = str(e)
+            if "OPRA agreement is not signed" in error_msg:
+                logger.info(f"Falling back to INDICATIVE feed for ATM options on {symbol}")
+                req = OptionChainRequest(
+                    underlying_symbol=symbol,
+                    expiration_date=expiration,
+                    type=ContractType.CALL if option_type == "call" else ContractType.PUT,
+                    feed=OptionsFeed.INDICATIVE
+                )
+                
+                try:
+                    raw_chain = self.client.get_option_chain(req)
+                    chain = self._format_options_chain(raw_chain)
+                except Exception as fallback_error:
+                    logger.error(f"Error with INDICATIVE feed fallback for ATM options: {fallback_error}")
+                    chain = []
+            else:
+                logger.error(f"Error finding ATM options: {e}")
+                chain = []
         
         if not chain:
             logger.error(f"No options found for {symbol} exp:{expiration} type:{option_type}")
