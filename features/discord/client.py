@@ -7,7 +7,8 @@ including sending and reading messages from specific channels.
 import os
 import logging
 import asyncio
-from typing import Optional, List, Callable, Any
+import threading
+from typing import Optional, List, Dict, Callable, Any, Union
 from functools import wraps
 from datetime import datetime, timedelta
 import discord
@@ -20,6 +21,9 @@ DISCORD_APP_TOKEN = os.environ.get('DISCORD_BOT_TOKEN_APLUS') or os.environ.get(
 CHANNEL_BOT_DIALOGUE = os.environ.get('DISCORD_CHANNEL_BOT_DIALOGUE')
 CHANNEL_APLUS_SETUPS = os.environ.get('DISCORD_CHANNEL_APLUS_SETUPS')
 CHANNEL_TEST = os.environ.get('DISCORD_CHANNEL_TEST_HERE_ONE')
+
+# Configuration settings
+POLL_INTERVAL_MINUTES = int(os.getenv("SETUP_POLL_INTERVAL", "5"))
 
 # Convert channel IDs to integers
 try:
