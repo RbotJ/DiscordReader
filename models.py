@@ -66,6 +66,8 @@ class TickerSetup(db.Model):
     """Represents a trading setup for a specific ticker symbol."""
     __tablename__ = 'ticker_setups'
     __table_args__ = {'extend_existing': True}
+    # Use fully-qualified module name for SQLAlchemy to distinguish between classes
+    __mapper_args__ = {'polymorphic_identity': 'models.TickerSetup'}
     
     id = Column(Integer, primary_key=True)
     symbol = Column(String(10), nullable=False, index=True)

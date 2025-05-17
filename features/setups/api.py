@@ -44,7 +44,7 @@ def get_recent_setups():
         
         # Add symbol filter if provided
         if symbol:
-            # Use alias to avoid naming conflict
+            # Use the renamed model to avoid conflicts
             from models import TickerSetup as DBTickerSetup
             query = query.join(models.SetupMessage.ticker_setups).filter(DBTickerSetup.symbol == symbol)
         
@@ -175,6 +175,9 @@ def add_sample_data():
                 'message': f'Sample data already exists ({existing_count} records found)'
             })
             
+        # Import fully qualified models to avoid naming conflicts
+        from models import TickerSetup as DBTickerSetup, SetupMessage
+        
         # Instead of adding sample data, let's retrieve messages from Discord
         from features.discord.client import get_channel_messages
         from features.setups.multi_ticker_controller import process_setup_message
