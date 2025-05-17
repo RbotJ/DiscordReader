@@ -1,0 +1,138 @@
+1. Add the missing “running” exports in your Python modules
+a) Candle-detector module
+At the bottom of candle_detector.py (or wherever this lives), add:
+
+python
+Copy
+Edit
+def detector_running() -> bool:
+    """
+    Returns True if the candle detector is currently running,
+    False otherwise.
+    """
+    try:
+        # Replace this with however you actually check its status:
+        return candle_detector.is_running()
+    except NameError:
+        # if you don’t have a global object called `candle_detector`,
+        # just return False
+        return False
+And make sure it’s exposed:
+
+python
+Copy
+Edit
+__all__ = [
+    # ... your other exports
+    "detector_running",
+]
+b) Options-trader module
+Likewise, at the bottom of options_trader.py:
+
+python
+Copy
+Edit
+def trader_running() -> bool:
+    """
+    Returns True if the options trader service is running,
+    False otherwise.
+    """
+    try:
+        return options_trader.is_running()
+    except NameError:
+        return False
+And add it to your exports:
+
+python
+Copy
+Edit
+__all__ = [
+    # ... existing exports
+    "trader_running",
+]
+2. Fix duplicate-key warnings in your Dashboard React component
+Whenever you do something like:
+
+jsx
+Copy
+Edit
+{items.map((item, idx) => (
+  <div key={idx}>
+    … 
+  </div>
+))}
+or worse, render <li key={somethingObject}>, you’ll get a “duplicate key” or “object as child” warning.
+
+Always:
+
+Pick a stable, truly unique property (e.g. an ID from the server).
+
+Use that for your key=, not the array index.
+
+Never do {item} if item is an object—either render a field ({item.name}) or serialise ({JSON.stringify(item)}).
+
+Example fix for signals list
+diff
+Copy
+Edit
+- signalsListData.map((signal, idx) => (
+-   <div key={idx} className="signal-item">
++ signalsListData.map(signal => (
++   <div key={signal.id} className="signal-item">
+      <h6>{signal.symbol}</h6>
+-     <pre>{signal}</pre>
++     <small>Trigger: ${signal.trigger}</small>
+      {/* … */}
+    </div>
+  ))
+And for positions table
+diff
+Copy
+Edit
+- positions.map((p, i) => (
+-   <tr key={i}>
++ positions.map(p => (
++   <tr key={p.symbol /* or p.algoId if symbols can repeat */}>
+      <td>{p.symbol}</td>
+      <td>{p.qty}</td>
+      {/* … */}
+    </tr>
+  ))
+3. Don’t render raw objects as React children
+If you have JSX like:
+
+jsx
+Copy
+Edit
+<div>{someObject}</div>
+React will literally try to convert the object to a string ("[object Object]") and warn you. Instead:
+
+Render the properties you actually want:
+
+jsx
+Copy
+Edit
+<div>
+  <span>{someObject.name}</span>
+  <span>{someObject.value}</span>
+</div>
+Or, if you really need to inspect it, temporarily do:
+
+jsx
+Copy
+Edit
+<pre>{JSON.stringify(someObject, null, 2)}</pre>
+Recap
+Python – add and export:
+
+python
+Copy
+Edit
+def detector_running(): …
+def trader_running(): …
+__all__ = […, "detector_running", "trader_running"]
+React – always give each element in a list a unique key (never the array index), and only render strings/numbers/JSX—never raw objects.
+
+Objects as children – either pull out their fields or JSON.stringify them if you really just want a debug dump.
+
+With those in place, you should see your missing-export errors go away and the dashboard free of key+children warnings.

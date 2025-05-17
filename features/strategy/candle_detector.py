@@ -419,3 +419,14 @@ def shutdown() -> bool:
     except Exception as e:
         logger.error(f"Error shutting down candle detector: {e}")
         return False
+        
+def detector_running() -> bool:
+    """
+    Check if the candle detector is currently running.
+    
+    Returns:
+        bool: True if the detector is running, False otherwise
+    """
+    global _thread_running, _detector_thread
+    
+    return _thread_running and _detector_thread is not None and _detector_thread.is_alive()
