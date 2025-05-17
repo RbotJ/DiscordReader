@@ -1,28 +1,23 @@
 /**
- * Main entry point for the React application
+ * React application entry point
+ * 
+ * This is the main entry point for our React application
  */
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import Dashboard from './components/Dashboard';
+import App from './components/App';
 
-// Bootstrap CSS
+// Log initialization
+console.log('Dashboard initialized');
+
+// Mount the React application
 document.addEventListener('DOMContentLoaded', () => {
-  // Find the dashboard container element
-  const container = document.getElementById('dashboard-root');
+  const container = document.getElementById('react-root');
   
   if (container) {
-    // Create React root
     const root = createRoot(container);
-    
-    // Render the dashboard
-    root.render(
-      <React.StrictMode>
-        <Dashboard />
-      </React.StrictMode>
-    );
-    
-    console.log('Dashboard initialized');
+    root.render(<App />);
   } else {
-    console.error('Dashboard container not found');
+    console.error('Could not find root element with ID "react-root"');
   }
 });

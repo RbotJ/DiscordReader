@@ -1,0 +1,104 @@
+You’ll want to cleanly separate your React app from any “vanilla” DOM-ready script, and avoid having two files whose names differ only by case. Here are the key things to fix:
+
+1. Kill the “App.js / app.js” collision
+Most build tools (and macOS/Linux) treat App.js and app.js as entirely different files, but on Windows (and in many editors) that leads to weird import resolutions:
+
+Rename your plain-JS code (the document.addEventListener('DOMContentLoaded', …)) to something like bootstrap.js or systemStatus.js
+
+Keep only one App.js in your src/ folder—and have it export your React component.
+
+In practice your folder might look like:
+
+pgsql
+Copy
+Edit
+src/
+ ├─ App.js         ← your React component  
+ ├─ index.js       ← ReactDOM entrypoint  
+ ├─ bootstrap.js   ← the old DOMContentLoaded logic, if you really need it  
+ └─ components/
+     └─ Dashboard.js
+2. Use a React “index.js” entrypoint
+Rather than manually wiring DOMContentLoaded, let React take over. Create src/index.js (or main.jsx) like this:
+
+js
+Copy
+Edit
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App'
+
+// If you need to run any global setup, you can still import bootstrap.js here:
+import './bootstrap'
+
+const container = document.getElementById('root')
+const root = createRoot(container!)
+root.render(<App />)
+And in your public/index.html be sure you have:
+
+html
+Copy
+Edit
+<div id="root"></div>
+<script src="/static/js/index.js"></script>
+This replaces your document.addEventListener('DOMContentLoaded', initializeApp) with React’s mounting lifecycle.
+
+3. Move your “fetchSystemStatus” logic into React
+Instead of fetching in a standalone script, hook it into your Dashboard (or a top-level provider) using React’s useEffect. For example:
+
+jsx
+Copy
+Edit
+// src/components/Dashboard.js
+import React, { useEffect, useState } from 'react'
+
+export default function Dashboard() {
+  const [strategyRunning, setStrategyRunning] = useState(false)
+  const [executionRunning, setExecutionRunning] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/strategy/status')
+      .then(r => r.json())
+      .then(d => setStrategyRunning(d.detector?.running ?? false))
+      .catch(console.error)
+
+    fetch('/api/execution/status')
+      .then(r => r.json())
+      .then(d => setExecutionRunning(d.executor?.running ?? false))
+      .catch(console.error)
+  }, [])
+
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <p>Strategy: {strategyRunning ? '🟢 Running' : '🔴 Stopped'}</p>
+      <p>Execution: {executionRunning ? '🟢 Running' : '🔴 Stopped'}</p>
+      {/* rest of your UI */}
+    </div>
+  )
+}
+This way you can remove bootstrap.js entirely once everything is in React, and you get proper re-renders whenever the status changes.
+
+4. If you still need global scripts, import them once
+If there is genuinely shared, non-React code—for example analytics initialization—just import it at the top of index.js:
+
+js
+Copy
+Edit
+import './analytics'    // runs its own event listeners or SDK setup
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App'
+...
+That guarantees it only runs once, in the right order.
+
+Summary
+Eliminate App.js vs app.js by renaming one.
+
+Use src/index.js as your React entrypoint, not DOMContentLoaded.
+
+Move API polling into useEffect in your Dashboard (or a context/provider).
+
+Only leave plain-JS modules (if any) in separate files you explicitly import in index.js.
+
+With that structure you’ll avoid naming collisions, keep everything declarative in React, and remove the weird runtime errors caused by two “app” files vying for control.

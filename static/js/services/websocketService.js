@@ -98,7 +98,16 @@ const triggerHandlers = (event, ...args) => {
   
   for (const handler of eventHandlers[event]) {
     try {
-      handler(...args);
+      // Validate data before passing to handlers
+      const validatedArgs = args.map(arg => {
+        // If arg is an object, make a copy to prevent manipulation
+        if (arg && typeof arg === 'object') {
+          return { ...arg };
+        }
+        return arg;
+      });
+      
+      handler(...validatedArgs);
     } catch (error) {
       console.error(`Error in ${event} handler:`, error);
     }
