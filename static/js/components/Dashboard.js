@@ -314,15 +314,19 @@ function Dashboard({ account, loading, error }) {
             <div className="card-body p-0">
               <div className="list-group list-group-flush">
                 {dashboardState.tickers.length > 0 ? (
-                  dashboardState.tickers.map((ticker) => (
-                    <button
-                      key={ticker.id}
-                      className={`list-group-item list-group-item-action ${dashboardState.activeCharts.some(chart => chart.symbol === ticker.symbol) ? 'active' : ''}`}
-                      onClick={() => handleSubscribeTicker(ticker.symbol)}
-                    >
-                      {ticker.symbol}
-                    </button>
-                  ))
+                  dashboardState.tickers.map((ticker, i) => {
+                    const key = ticker.id;
+                    console.log('Ticker render:', ticker.symbol, '→ key=', key);
+                    return (
+                      <button
+                        key={key}
+                        className={`list-group-item list-group-item-action ${dashboardState.activeCharts.some(chart => chart.symbol === ticker.symbol) ? 'active' : ''}`}
+                        onClick={() => handleSubscribeTicker(ticker.symbol)}
+                      >
+                        {ticker.symbol}
+                      </button>
+                    );
+                  })
                 ) : (
                   <div className="list-group-item text-center text-muted py-3">
                     No tickers available
@@ -336,8 +340,11 @@ function Dashboard({ account, loading, error }) {
         <div className="col-md-9 mb-4">
           <div className="row mb-4">
             {dashboardState.activeCharts.length > 0 ? (
-              dashboardState.activeCharts.map((chart) => (
-                <div key={chart.id} className="col-md-6 mb-3">
+              dashboardState.activeCharts.map((chart, i) => {
+                const key = chart.id;
+                console.log('Chart render:', chart.symbol, '→ key=', key);
+                return (
+                <div key={key} className="col-md-6 mb-3">
                   <ChartErrorBoundary>
                     <div className="card">
                       <div className="card-header d-flex justify-content-between align-items-center">
