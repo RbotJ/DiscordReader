@@ -16,7 +16,7 @@ from discord.ext import tasks
 logger = logging.getLogger(__name__)
 
 # Get configuration from environment variables
-DISCORD_APP_TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
+DISCORD_APP_TOKEN = os.environ.get('DISCORD_BOT_TOKEN_APLUS') or os.environ.get('DISCORD_BOT_TOKEN')
 CHANNEL_BOT_DIALOGUE = os.environ.get('DISCORD_CHANNEL_BOT_DIALOGUE')
 CHANNEL_APLUS_SETUPS = os.environ.get('DISCORD_CHANNEL_APLUS_SETUPS')
 CHANNEL_TEST = os.environ.get('DISCORD_CHANNEL_TEST_HERE_ONE')
