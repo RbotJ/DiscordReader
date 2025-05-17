@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - A+ Trading Platform</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .setup-card {
+            margin-bottom: 1.5rem;
+            border-left: 4px solid #0d6efd;
+        }
+        .setup-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ticker-badge {
+            font-size: 0.8rem;
+            margin-right: 0.3rem;
+            margin-bottom: 0.3rem;
+        }
+        .setup-date {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .setup-message {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .source-badge {
+            font-size: 0.75rem;
+        }
+        .loading-container {
+            display: flex;
+            justify-content: center;
+            padding: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">A+ Trading</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/recent-setups">Recent Setups</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="mb-3">Recent Trading Setups</h1>
+                <p class="lead">The most recent trading setups received from Discord.</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div id="setupsContainer">
+                    <div class="loading-container">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-center text-white mt-5 py-4">
+        <div class="container">
+            <p>© 2025 A+ Trading Platform</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchRecentSetups();
+        });
+
+        function fetchRecentSetups() {
+            fetch('/api/setups/recent?limit=10')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        displaySetups(data.data);
+                    } else {
+                        displayError(data.message || 'Failed to load recent setups');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching setups:', error);
+                    displayError('Error connecting to server. Please try again later.');
+                });
+        }
+
+        function displaySetups(setups) {
+            const container = document.getElementById('setupsContainer');
+            container.innerHTML = '';
+            
+            if (!setups || setups.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info">
+                        No trading setups found. New setups from Discord will appear here.
+                    </div>
+                `;
+                return;
+            }
+            
+            setups.forEach(setup => {
+                const setupDate = new Date(setup.date).toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+                
+                const tickerBadges = setup.ticker_symbols.map(symbol => 
+                    `<span class="badge bg-primary ticker-badge">${symbol}</span>`
+                ).join('');
+                
+                const createdDate = setup.created_at ? new Date(setup.created_at).toLocaleString() : '';
+                
+                const card = document.createElement('div');
+                card.className = 'card setup-card';
+                card.innerHTML = `
+                    <div class="card-header">
+                        <div>
+                            <h5 class="mb-0">Trading Setup #${setup.id}</h5>
+                            <small class="setup-date">${setupDate}</small>
+                        </div>
+                        <span class="badge bg-secondary source-badge">${setup.source}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <strong>Tickers:</strong>
+                            <div class="mt-2">${tickerBadges}</div>
+                        </div>
+                        <a href="/setup/${setup.id}" class="btn btn-sm btn-outline-primary">View Details</a>
+                    </div>
+                    <div class="card-footer text-muted">
+                        <small>Received: ${createdDate}</small>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        function displayError(message) {
+            const container = document.getElementById('setupsContainer');
+            container.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>Error</h5>
+                    <p>${message}</p>
+                    <button class="btn btn-outline-danger btn-sm" onclick="fetchRecentSetups()">Try Again</button>
+                </div>
+            `;
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
