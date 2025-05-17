@@ -148,28 +148,41 @@
     fetch('/api/account')
       .then(function(response) { return response.json(); })
       .then(function(data) {
-        document.getElementById('account-value').textContent = '$' + parseFloat(data.equity).toFixed(2);
-        document.getElementById('buying-power').textContent = '$' + parseFloat(data.buying_power).toFixed(2);
-        document.getElementById('market-status').textContent = data.market_open ? 'Open' : 'Closed';
+        const accountValueEl = document.getElementById('account-value');
+        const buyingPowerEl = document.getElementById('buying-power');
+        const marketStatusEl = document.getElementById('market-status');
         
-        // Update styling based on market status
-        document.getElementById('market-status').className = data.market_open ? 'text-success' : 'text-danger';
+        if (accountValueEl) accountValueEl.textContent = '$' + parseFloat(data.equity || 0).toFixed(2);
+        if (buyingPowerEl) buyingPowerEl.textContent = '$' + parseFloat(data.buying_power || 0).toFixed(2);
+        if (marketStatusEl) {
+          marketStatusEl.textContent = data.market_open ? 'Open' : 'Closed';
+          // Update styling based on market status
+          marketStatusEl.className = data.market_open ? 'text-success' : 'text-danger';
+        }
       })
       .catch(function(error) {
         console.error('Error fetching account info:', error);
-        document.getElementById('account-value').textContent = 'Error loading';
-        document.getElementById('buying-power').textContent = 'Error loading';
-        document.getElementById('market-status').textContent = 'Unknown';
+        const accountValueEl = document.getElementById('account-value');
+        const buyingPowerEl = document.getElementById('buying-power');
+        const marketStatusEl = document.getElementById('market-status');
+        
+        if (accountValueEl) accountValueEl.textContent = 'Error loading';
+        if (buyingPowerEl) buyingPowerEl.textContent = 'Error loading';
+        if (marketStatusEl) marketStatusEl.textContent = 'Unknown';
       });
     
     fetch('/api/positions')
       .then(function(response) { return response.json(); })
       .then(function(data) {
-        document.getElementById('open-positions').textContent = data.length;
+        const openPositionsEl = document.getElementById('open-positions');
+        if (openPositionsEl) {
+          openPositionsEl.textContent = Array.isArray(data) ? data.length : 0;
+        }
       })
       .catch(function(error) {
         console.error('Error fetching positions:', error);
-        document.getElementById('open-positions').textContent = 'Error loading';
+        const openPositionsEl = document.getElementById('open-positions');
+        if (openPositionsEl) openPositionsEl.textContent = 'Error loading';
       });
   }
   
@@ -179,8 +192,10 @@
     fetch('/api/strategy/status')
       .then(function(response) { return response.json(); })
       .then(function(data) {
-        const isRunning = data.detector?.running || false;
         const statusElement = document.getElementById('strategy-status');
+        if (!statusElement) return;
+          
+        const isRunning = data && data.detector && data.detector.running ? true : false;
         
         if (isRunning) {
           statusElement.classList.add('active');
@@ -192,15 +207,18 @@
       })
       .catch(function(error) {
         console.error('Error fetching strategy status:', error);
-        document.getElementById('strategy-status').classList.add('inactive');
+        const statusElement = document.getElementById('strategy-status');
+        if (statusElement) statusElement.classList.add('inactive');
       });
     
     // Check execution status
     fetch('/api/execution/status')
       .then(function(response) { return response.json(); })
       .then(function(data) {
-        const isRunning = data.executor?.running || false;
         const statusElement = document.getElementById('execution-status');
+        if (!statusElement) return;
+          
+        const isRunning = data && data.executor && data.executor.running ? true : false;
         
         if (isRunning) {
           statusElement.classList.add('active');
@@ -212,7 +230,8 @@
       })
       .catch(function(error) {
         console.error('Error fetching execution status:', error);
-        document.getElementById('execution-status').classList.add('inactive');
+        const statusElement = document.getElementById('execution-status');
+        if (statusElement) statusElement.classList.add('inactive');
       });
   }
 </script>

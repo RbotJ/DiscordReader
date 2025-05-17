@@ -300,8 +300,8 @@ function Dashboard({ account, loading, error }) {
             <div className="card-body p-0">
               <div className="list-group list-group-flush event-log" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                 {dashboardState.events.length > 0 ? (
-                  dashboardState.events.map(event => (
-                    <div key={`event-${event.id}`} className="list-group-item py-2">
+                  dashboardState.events.map((event, index) => (
+                    <div key={`event-${event.id}-${index}`} className="list-group-item py-2">
                       <small className="text-muted me-2">
                         {new Date(event.timestamp).toLocaleTimeString()}
                       </small>
