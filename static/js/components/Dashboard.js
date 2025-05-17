@@ -121,7 +121,7 @@ function Dashboard({ account, loading, error }) {
       : String(message || '');
       
     const event = {
-      id: Date.now() + Math.random().toString(36).substr(2, 5), // Ensure true uniqueness
+      id: Date.now() + '-' + Math.random().toString(36).substr(2, 5), // Ensure true uniqueness
       timestamp: new Date().toISOString(),
       type,
       message: formattedMessage
@@ -313,9 +313,7 @@ function Dashboard({ account, loading, error }) {
                       }`}>
                         {event.type}
                       </span>
-                      {typeof event.message === 'string' ? event.message : 
-                       typeof event.message === 'object' ? JSON.stringify(event.message || {}) : 
-                       String(event.message || '')}
+                      {event.message}
                     </div>
                   ))
                 ) : (
