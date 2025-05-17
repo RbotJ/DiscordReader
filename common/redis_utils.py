@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 from collections import defaultdict
+from datetime import datetime
 from typing import Any, Dict, List, Set, Optional, Union, Callable
 
 import redis
@@ -345,3 +346,55 @@ def ensure_redis_is_running() -> bool:
     except Exception:
         # Redis is not running, try to start it
         return _start_redis_server()
+
+def ensure_redis_is_running() -> bool:
+    """
+    Ensure the Redis server is running.
+    
+    Returns:
+        bool: True if Redis server is running, False otherwise
+    """
+    try:
+        client = redis.from_url(REDIS_URL)
+        # Test connection
+        client.ping()
+        return True
+    except Exception:
+        # Redis is not running, try to start it
+        return _start_redis_server()
+
+def get_redis_client() -> RedisClient:
+    """
+    Get a Redis client instance.
+    
+    Returns:
+        RedisClient: Redis client instance
+    """
+    return RedisClient()
+
+def publish_event(channel: str, event_type: str, data: Dict[str, Any]) -> bool:
+    """
+    Publish an event to a Redis channel.
+    
+    Args:
+        channel: Redis channel to publish to
+        event_type: Event type identifier
+        data: Event data
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        # Create event payload
+        payload = {
+            'event_type': event_type,
+            'timestamp': datetime.now().isoformat(),
+            'data': data
+        }
+        
+        # Get Redis client and publish
+        redis_client = get_redis_client()
+        return redis_client.publish(channel, payload)
+    except Exception as e:
+        logger.error(f"Error publishing event to {channel}: {e}")
+        return False

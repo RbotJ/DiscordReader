@@ -227,37 +227,94 @@ def register_routes(app):
             ticker: Ticker symbol
         """
         try:
-            # Query the database for signals associated with the ticker
+            # First check for active candle signals
+            try:
+                from features.strategy import get_candle_signals
+                active_signals = get_candle_signals(ticker)
+                
+                if active_signals:
+                    # Return all active candle signals
+                    return jsonify(active_signals)
+            except ImportError:
+                logging.warning(f"Could not import candle signals module for {ticker}")
+            
+            # Fall back to database signals if no active candle signals
             from models import TickerSetup, Signal
             
             # Get the most recent ticker setup
             ticker_setup = TickerSetup.query.filter_by(symbol=ticker).order_by(TickerSetup.id.desc()).first()
             
             if not ticker_setup:
-                return jsonify(None)
+                return jsonify([])
             
             # Get signals for the ticker setup
             signals = Signal.query.filter_by(ticker_setup_id=ticker_setup.id).all()
             
             if not signals:
-                return jsonify(None)
+                return jsonify([])
             
-            # Return the first signal (we'll enhance this later)
-            signal = signals[0]
+            # Convert database signals to API format
+            signal_list = []
+            for signal in signals:
+                signal_data = {
+                    'id': signal.id,
+                    'ticker': ticker,
+                    'category': signal.category.value,
+                    'aggressiveness': signal.aggressiveness.value,
+                    'comparison': signal.comparison.value,
+                    'trigger': signal.trigger,
+                    'targets': signal.targets,
+                    'status': 'pending',  # Default status
+                    'source': 'database'
+                }
+                signal_list.append(signal_data)
             
-            signal_data = {
-                'id': signal.id,
-                'category': signal.category.value,
-                'aggressiveness': signal.aggressiveness.value,
-                'comparison': signal.comparison.value,
-                'trigger': signal.trigger,
-                'targets': signal.targets
-            }
-            
-            return jsonify(signal_data)
+            return jsonify(signal_list)
         except Exception as e:
             logging.error(f"Error fetching signals for {ticker}: {e}")
-            return jsonify(None)
+            return jsonify([])
+            
+    @app.route('/api/signals/add', methods=['POST'])
+    def add_signal():
+        """
+        Add a candle signal for testing.
+        
+        Expected JSON payload format:
+        {
+            "ticker": "SPY",
+            "category": "breakout",  # or "breakdown", "rejection", "bounce"
+            "trigger": {
+                "price": 450.0,
+                "timeframe": "15Min"
+            },
+            "targets": [
+                {"price": 455.0, "percentage": 0.25},
+                {"price": 460.0, "percentage": 0.5},
+                {"price": 465.0, "percentage": 0.25}
+            ],
+            "status": "pending"
+        }
+        """
+        try:
+            from flask import request
+            from features.strategy import add_candle_signal
+            
+            # Parse request JSON
+            signal_data = request.json
+            
+            if not signal_data or 'ticker' not in signal_data or 'trigger' not in signal_data:
+                return jsonify({"success": False, "error": "Invalid signal data"}), 400
+            
+            # Add signal to candle detector
+            success = add_candle_signal(signal_data)
+            
+            if success:
+                return jsonify({"success": True, "message": f"Signal added for {signal_data['ticker']}"}), 201
+            else:
+                return jsonify({"success": False, "error": "Failed to add signal"}), 500
+        except Exception as e:
+            logging.error(f"Error adding signal: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
 # Create the application
 app = create_app()
@@ -304,8 +361,8 @@ def initialize_app_components():
     
     # Initialize signal detection components
     try:
-        from features.strategy.candle_detector import init_candle_detector
-        success = init_candle_detector()
+        from features.strategy import start_candle_detector
+        success = start_candle_detector()
         if success:
             logging.info("Candle detector initialized")
         else:
