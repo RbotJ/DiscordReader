@@ -536,16 +536,20 @@ def get_latest_bars(symbols: Union[List[str], str], timeframe: str = '1Day', lim
         if isinstance(symbols, str):
             symbols = [symbols]
         
-        # Map timeframe string to TimeFrame enum
+        # Map timeframe string to TimeFrame enum using correct format
         if timeframe == '1Day':
-            tf = TimeFrame.DAY
+            tf = TimeFrame.Day
         elif timeframe == '1Hour':
-            tf = TimeFrame.HOUR
+            tf = TimeFrame.Hour
         elif timeframe == '1Min':
-            tf = TimeFrame.MINUTE
+            tf = TimeFrame(amount=1, unit='Min')
+        elif timeframe == '5Min':
+            tf = TimeFrame(amount=5, unit='Min')
+        elif timeframe == '15Min':
+            tf = TimeFrame(amount=15, unit='Min')
         else:
             # Default to day
-            tf = TimeFrame.DAY
+            tf = TimeFrame.Day
         
         # Get bars
         request = StockBarsRequest(
