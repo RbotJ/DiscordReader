@@ -1,0 +1,160 @@
+1. Duplicate-key warnings keep coming back
+javascript
+Copy
+Edit
+Encountered two children with the same key, `1747507232192`.
+Encountered two children with the same key, `1747507232194`.
+What’s happening
+You’re still using timestamps (in ms) as your React list keys.
+
+When two events fire in the same millisecond—or when you re-append the same event twice—they collide.
+
+How to fix
+Switch to a permanent unique ID for each item.
+Instead of
+
+tsx
+Copy
+Edit
+{signals.map(s => (
+  <SignalRow key={s.timestamp} signal={s}/>
+))}
+do something like:
+
+tsx
+Copy
+Edit
+{signals.map(s => (
+  <SignalRow key={s.id /* or s.uuid */} signal={s}/>
+))}
+Where s.id is assigned once (e.g. by your backend or by crypto.randomUUID() on ingestion).
+
+Compose a composite key if you can’t generate UUIDs:
+
+tsx
+Copy
+Edit
+<SignalRow 
+  key={`${s.ticker}-${s.type}-${s.timestamp}-${i}`} 
+  signal={s} 
+/>
+That extra -${i} (the array index) guarantees uniqueness, though you lose some React optimizations if you ever reorder.
+
+Prevent duplicates at the source.
+If your WebSocket or fetch logic is re-adding the same signal twice:
+
+ts
+Copy
+Edit
+setSignals(prev => {
+  const seen = new Set(prev.map(s => s.id));
+  const filtered = incoming.filter(s => !seen.has(s.id));
+  return [...prev, ...filtered];
+});
+This ensures you never push an item whose id is already in state.
+
+2. WebSocket reconnection vs. stale state
+Seeing duplicates right after
+
+python-repl
+Copy
+Edit
+WebSocket connected
+...
+Encountered two children with the same key…
+means you’re either:
+
+Re-fetching or re-subscribing without clearing old state, or
+
+Appending the same messages again on reconnect.
+
+Improvement ideas
+On every WS open, reset your list (if that makes sense):
+
+ts
+Copy
+Edit
+ws.onopen = () => {
+  console.log("WS connected, clearing old signals");
+  setSignals([]); 
+};
+Or better, have your server send only new items from a cursor or timestamp, and client-side filter out anything older than the last seen timestamp.
+
+3. Putting it all together: sample hook
+tsx
+Copy
+Edit
+import { useState, useEffect, useRef } from 'react';
+
+function useLiveSignals() {
+  const [signals, setSignals] = useState<Signal[]>([]);
+  const seenIds = useRef(new Set<string>());
+
+  useEffect(() => {
+    const ws = new WebSocket("wss://your-domain/ws");
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      // Optionally clear state on reconnect:
+      // seenIds.current.clear();
+      // setSignals([]);
+    };
+
+    ws.onmessage = evt => {
+      try {
+        const incoming: Signal[] = JSON.parse(evt.data);
+        setSignals(prev => {
+          const newOnes = incoming.filter(s => {
+            if (seenIds.current.has(s.id)) return false;
+            seenIds.current.add(s.id);
+            return true;
+          });
+          return newOnes.length ? [...prev, ...newOnes] : prev;
+        });
+      } catch (e) {
+        console.error("Invalid signal payload", e);
+      }
+    };
+
+    ws.onerror = e => console.error("WS error", e);
+    ws.onclose = () => console.warn("WS closed");
+
+    return () => ws.close();
+  }, []);
+
+  return signals;
+}
+Then in your component:
+
+tsx
+Copy
+Edit
+function Dashboard() {
+  const signals = useLiveSignals();
+
+  return (
+    <div>
+      {signals.map(s => (
+        <SignalRow key={s.id} signal={s}/>
+      ))}
+    </div>
+  );
+}
+Why this solves it:
+
+Each signal must carry a unique id.
+
+We track seen IDs in a Set so duplicates are never re-rendered.
+
+On reconnect you can choose to clear or preserve state as business logic dictates.
+
+Quick recap
+Never use raw timestamps alone as keys; they collide.
+
+Generate or assign a stable unique ID per item.
+
+Filter incoming data by that ID set to avoid re-adding old items on reconnect.
+
+Optionally reset state on WebSocket open if your workflow requires a fresh view.
+
+With these changes your duplicate-key warnings will disappear, and your dashboard will maintain a single source of truth for each signal.

@@ -1,5 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import io from 'socket.io-client';
+
+/**
+ * Generate a UUID-like string for use as unique React keys
+ */
+function generateUUID() {
+  // Implementation similar to RFC4122 version 4 UUID
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 /**
  * Dashboard Component
@@ -15,6 +27,18 @@ function Dashboard({ account, loading, error }) {
   });
   
   const [socket, setSocket] = useState(null);
+  const seenEventIds = useRef(new Set());
+  
+  // Reset state on component mount to avoid any stale data
+  useEffect(() => {
+    setDashboardState({
+      tickers: [],
+      positions: [],
+      activeCharts: [],
+      events: []
+    });
+    seenEventIds.current.clear();
+  }, []); 
   
   // Connect to websocket on component mount
   useEffect(() => {
@@ -37,6 +61,11 @@ function Dashboard({ account, loading, error }) {
       console.log('Socket disconnected');
       // Add to events log
       addEvent('system', 'WebSocket disconnected');
+    });
+    
+    newSocket.on('error', (error) => {
+      console.log('WebSocket connection error:', error);
+      addEvent('error', 'WebSocket connection error');
     });
     
     newSocket.on('market_update', (data) => {
@@ -85,10 +114,15 @@ function Dashboard({ account, loading, error }) {
     fetch('/api/tickers')
       .then(response => response.json())
       .then(data => {
-        setDashboardState(prev => ({
-          ...prev,
-          tickers: data
-        }));
+        if (Array.isArray(data)) {
+          setDashboardState(prev => ({
+            ...prev,
+            tickers: data
+          }));
+        } else {
+          console.error('Invalid ticker data format:', data);
+          addEvent('error', 'Received invalid ticker data format');
+        }
       })
       .catch(error => {
         console.error('Error fetching tickers:', error);
@@ -102,10 +136,15 @@ function Dashboard({ account, loading, error }) {
     fetch('/api/positions')
       .then(response => response.json())
       .then(data => {
-        setDashboardState(prev => ({
-          ...prev,
-          positions: data
-        }));
+        if (Array.isArray(data)) {
+          setDashboardState(prev => ({
+            ...prev,
+            positions: data
+          }));
+        } else {
+          console.error('Invalid positions data format:', data);
+          addEvent('error', 'Received invalid positions data format');
+        }
       })
       .catch(error => {
         console.error('Error fetching positions:', error);
@@ -116,12 +155,30 @@ function Dashboard({ account, loading, error }) {
   // Helper to add events to the event log - using useCallback for stability
   const addEvent = useCallback((type, message) => {
     // Convert object message to string to avoid React child errors
-    const formattedMessage = typeof message === 'object' 
-      ? message === null ? 'null' : JSON.stringify(message) 
-      : String(message || '');
-      
-    // Create a truly unique ID using UUID-like approach
-    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}-${Math.random().toString(36).substring(2, 10)}`;
+    let formattedMessage = '';
+    
+    if (message === null || message === undefined) {
+      formattedMessage = String(message);
+    } else if (typeof message === 'object') {
+      try {
+        formattedMessage = JSON.stringify(message);
+      } catch (e) {
+        formattedMessage = '[Object]'; // Fallback for circular references
+      }
+    } else {
+      formattedMessage = String(message);
+    }
+    
+    // Generate a truly unique ID
+    const uniqueId = generateUUID();
+    
+    // Check if we've already seen this event (prevent duplicates)
+    if (seenEventIds.current.has(uniqueId)) {
+      return; // Skip duplicate events
+    }
+    
+    // Add to seen set
+    seenEventIds.current.add(uniqueId);
     
     const event = {
       id: uniqueId,
@@ -134,7 +191,7 @@ function Dashboard({ account, loading, error }) {
       ...prev,
       events: [event, ...prev.events].slice(0, 100) // Keep last 100 events
     }));
-  }, []);
+  }, [seenEventIds]);
   
   // Handle subscribing to a ticker
   const handleSubscribeTicker = (ticker) => {
@@ -303,8 +360,8 @@ function Dashboard({ account, loading, error }) {
             <div className="card-body p-0">
               <div className="list-group list-group-flush event-log" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                 {dashboardState.events.length > 0 ? (
-                  dashboardState.events.map((event, index) => (
-                    <div key={`event-${event.id}-${index}`} className="list-group-item py-2">
+                  dashboardState.events.map((event) => (
+                    <div key={event.id} className="list-group-item py-2">
                       <small className="text-muted me-2">
                         {new Date(event.timestamp).toLocaleTimeString()}
                       </small>
@@ -316,7 +373,7 @@ function Dashboard({ account, loading, error }) {
                       }`}>
                         {event.type}
                       </span>
-                      {event.message}
+                      {typeof event.message === 'string' ? event.message : JSON.stringify(event.message)}
                     </div>
                   ))
                 ) : (
