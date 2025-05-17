@@ -192,30 +192,26 @@ def send_message(channel_id: int, message: str) -> bool:
     Returns:
         bool: Success or failure
     """
-    if not client_ready:
-        logger.warning("Discord client not ready, message not sent")
+    if not client_ready or not discord_client:
+        logger.warning("Discord client not ready")
         return False
-    
+
+    chan = discord_client.get_channel(channel_id)
+    if not chan:
+        logger.error(f"Channel {channel_id} not found")
+        return False
+
     try:
-        # Log the message we're about to send
-        logger.info(f"Sending message to channel {channel_id}: {message}")
-        
-        # Send the message using the Discord client
-        global discord_client
-        if discord_client and hasattr(discord_client, 'http'):
-            try:
-                discord_client.http.send_message(channel_id, message)
-                logger.info(f"Message sent to channel {channel_id}")
-            except Exception as e:
-                logger.error(f"Error sending Discord message: {e}")
-                return False
-        else:
-            logger.error("Discord client not properly initialized")
-            return False
-            
+        # Schedule the coroutine in the bot's event loop
+        future = asyncio.run_coroutine_threadsafe(
+            chan.send(message),
+            discord_client.loop
+        )
+        future.result(timeout=10)
+        logger.info(f"Message sent to channel {channel_id}")
         return True
     except Exception as e:
-        logger.error(f"Error sending Discord message: {e}")
+        logger.error(f"Failed to send message: {e}")
         return False
 
 @requires_discord
