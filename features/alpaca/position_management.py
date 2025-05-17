@@ -37,16 +37,14 @@ def close_all_positions() -> bool:
         logger.info(f"Closing {len(positions)} position(s)")
         success = True
         
-        # Close each position
-        for position in positions:
-            symbol = position.get('symbol')
-            try:
-                logger.info(f"Closing position: {symbol}")
-                trading_client.close_position(symbol)
-                logger.info(f"Successfully closed position: {symbol}")
-            except Exception as e:
-                logger.error(f"Failed to close position {symbol}: {e}")
-                success = False
+        try:
+            logger.info("Closing all positions")
+            trading_client.close_all_positions(cancel_orders=True)
+            logger.info("Successfully closed all positions")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to close all positions: {e}")
+            return False
         
         return success
     except Exception as e:
