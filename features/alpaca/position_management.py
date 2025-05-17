@@ -54,7 +54,7 @@ def close_all_positions() -> bool:
         return False
 
 def _cleanup_thread_func() -> None:
-    """Thread function for end-of-day position cleanup."""
+    """Thread function for end-of-day position cleanup using Alpaca market clock."""
     global _thread_running
     
     logger.info("Position cleanup thread started")
@@ -62,21 +62,25 @@ def _cleanup_thread_func() -> None:
     
     try:
         while _thread_running:
-            # Check if it's near market close (4:00 PM ET) - around 3:55 PM
-            now = datetime.now()
-            
-            # Market hours: 9:30 AM ET to 4:00 PM ET
-            # We'll close positions at 3:55 PM ET
-            # Note: Simplified check, doesn't account for holidays or timezone
-            if now.hour == 15 and now.minute >= 55 and now.minute < 59:
-                logger.info("Market close approaching, closing all positions")
-                close_all_positions()
+            try:
+                # Get current market clock from Alpaca
+                clock = trading_client.get_clock()
                 
-                # Sleep until after market close to avoid multiple cleanups
-                time.sleep(300)  # Sleep for 5 minutes
-            
-            # Check every minute
-            time.sleep(60)
+                # If market is open and within 5 minutes of close
+                if clock.is_open and (clock.next_close - clock.timestamp).total_seconds() < 300:
+                    logger.info("Market close approaching, closing all positions")
+                    close_all_positions()
+                    
+                    # Sleep until after market close to avoid multiple cleanups
+                    time.sleep(300)  # Sleep for 5 minutes
+                
+                # Check every minute
+                time.sleep(60)
+                
+            except Exception as e:
+                logger.error(f"Error checking market clock: {e}")
+                time.sleep(60)  # Still sleep on error to avoid tight loops
+                
     except Exception as e:
         logger.error(f"Error in position cleanup thread: {e}")
     finally:
