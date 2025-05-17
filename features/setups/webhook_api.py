@@ -7,6 +7,7 @@ and storing them in the database.
 import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
+from sqlalchemy import select
 
 from models import (
     SetupMessage, 
@@ -20,6 +21,7 @@ from models import (
     BiasDirectionEnum
 )
 from features.setups.parser import parse_setup_message
+from common.db import db
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -82,61 +84,54 @@ def receive_setup():
             }), 400
         
         # Store in database
-        from app import db
-        
         # Create main setup message
-        setup_message = SetupMessage(
-            date=setup_dto.date,
-            raw_text=setup_dto.raw_text,
-            source=setup_dto.source,
-            created_at=datetime.utcnow()
-        )
+        setup_message = SetupMessage()
+        setup_message.date = setup_dto.date
+        setup_message.raw_text = setup_dto.raw_text
+        setup_message.source = setup_dto.source
+        setup_message.created_at = datetime.utcnow()
         
         db.session.add(setup_message)
         db.session.flush()  # Get ID without committing
         
         # Create ticker setups and signals
-        for ticker_setup_dto in setup_dto.ticker_setups:
+        for ticker_setup_dto in setup_dto.setups:
             # Create ticker setup
-            ticker_setup = TickerSetup(
-                symbol=ticker_setup_dto.symbol,
-                text=ticker_setup_dto.text,
-                message_id=setup_message.id
-            )
+            ticker_setup = TickerSetup()
+            ticker_setup.symbol = ticker_setup_dto.symbol
+            ticker_setup.text = ticker_setup_dto.text
+            ticker_setup.message_id = setup_message.id
             
             db.session.add(ticker_setup)
             db.session.flush()  # Get ID without committing
             
             # Create signals
             for signal_dto in ticker_setup_dto.signals:
-                signal = Signal(
-                    ticker_setup_id=ticker_setup.id,
-                    category=signal_dto.category,
-                    aggressiveness=signal_dto.aggressiveness,
-                    comparison=signal_dto.comparison,
-                    trigger={"price": signal_dto.trigger, "timeframe": "1D"},
-                    targets=[{"price": t, "percentage": 1.0/len(signal_dto.targets)} for t in signal_dto.targets]
-                )
+                signal = Signal()
+                signal.ticker_setup_id = ticker_setup.id
+                signal.category = signal_dto.category
+                signal.aggressiveness = signal_dto.aggressiveness
+                signal.comparison = signal_dto.comparison
+                signal.trigger = {"price": signal_dto.trigger, "timeframe": "1D"}
+                signal.targets = [{"price": t, "percentage": 1.0/len(signal_dto.targets)} for t in signal_dto.targets]
                 db.session.add(signal)
             
             # Create bias if present
             if ticker_setup_dto.bias:
-                bias = Bias(
-                    ticker_setup_id=ticker_setup.id,
-                    direction=ticker_setup_dto.bias.direction,
-                    condition=ticker_setup_dto.bias.condition,
-                    price=ticker_setup_dto.bias.price
-                )
+                bias = Bias()
+                bias.ticker_setup_id = ticker_setup.id
+                bias.direction = ticker_setup_dto.bias.direction
+                bias.condition = ticker_setup_dto.bias.condition
+                bias.price = ticker_setup_dto.bias.price
                 db.session.add(bias)
                 db.session.flush()
                 
                 # Add bias flip if present
                 if ticker_setup_dto.bias.flip:
-                    bias_flip = BiasFlip(
-                        bias_id=bias.id,
-                        direction=ticker_setup_dto.bias.flip.direction,
-                        price_level=ticker_setup_dto.bias.flip.price_level
-                    )
+                    bias_flip = BiasFlip()
+                    bias_flip.bias_id = bias.id
+                    bias_flip.direction = ticker_setup_dto.bias.flip.direction
+                    bias_flip.price_level = ticker_setup_dto.bias.flip.price_level
                     db.session.add(bias_flip)
         
         # Commit all changes
@@ -202,7 +197,7 @@ def parse_setup():
         
         # Prepare response
         ticker_details = []
-        for ticker_setup in setup_dto.ticker_setups:
+        for ticker_setup in setup_dto.setups:
             # Convert signals to dictionaries
             signals = []
             for signal in ticker_setup.signals:
