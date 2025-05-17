@@ -110,7 +110,7 @@ def save_to_database(setup_message: TradeSetupMessage) -> Optional[int]:
         
         # Add ticker setups
         for setup in setup_message.setups:
-            db_ticker = TickerSetup()
+            db_ticker = DBTickerSetup()
             db_ticker.symbol = setup.symbol
             db_ticker.text = setup.text
             
@@ -185,7 +185,7 @@ def get_recent_setups(limit: int = 10, symbol: Optional[str] = None) -> List[Dic
         
         if symbol:
             # Join with ticker setups to filter by symbol
-            query = query.join(SetupMessage.ticker_setups).filter(TickerSetup.symbol == symbol)
+            query = query.join(SetupMessage.ticker_setups).filter(DBTickerSetup.symbol == symbol)
         
         # Get limited results
         messages = query.limit(limit).all()
@@ -303,9 +303,9 @@ def get_setups_by_symbol(symbol: str, limit: int = 10) -> List[Dict]:
     """
     try:
         # Query ticker setups
-        ticker_setups = (TickerSetup.query
-            .filter(TickerSetup.symbol == symbol)
-            .join(TickerSetup.message)
+        ticker_setups = (DBTickerSetup.query
+            .filter(DBTickerSetup.symbol == symbol)
+            .join(DBTickerSetup.message)
             .order_by(SetupMessage.date.desc())
             .limit(limit)
             .all())

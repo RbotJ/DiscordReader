@@ -44,7 +44,9 @@ def get_recent_setups():
         
         # Add symbol filter if provided
         if symbol:
-            query = query.join(models.SetupMessage.ticker_setups).filter(models.TickerSetup.symbol == symbol)
+            # Use alias to avoid naming conflict
+            from models import TickerSetup as DBTickerSetup
+            query = query.join(models.SetupMessage.ticker_setups).filter(DBTickerSetup.symbol == symbol)
         
         # Get limited results
         messages = query.limit(limit).all()
