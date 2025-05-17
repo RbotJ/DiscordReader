@@ -338,8 +338,9 @@ def get_channel_messages() -> List[dict]:
         import discord
         
         async def fetch_latest_messages():
-            # Create a client with minimal intents
+            # Create a client with message content intent enabled
             intents = discord.Intents.default()
+            intents.message_content = True  # Required to read message content
             client = discord.Client(intents=intents)
             
             messages = []
