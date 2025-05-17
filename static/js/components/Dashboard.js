@@ -344,8 +344,8 @@ function Dashboard({ account, loading, error }) {
                 const key = chart.id;
                 console.log('Chart render:', chart.symbol, '→ key=', key);
                 return (
-                <div key={key} className="col-md-6 mb-3">
-                  <ChartErrorBoundary>
+                  <div key={key} className="col-md-6 mb-3">
+                    <ChartErrorBoundary>
                     <div className="card">
                       <div className="card-header d-flex justify-content-between align-items-center">
                         <h5 className="mb-0">{chart.symbol}</h5>
@@ -389,24 +389,28 @@ function Dashboard({ account, loading, error }) {
             <div className="card-body p-0">
               <div className="list-group list-group-flush event-log" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                 {dashboardState.events.length > 0 ? (
-                  dashboardState.events.map((event) => (
-                    <div key={event.id} className="list-group-item py-2">
-                      <small className="text-muted me-2">
-                        {new Date(event.timestamp).toLocaleTimeString()}
-                      </small>
-                      <span className={`badge me-2 ${
-                        event.type === 'error' ? 'bg-danger' :
-                        event.type === 'system' ? 'bg-secondary' :
-                        event.type === 'signal' ? 'bg-primary' :
-                        event.type === 'market' ? 'bg-success' : 'bg-info'
-                      }`}>
-                        {event.type}
-                      </span>
-                      {typeof event.message === 'string' 
-                        ? event.message 
-                        : JSON.stringify(event.message)}
-                    </div>
-                  ))
+                  dashboardState.events.map((event, i) => {
+                    const key = event.id;
+                    console.log('Event render:', event.type, event.message, '→ key=', key);
+                    return (
+                      <div key={key} className="list-group-item py-2">
+                        <small className="text-muted me-2">
+                          {new Date(event.timestamp).toLocaleTimeString()}
+                        </small>
+                        <span className={`badge me-2 ${
+                          event.type === 'error' ? 'bg-danger' :
+                          event.type === 'system' ? 'bg-secondary' :
+                          event.type === 'signal' ? 'bg-primary' :
+                          event.type === 'market' ? 'bg-success' : 'bg-info'
+                        }`}>
+                          {event.type}
+                        </span>
+                        {typeof event.message === 'string' 
+                          ? event.message 
+                          : JSON.stringify(event.message)}
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="list-group-item text-center text-muted py-3">
                     No events yet
