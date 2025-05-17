@@ -37,8 +37,6 @@ discord_client = None
 client_ready = False
 message_handlers = []
 setup_message_callbacks = []
-is_discord_available = bool(DISCORD_APP_TOKEN and CHANNEL_APLUS_SETUPS_ID)
-
 def register_message_handler(handler: Callable[[discord.Message], Any]) -> None:
     """
     Register a function to handle new messages.
@@ -56,19 +54,6 @@ def register_setup_callback(callback: Callable[[str, datetime], Any]) -> None:
         callback: Function that takes message content and timestamp
     """
     setup_message_callbacks.append(callback)
-
-def requires_discord(f):
-    """
-    Decorator to check if Discord is available before running a function.
-    If Discord is not available, logs a warning and returns None.
-    """
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not is_discord_available:
-            logger.warning(f"Discord functionality unavailable - skipping {f.__name__}")
-            return None
-        return f(*args, **kwargs)
-    return decorated
 
 class APlusTradingClient(discord.Client):
     """A+ Trading Discord client to monitor and send messages."""
@@ -146,7 +131,6 @@ class APlusTradingClient(discord.Client):
         """Wait until the bot is ready before starting the task loop."""
         await self.wait_until_ready()
 
-@requires_discord
 def initialize_discord_client():
     """Initialize the Discord client if credentials are available."""
     global discord_client
@@ -180,7 +164,6 @@ def initialize_discord_client():
         logger.error(f"Error initializing Discord client: {e}")
         return False
 
-@requires_discord
 def send_message(channel_id: int, message: str) -> bool:
     """
     Send a message to a Discord channel.
@@ -214,7 +197,6 @@ def send_message(channel_id: int, message: str) -> bool:
         logger.error(f"Failed to send message: {e}")
         return False
 
-@requires_discord
 def send_bot_message(message: str) -> bool:
     """
     Send a message to the bot dialogue channel.
@@ -231,7 +213,6 @@ def send_bot_message(message: str) -> bool:
     
     return send_message(CHANNEL_BOT_DIALOGUE_ID, message)
 
-@requires_discord
 def send_status_update(message: str) -> bool:
     """
     Send a status update to the bot dialogue channel.
@@ -245,7 +226,6 @@ def send_status_update(message: str) -> bool:
     formatted_message = f"**Status Update**: {message}"
     return send_bot_message(formatted_message)
 
-@requires_discord
 def send_trade_alert(symbol: str, alert_type: str, details: str) -> bool:
     """
     Send a trade alert to the bot dialogue channel.
@@ -261,7 +241,6 @@ def send_trade_alert(symbol: str, alert_type: str, details: str) -> bool:
     formatted_message = f"**Trade Alert [{symbol}]**: {alert_type}\n{details}"
     return send_bot_message(formatted_message)
 
-@requires_discord
 def send_error_notification(error_type: str, details: str) -> bool:
     """
     Send an error notification to the bot dialogue channel.
@@ -276,7 +255,6 @@ def send_error_notification(error_type: str, details: str) -> bool:
     formatted_message = f"**Error [{error_type}]**: {details}"
     return send_bot_message(formatted_message)
 
-@requires_discord
 def send_test_message(message: str) -> bool:
     """
     Send a message to the test channel.
@@ -297,7 +275,6 @@ def is_client_ready() -> bool:
     """Check if the Discord client is ready."""
     return client_ready
 
-@requires_discord
 def get_channel_messages() -> List[dict]:
     """
     Get recent messages from the A+ setups channel.
