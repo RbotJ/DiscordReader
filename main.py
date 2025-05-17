@@ -200,12 +200,17 @@ def register_routes(app):
         """Trading dashboard page."""
         return render_template('dashboard.html', title="Trading Dashboard")
     
-    @app.route('/setup')
-    def setup():
-        """Setup submission page."""
-        return render_template('setup.html', title="Create Setup")
+    @app.route('/recent-setups')
+    def recent_setups():
+        """Recent setups page displaying messages from Discord."""
+        return render_template('recent_setups.html', title="Recent Trading Setups")
     
     # API endpoints for the dashboard
+    @app.route('/setup/<int:setup_id>')
+    def setup_detail(setup_id):
+        """View details of a specific setup."""
+        return render_template('setup_detail.html', title="Setup Details")
+        
     @app.route('/api/tickers')
     def get_tickers():
         """

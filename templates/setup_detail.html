@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Details - A+ Trading Platform</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .signal-card {
+            margin-bottom: 1rem;
+            border-left: 4px solid #0d6efd;
+        }
+        .signal-card.breakout {
+            border-left-color: #198754;
+        }
+        .signal-card.breakdown {
+            border-left-color: #dc3545;
+        }
+        .signal-card.rejection {
+            border-left-color: #fd7e14;
+        }
+        .signal-card.bounce {
+            border-left-color: #6f42c1;
+        }
+        .setup-message {
+            white-space: pre-wrap;
+            font-family: monospace;
+            background-color: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 0.25rem;
+        }
+        .target-list {
+            margin-bottom: 0;
+        }
+        .target-list li {
+            margin-bottom: 0.25rem;
+        }
+        .bias-card {
+            border-left: 4px solid #0dcaf0;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">A+ Trading</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/recent-setups">Recent Setups</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h1 class="mb-0">Trading Setup Details</h1>
+                    <a href="/recent-setups" class="btn btn-outline-secondary">Back to List</a>
+                </div>
+                <hr>
+            </div>
+        </div>
+
+        <div id="setupDetails" class="loading">
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading setup details...</p>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-center text-white mt-5 py-4">
+        <div class="container">
+            <p>© 2025 A+ Trading Platform</p>
+        </div>
+    </footer>
+
+    <template id="setupTemplate">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between">
+                        <div>
+                            <h2 class="h5 mb-0">Setup #<span id="setupId"></span></h2>
+                            <div class="text-muted small" id="setupDate"></div>
+                        </div>
+                        <span class="badge bg-secondary" id="setupSource"></span>
+                    </div>
+                    <div class="card-body">
+                        <h3 class="h6 mb-3">Original Message:</h3>
+                        <div class="setup-message mb-4" id="setupMessage"></div>
+                    </div>
+                </div>
+
+                <div id="tickerSetups"></div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h2 class="h5 mb-0">Available Tickers</h2>
+                    </div>
+                    <div class="card-body">
+                        <div id="tickerList" class="d-flex flex-wrap"></div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="h5 mb-0">Information</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>These trading setups are automatically received from Discord channels and processed by our system to extract actionable trading signals.</p>
+                        <p>Each signal can be monitored on the trading dashboard to track price action relative to the identified levels.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tickerSetupTemplate">
+        <div class="ticker-setup mb-4">
+            <h3 class="h4 mb-3 ticker-symbol"></h3>
+            <div class="signals-container"></div>
+        </div>
+    </template>
+
+    <template id="signalTemplate">
+        <div class="card signal-card mb-3">
+            <div class="card-header">
+                <h4 class="h6 mb-0 signal-title"></h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p class="mb-2"><strong>Trigger:</strong> <span class="signal-trigger"></span></p>
+                        <p class="mb-0"><strong>Aggressiveness:</strong> <span class="signal-aggressiveness"></span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="mb-2"><strong>Targets:</strong></p>
+                        <ul class="target-list signal-targets"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="biasTemplate">
+        <div class="card bias-card mb-3">
+            <div class="card-header">
+                <h4 class="h6 mb-0">Market Bias</h4>
+            </div>
+            <div class="card-body">
+                <p class="mb-2"><strong>Direction:</strong> <span class="bias-direction"></span></p>
+                <p class="mb-2"><strong>Condition:</strong> <span class="bias-condition"></span> <span class="bias-price"></span></p>
+                <div class="bias-flip-info"></div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get setup ID from URL
+            const pathSegments = window.location.pathname.split('/');
+            const setupId = pathSegments[pathSegments.length - 1];
+            
+            if (setupId && !isNaN(parseInt(setupId))) {
+                fetchSetupDetails(setupId);
+            } else {
+                showError('Invalid setup ID. Please go back and select a valid setup.');
+            }
+        });
+
+        function fetchSetupDetails(setupId) {
+            fetch(`/api/setups/${setupId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        displaySetupDetails(data.data);
+                    } else {
+                        showError(data.message || 'Failed to load setup details');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching setup details:', error);
+                    showError('Error connecting to server. Please try again later.');
+                });
+        }
+
+        function displaySetupDetails(setup) {
+            const container = document.getElementById('setupDetails');
+            container.innerHTML = '';
+            
+            // Clone the template
+            const template = document.getElementById('setupTemplate');
+            const content = template.content.cloneNode(true);
+            
+            // Fill in the basic setup details
+            content.getElementById('setupId').textContent = setup.id;
+            content.getElementById('setupDate').textContent = formatDate(setup.date);
+            content.getElementById('setupSource').textContent = setup.source;
+            content.getElementById('setupMessage').textContent = setup.raw_text;
+            
+            // Add tickers to the ticker list
+            const tickerList = content.getElementById('tickerList');
+            setup.ticker_setups.forEach(ts => {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-primary me-2 mb-2';
+                badge.textContent = ts.symbol;
+                tickerList.appendChild(badge);
+            });
+            
+            // Add ticker setups
+            const tickerSetupsContainer = content.getElementById('tickerSetups');
+            setup.ticker_setups.forEach(ts => {
+                const tickerSetup = createTickerSetup(ts);
+                tickerSetupsContainer.appendChild(tickerSetup);
+            });
+            
+            container.appendChild(content);
+        }
+
+        function createTickerSetup(tickerSetup) {
+            const template = document.getElementById('tickerSetupTemplate');
+            const content = template.content.cloneNode(true);
+            
+            // Set ticker symbol
+            content.querySelector('.ticker-symbol').textContent = tickerSetup.symbol;
+            
+            const signalsContainer = content.querySelector('.signals-container');
+            
+            // Add bias if present
+            if (tickerSetup.bias) {
+                const biasElement = createBias(tickerSetup.bias);
+                signalsContainer.appendChild(biasElement);
+            }
+            
+            // Add signals
+            tickerSetup.signals.forEach(signal => {
+                const signalElement = createSignal(signal);
+                signalsContainer.appendChild(signalElement);
+            });
+            
+            return content;
+        }
+
+        function createSignal(signal) {
+            const template = document.getElementById('signalTemplate');
+            const content = template.content.cloneNode(true);
+            
+            const categoryClass = signal.category.toLowerCase();
+            content.querySelector('.signal-card').classList.add(categoryClass);
+            
+            // Set signal details
+            content.querySelector('.signal-title').textContent = getSignalTitle(signal);
+            content.querySelector('.signal-trigger').textContent = formatTrigger(signal);
+            content.querySelector('.signal-aggressiveness').textContent = signal.aggressiveness.replace('_', ' ');
+            
+            // Add targets
+            const targetsList = content.querySelector('.signal-targets');
+            signal.targets.forEach((target, index) => {
+                const li = document.createElement('li');
+                li.textContent = `Target ${index + 1}: ${target}`;
+                targetsList.appendChild(li);
+            });
+            
+            return content;
+        }
+
+        function createBias(bias) {
+            const template = document.getElementById('biasTemplate');
+            const content = template.content.cloneNode(true);
+            
+            // Set bias details
+            content.querySelector('.bias-direction').textContent = bias.direction;
+            content.querySelector('.bias-condition').textContent = formatCondition(bias.condition);
+            content.querySelector('.bias-price').textContent = bias.price;
+            
+            // Add bias flip info if present
+            if (bias.flip) {
+                const flipInfo = content.querySelector('.bias-flip-info');
+                flipInfo.innerHTML = `<p class="mb-0 mt-2"><strong>Flip:</strong> ${bias.flip.direction} on ${bias.flip.price_level}</p>`;
+            }
+            
+            return content;
+        }
+
+        function formatTrigger(signal) {
+            if (typeof signal.trigger === 'object' && signal.trigger.price) {
+                return `${formatCondition(signal.comparison)} ${signal.trigger.price}`;
+            } else {
+                return `${formatCondition(signal.comparison)} ${signal.trigger}`;
+            }
+        }
+
+        function formatCondition(condition) {
+            switch (condition) {
+                case 'ABOVE': return 'Above';
+                case 'BELOW': return 'Below';
+                case 'NEAR': return 'Near';
+                case 'RANGE': return 'In range';
+                default: return condition;
+            }
+        }
+
+        function getSignalTitle(signal) {
+            const category = signal.category.charAt(0) + signal.category.slice(1).toLowerCase();
+            return `${category} Signal`;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { 
+                weekday: 'long',
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+        }
+
+        function showError(message) {
+            const container = document.getElementById('setupDetails');
+            container.innerHTML = `
+                <div class="alert alert-danger">
+                    <h4>Error</h4>
+                    <p>${message}</p>
+                    <a href="/recent-setups" class="btn btn-outline-danger">Back to Recent Setups</a>
+                </div>
+            `;
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
