@@ -114,6 +114,72 @@ def register_routes(app):
             "app": os.environ.get("REPL_SLUG", "aplus-trading-app"),
             "version": "0.1.0"
         })
+        
+    @app.route('/api/test')
+    def api_test():
+        """Test API endpoints."""
+        results = {}
+        
+        # Test account endpoint
+        try:
+            from features.alpaca.client import get_account_info
+            account = get_account_info()
+            results['account'] = {
+                'status': 'success',
+                'data': account
+            }
+        except Exception as e:
+            results['account'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            
+        # Test positions endpoint
+        try:
+            from features.alpaca.client import get_positions
+            positions = get_positions()
+            results['positions'] = {
+                'status': 'success',
+                'count': len(positions),
+                'data': positions[:2] if positions else []  # Show first 2 positions only
+            }
+        except Exception as e:
+            results['positions'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            
+        # Test candles endpoint
+        try:
+            from features.alpaca.client import get_bars
+            candles = get_bars('SPY', '1Min', 10)
+            results['candles'] = {
+                'status': 'success',
+                'count': len(candles),
+                'data': candles[:2] if candles else []  # Show only first 2 candles
+            }
+        except Exception as e:
+            results['candles'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            
+        # Test signals endpoint
+        try:
+            from features.strategy import get_candle_signals
+            signals = get_candle_signals('SPY')
+            results['signals'] = {
+                'status': 'success',
+                'count': len(signals) if signals else 0,
+                'data': signals[:2] if signals else []  # Show only first 2 signals
+            }
+        except Exception as e:
+            results['signals'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            
+        return jsonify(results)
     
     # Add main application routes
     @app.route('/')
