@@ -550,6 +550,17 @@ def initialize_app_components():
     except ImportError as e:
         logging.warning(f"Could not initialize Discord integration: {e}")
 
+    # Initialize message consumer service
+    try:
+        from features.setups.consumer_service import start_message_consumer_service
+        success = start_message_consumer_service()
+        if success:
+            logging.info("Discord message consumer service initialized")
+        else:
+            logging.warning("Discord message consumer service initialization failed")
+    except ImportError as e:
+        logging.warning(f"Could not initialize Discord message consumer service: {e}")
+
     # Initialize market data components
     try:
         from features.market.price_monitor import init_price_monitor

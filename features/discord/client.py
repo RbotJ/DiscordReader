@@ -106,7 +106,31 @@ class APlusTradingClient(discord.Client):
         if message.author == self.user:
             return
             
-        # Process message through all handlers
+        try:
+            # Publish raw message to Redis
+            publish_raw_discord_message(
+                message_id=str(message.id),
+                content=message.content,
+                author=message.author.name if message.author else "unknown",
+                timestamp=message.created_at,
+                channel_id=str(message.channel.id) if message.channel else "unknown"
+            )
+            
+            # Check if message looks like a trading setup
+            if "A+ Trade Setups" in message.content:
+                logger.info(f"Publishing setup message to Redis: {message.id}")
+                publish_setup_message(
+                    message_id=str(message.id),
+                    content=message.content,
+                    author=message.author.name if message.author else "unknown",
+                    timestamp=message.created_at,
+                    channel_id=str(message.channel.id) if message.channel else "unknown",
+                    is_setup=True
+                )
+        except Exception as e:
+            logger.error(f"Error publishing message to Redis: {e}")
+            
+        # Process message through all handlers for backward compatibility
         for handler in message_handlers:
             try:
                 handler(message)
@@ -130,16 +154,29 @@ class APlusTradingClient(discord.Client):
             async for message in channel.history(after=self.last_checked_time, limit=20):
                 # Check if message has content and is not from our bot
                 if message.content and message.author != self.user:
-                    # Check if message looks like a trading setup
-                    if "A+ Trade Setups" in message.content:
-                        # Call all setup callbacks
-                        logger.info(f"Found new trading setup message: {message.id}")
-                        for callback in setup_message_callbacks:
-                            try:
-                                # Pass message content and timestamp to callback
-                                callback(message.content, message.created_at)
-                            except Exception as e:
-                                logger.error(f"Error in setup message callback: {e}")
+                    try:
+                        # Check if message looks like a trading setup
+                        if "A+ Trade Setups" in message.content:
+                            # Publish to Redis for processing in the vertical slice architecture
+                            logger.info(f"Found new trading setup message: {message.id}")
+                            publish_setup_message(
+                                message_id=str(message.id),
+                                content=message.content,
+                                author=message.author.name if message.author else "unknown",
+                                timestamp=message.created_at,
+                                channel_id=str(message.channel.id) if message.channel else "unknown",
+                                is_setup=True
+                            )
+                            
+                            # Call all setup callbacks for backward compatibility
+                            for callback in setup_message_callbacks:
+                                try:
+                                    # Pass message content and timestamp to callback
+                                    callback(message.content, message.created_at)
+                                except Exception as e:
+                                    logger.error(f"Error in setup message callback: {e}")
+                    except Exception as e:
+                        logger.error(f"Error publishing historical message to Redis: {e}")
             
             # Update the last checked time
             self.last_checked_time = current_time
