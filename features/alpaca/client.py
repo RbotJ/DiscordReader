@@ -498,6 +498,23 @@ def get_latest_quote(symbol: str) -> Optional[Dict]:
         logger.error(f"Error getting latest quote for {symbol}: {e}")
         return None
 
+def get_bars(ticker: str, timeframe: str = '1Min', limit: int = 100) -> List[Dict]:
+    """
+    Get the latest bars for a ticker symbol.
+    
+    Args:
+        ticker: Ticker symbol
+        timeframe: Bar timeframe ('1Min', '5Min', '15Min', etc.)
+        limit: Number of bars to retrieve
+        
+    Returns:
+        List of bar dictionaries
+    """
+    results = get_latest_bars(ticker, timeframe, limit)
+    if ticker in results and results[ticker]:
+        return results[ticker]
+    return []
+
 def get_latest_bars(symbols: Union[List[str], str], timeframe: str = '1Day', limit: int = 10) -> Dict[str, List[Dict]]:
     """
     Get the latest bars for symbols.

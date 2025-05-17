@@ -248,37 +248,45 @@ def register_routes(app):
                 logging.warning(f"Could not import candle signals module for {ticker}")
             
             # Fall back to database signals if no active candle signals
-            from models import TickerSetup, Signal
-            
-            # Get the most recent ticker setup
-            ticker_setup = TickerSetup.query.filter_by(symbol=ticker).order_by(TickerSetup.id.desc()).first()
-            
-            if not ticker_setup:
+            try:
+                from models import TickerSetup, Signal
+                
+                # Get the most recent ticker setup
+                ticker_setup = TickerSetup.query.filter_by(symbol=ticker).order_by(TickerSetup.id.desc()).first()
+                
+                if not ticker_setup:
+                    return jsonify([])
+                
+                # Get signals for the ticker setup
+                signals = Signal.query.filter_by(ticker_setup_id=ticker_setup.id).all()
+                
+                if not signals:
+                    return jsonify([])
+                
+                # Convert database signals to API format
+                signal_list = []
+                for signal in signals:
+                    try:
+                        signal_data = {
+                            'id': signal.id,
+                            'ticker': ticker,
+                            'category': signal.category.value if hasattr(signal.category, 'value') else str(signal.category),
+                            'aggressiveness': signal.aggressiveness.value if hasattr(signal.aggressiveness, 'value') else str(signal.aggressiveness),
+                            'comparison': signal.comparison.value if hasattr(signal.comparison, 'value') else str(signal.comparison),
+                            'trigger': signal.trigger,
+                            'targets': signal.targets,
+                            'status': 'pending',  # Default status
+                            'source': 'database'
+                        }
+                        signal_list.append(signal_data)
+                    except Exception as signal_error:
+                        logging.error(f"Error processing signal {signal.id}: {signal_error}")
+                        continue
+                
+                return jsonify(signal_list)
+            except Exception as db_error:
+                logging.error(f"Database error fetching signals for {ticker}: {db_error}")
                 return jsonify([])
-            
-            # Get signals for the ticker setup
-            signals = Signal.query.filter_by(ticker_setup_id=ticker_setup.id).all()
-            
-            if not signals:
-                return jsonify([])
-            
-            # Convert database signals to API format
-            signal_list = []
-            for signal in signals:
-                signal_data = {
-                    'id': signal.id,
-                    'ticker': ticker,
-                    'category': signal.category.value,
-                    'aggressiveness': signal.aggressiveness.value,
-                    'comparison': signal.comparison.value,
-                    'trigger': signal.trigger,
-                    'targets': signal.targets,
-                    'status': 'pending',  # Default status
-                    'source': 'database'
-                }
-                signal_list.append(signal_data)
-            
-            return jsonify(signal_list)
         except Exception as e:
             logging.error(f"Error fetching signals for {ticker}: {e}")
             return jsonify([])
