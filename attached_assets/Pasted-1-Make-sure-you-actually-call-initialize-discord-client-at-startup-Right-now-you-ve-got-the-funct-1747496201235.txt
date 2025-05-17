@@ -1,0 +1,46 @@
+1. Make sure you actually call initialize_discord_client() at startup
+Right now you’ve got the function, but wherever you import this module you need to do something like:
+
+python
+Copy
+Edit
+# e.g. in your main app startup
+from discord_client_module import initialize_discord_client
+initialize_discord_client()
+so that the bot thread actually spins up before you ever try to send messages or fetch.
+
+2. Guard against missing channels in your helper wrappers
+Right now in send_message you bail if get_channel returns None, which is good. You might want to fall back to a fetch_channel there too, in case your bot wasn’t in the guild at boot and needs to re‐fetch:
+
+python
+Copy
+Edit
+chan = discord_client.get_channel(channel_id)
+if chan is None:
+    try:
+        chan = discord_client.fetch_channel(channel_id)
+    except Exception:
+        logger.error(f"Couldn’t fetch channel {channel_id}")
+        return False
+That’ll make send_test_message more robust if you add/remove channels on the fly.
+
+3. Tighten up your “last checked” logic in get_channel_messages
+You’re currently returning the last 20 messages unconditionally. Since you already track last_checked_time in your check_for_setups loop, you could accept an optional after: datetime parameter to get_channel_messages, or use the same last_checked_time field, so you don’t re‐read the same 20 over and over.
+
+4. Consider graceful shutdown
+Because you spun the bot up in a daemon thread, it’ll happily die when your main process exits—but if you ever want to restart or clean up, you may want an explicit:
+
+python
+Copy
+Edit
+def shutdown_discord_client():
+    if discord_client and client_ready:
+        asyncio.run_coroutine_threadsafe(discord_client.close(),
+                                         discord_client.loop)
+so you can stop the loop cleanly.
+
+5. Small stylistic nits
+You’ve removed the requires_discord decorator; since each function now checks client_ready + discord_client, you can drop any leftover unused imports.
+
+The various send_* helpers all funnel through send_bot_message → send_message, so you might merge send_status_update, send_trade_alert, etc., into a single helper that takes a formatted string or even a small enum. But that’s micro‐refactoring.
+
