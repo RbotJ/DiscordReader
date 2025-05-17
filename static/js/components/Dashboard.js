@@ -58,6 +58,8 @@ function Dashboard({ account, loading, error }) {
   const chartCounter = useRef(0);
   // Used to dedupe exact same messages
   const seenEventSignatures = useRef(new Set());
+  
+  const generateStableId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   useEffect(() => {
     setDashboardState({
@@ -108,7 +110,7 @@ function Dashboard({ account, loading, error }) {
       .then(data => {
         if (Array.isArray(data)) {
             const tickersWithIds = Array.from(new Set(data)).map(ticker => ({
-              id: `ticker-${Math.random().toString(36).slice(2)}-${Date.now()}`,
+              id: generateStableId('ticker'),
               symbol: ticker
             }));
             setDashboardState(s => ({ ...s, tickers: tickersWithIds }));
@@ -152,7 +154,7 @@ function Dashboard({ account, loading, error }) {
     seenEventSignatures.current.add(signature);
 
     const event = {
-      id: `evt-${Date.now()}-${++eventCounter.current}`,
+      id: `evt-${++eventCounter.current}`,
       timestamp: new Date().toISOString(),
       type,
       message
