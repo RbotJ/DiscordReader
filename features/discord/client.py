@@ -77,7 +77,6 @@ class APlusTradingClient(discord.Client):
         intents = discord.Intents.default()
         intents.message_content = True  # Enable message content intent
         super().__init__(intents=intents, *args, **kwargs)
-        self.setup_checks = self.check_for_setups.start()
         self.last_checked_time = datetime.utcnow() - timedelta(hours=24)  # Start by checking last 24h
         
     async def on_ready(self):
@@ -85,6 +84,7 @@ class APlusTradingClient(discord.Client):
         global client_ready
         client_ready = True
         logger.info(f'Discord bot logged in as {self.user}')
+        self.check_for_setups.start()
         
         # Send a message to the bot dialogue channel
         if CHANNEL_BOT_DIALOGUE_ID:
