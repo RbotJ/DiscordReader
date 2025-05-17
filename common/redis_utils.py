@@ -6,12 +6,13 @@ for reliable event handling even when Redis is not available.
 """
 import json
 import logging
+import os
 import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime
 from queue import Queue, Empty
-from typing import Any, Dict, List, Set, Optional, Union, Callable, Deque
+from typing import Any, Dict, List, Set, Optional, Union, Callable, Deque, TypeVar, Generic
 
 import redis
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -19,11 +20,11 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 # Configure logger
 logger = logging.getLogger(__name__)
 
-# Redis configuration
-REDIS_HOST = "127.0.0.1"
-REDIS_PORT = 6379
-REDIS_DB = 0
-REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+# Redis configuration from environment or defaults
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+REDIS_DB = int(os.environ.get("REDIS_DB", "0"))
+REDIS_URL = os.environ.get("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
 
 # Maximum number of messages to store in memory (per channel)
 MAX_FALLBACK_MESSAGES = 1000
@@ -36,6 +37,9 @@ _fallback_messages: Dict[str, Deque[Dict[str, Any]]] = defaultdict(
 
 # In-memory key-value store for fallback get/set operations
 _fallback_kv_store: Dict[str, Any] = {}
+
+# In-memory key expiration data for TTL support
+_fallback_expiry: Dict[str, float] = {}
 
 # Subscribers for fallback mode
 # Structure: {channel: [callback_functions]}
@@ -52,33 +56,8 @@ except Exception as e:
     logger.warning(f"Failed to initialize Redis connection pool: {e}")
     _redis_pool = None
 
-def _start_redis_server() -> bool:
-    """
-    Attempt to start the Redis server if it's not running.
-    
-    Returns:
-        bool: True if Redis server started successfully, False otherwise
-    """
-    try:
-        # Try to start Redis server using the script
-        result = subprocess.run(
-            ["bash", "./start_redis.sh"],
-            capture_output=True,
-            text=True,
-            timeout=5.0
-        )
-        
-        if result.returncode == 0:
-            logger.info("Redis server started successfully")
-            # Give it a moment to initialize
-            time.sleep(1)
-            return True
-        else:
-            logger.error(f"Failed to start Redis server: {result.stderr}")
-            return False
-    except Exception as e:
-        logger.error(f"Error starting Redis server: {e}")
-        return False
+# Type variable for Redis client interface
+T = TypeVar('T')
 
 class FallbackPubSub:
     """
@@ -134,6 +113,19 @@ class FallbackPubSub:
         except Empty:
             return None
     
+    def subscribe(self, *channels) -> None:
+        """
+        Subscribe to additional channels.
+        
+        Args:
+            *channels: Channel names to subscribe to
+        """
+        with _fallback_lock:
+            for channel in channels:
+                self.channels.add(channel)
+                if self._message_callback not in _fallback_subscribers[channel]:
+                    _fallback_subscribers[channel].append(self._message_callback)
+    
     def unsubscribe(self, *args) -> None:
         """
         Unsubscribe from channels.
@@ -160,6 +152,178 @@ class FallbackPubSub:
         """
         self.unsubscribe()
         self.running = False
+        
+    def run_in_thread(self, sleep_time: float = 0.1) -> threading.Thread:
+        """
+        Run the PubSub listener in a background thread.
+        
+        Args:
+            sleep_time: Sleep time between checking for messages
+            
+        Returns:
+            Thread object
+        """
+        def listener_thread():
+            while getattr(thread, "running", True):
+                message = self.get_message(timeout=sleep_time)
+                if message:
+                    # Process message if a callback was provided
+                    if hasattr(thread, "callback") and thread.callback:
+                        try:
+                            thread.callback(message)
+                        except Exception as e:
+                            logger.error(f"Error in pubsub callback: {e}")
+                time.sleep(0.001)  # Tiny sleep to prevent CPU hogging
+            
+            # Clean up when thread is stopped
+            self.close()
+        
+        thread = threading.Thread(target=listener_thread, daemon=True)
+        thread.running = True
+        thread.callback = None
+        thread.stop = lambda: setattr(thread, "running", False)
+        thread.start()
+        
+        return thread
+
+
+class InMemoryRedisClient:
+    """
+    In-memory implementation of Redis client interface.
+    Used as a fallback when Redis is not available.
+    """
+    
+    def __init__(self):
+        """Initialize the in-memory Redis client."""
+        self.pubsub_threads = []
+    
+    def get(self, key: str) -> Optional[str]:
+        """
+        Get a value from the in-memory store.
+        
+        Args:
+            key: Key to retrieve
+            
+        Returns:
+            Value or None if not found or expired
+        """
+        with _fallback_lock:
+            # Check if key exists and is not expired
+            if key in _fallback_kv_store:
+                # Check expiration
+                if key in _fallback_expiry and time.time() > _fallback_expiry[key]:
+                    # Key has expired
+                    del _fallback_kv_store[key]
+                    del _fallback_expiry[key]
+                    return None
+                
+                value = _fallback_kv_store[key]
+                # Convert to string if needed to match Redis behavior
+                return str(value) if value is not None else None
+            return None
+    
+    def set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
+        """
+        Set a value in the in-memory store.
+        
+        Args:
+            key: Key to set
+            value: Value to store
+            ex: Expiration time in seconds
+            
+        Returns:
+            True if successful
+        """
+        with _fallback_lock:
+            _fallback_kv_store[key] = value
+            
+            # Set expiration if provided
+            if ex is not None:
+                _fallback_expiry[key] = time.time() + ex
+                
+        return True
+        
+    def delete(self, key: str) -> bool:
+        """
+        Delete a key from the in-memory store.
+        
+        Args:
+            key: Key to delete
+            
+        Returns:
+            True if deleted, False if key not found
+        """
+        with _fallback_lock:
+            if key in _fallback_kv_store:
+                del _fallback_kv_store[key]
+                if key in _fallback_expiry:
+                    del _fallback_expiry[key]
+                return True
+            return False
+    
+    def publish(self, channel: str, data: Union[Dict[str, Any], str]) -> bool:
+        """
+        Publish a message to a channel in the in-memory messaging system.
+        
+        Args:
+            channel: Channel name
+            data: Message data
+            
+        Returns:
+            True if successful
+        """
+        # Convert data to JSON string if it's a dictionary
+        if isinstance(data, dict):
+            try:
+                message_data = json.dumps(data)
+            except Exception as e:
+                logger.error(f"Error serializing message data: {e}")
+                return False
+        else:
+            message_data = data
+            
+        # Create message structure
+        message = {
+            "type": "message",
+            "pattern": None,
+            "channel": channel,
+            "data": message_data
+        }
+        
+        # Add to fallback messages queue
+        with _fallback_lock:
+            _fallback_messages[channel].append(message)
+            
+            # Notify subscribers
+            for callback in _fallback_subscribers[channel]:
+                try:
+                    callback(message)
+                except Exception as e:
+                    logger.error(f"Error in subscriber callback: {e}")
+        
+        return True
+    
+    def pubsub(self) -> FallbackPubSub:
+        """
+        Get a pubsub object for the in-memory messaging system.
+        
+        Returns:
+            FallbackPubSub instance
+        """
+        return FallbackPubSub([])
+    
+    def subscribe(self, *channels) -> FallbackPubSub:
+        """
+        Subscribe to channels.
+        
+        Args:
+            *channels: Channel names
+            
+        Returns:
+            FallbackPubSub instance
+        """
+        pubsub = FallbackPubSub(channels)
+        return pubsub
 
 class RedisClient:
     """
@@ -313,13 +477,27 @@ class RedisClient:
         """
         if not self.fallback_mode and self.client:
             try:
-                return self.client.get(key)
+                value = self.client.get(key)
+                if value is not None and isinstance(value, bytes):
+                    return value.decode('utf-8')
+                return value
             except Exception as e:
                 logger.error(f"Error getting value from Redis: {e}")
                 # Switch to fallback mode on error
                 self.fallback_mode = True
         
-        # No fallback for get operation
+        # Use fallback key-value store
+        with _fallback_lock:
+            # Check if key exists and is not expired
+            if key in _fallback_kv_store:
+                # Check expiration
+                if key in _fallback_expiry and time.time() > _fallback_expiry[key]:
+                    # Key has expired
+                    del _fallback_kv_store[key]
+                    del _fallback_expiry[key]
+                    return None
+                
+                return str(_fallback_kv_store[key])
         return None
     
     def set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
@@ -343,8 +521,15 @@ class RedisClient:
                 # Switch to fallback mode on error
                 self.fallback_mode = True
         
-        # No fallback for set operation
-        return False
+        # Use fallback key-value store
+        with _fallback_lock:
+            _fallback_kv_store[key] = value
+            
+            # Set expiration if provided
+            if ex is not None:
+                _fallback_expiry[key] = time.time() + ex
+                
+        return True
 
 def ensure_redis_is_running() -> bool:
     """
