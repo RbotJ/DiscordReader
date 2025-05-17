@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app import db
 from models import (
     SetupMessage, 
-    TickerSetup, 
+    TickerSetup as DBTickerSetup,  # Rename to avoid conflict
     Signal, 
     Bias, 
     BiasFlip,

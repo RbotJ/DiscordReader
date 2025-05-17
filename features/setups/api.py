@@ -190,9 +190,17 @@ def add_sample_data():
         processed_count = 0
         for message in messages[:5]:  # Process up to 5 messages
             try:
-                # Process the message text
-                result = process_setup_message(message['content'], source='discord')
-                processed_count += 1
+                # Process the message text with its timestamp
+                result = process_setup_message(
+                    text=message['content'], 
+                    message_date=message['timestamp'].date() if 'timestamp' in message else None,
+                    source='discord'
+                )
+                
+                # Only count if successful
+                if result.get('status') == 'success':
+                    processed_count += 1
+                    logger.info(f"Successfully processed message with {len(result.get('tickers', []))} tickers: {result.get('tickers', [])}")
             except Exception as e:
                 logger.error(f"Error processing Discord message: {e}")
                 
