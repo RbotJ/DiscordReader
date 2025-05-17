@@ -52,6 +52,7 @@ function Dashboard({ account, loading, error }) {
   const seenEventSignatures = useRef(new Set());
   
   // Global counter for each ID namespace to guarantee uniqueness
+  // These will be used to ensure truly unique IDs
   const counters = useRef({
     ticker: 0,
     chart: 0,
@@ -77,13 +78,14 @@ function Dashboard({ account, loading, error }) {
     // Increment the namespace-specific counter
     counters.current[prefix]++;
     
-    // Combine all sources of uniqueness
-    const timestamp = Date.now();
-    const counter = counters.current[prefix];
-    const random = Math.random().toString(36).slice(2, 10);
+    // Use a UUID-like approach to ensure uniqueness
+    // Counter is enough to guarantee uniqueness even if two are created in the same millisecond
+    const staticPart = `${prefix}-${counters.current[prefix]}`;
     
-    // Make sure the result is a completely unique string by combining all parts
-    return `${prefix}_${timestamp}_${counter}_${random}`;
+    // Add additional randomness to make collisions astronomically unlikely
+    const randomPart = Math.random().toString(36).substring(2, 10);
+    
+    return `${staticPart}-${randomPart}`;
   }, []);
 
   useEffect(() => {
@@ -127,24 +129,29 @@ function Dashboard({ account, loading, error }) {
 
     setSocket(newSocket);
     return () => newSocket.disconnect();
-  }, []);
+  }, [addEvent]);
 
   useEffect(() => {
     fetch('/api/tickers')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
-            const tickersWithIds = Array.from(new Set(data)).map(ticker => ({
-              id: generateStableId('ticker'),
+            // Make sure tickers are unique first
+            const uniqueTickers = Array.from(new Set(data));
+            
+            // Add stable IDs to each ticker - with index as additional uniqueness guarantee
+            const tickersWithIds = uniqueTickers.map((ticker, index) => ({
+              id: `ticker-${index}-${generateStableId('ticker')}`, // Extra uniqueness with index and stable ID
               symbol: ticker
             }));
+            
             setDashboardState(s => ({ ...s, tickers: tickersWithIds }));
         } else {
           addEvent('error', 'Tickers API returned bad format');
         }
       })
       .catch(() => addEvent('error', 'Failed to load tickers'));
-  }, []);
+  }, [addEvent, generateStableId]);
 
   useEffect(() => {
     fetch('/api/positions')
@@ -157,6 +164,9 @@ function Dashboard({ account, loading, error }) {
   }, []);
 
   const addEvent = useCallback((type, rawMessage) => {
+    // Generate a unique counter-based ID first to guarantee uniqueness
+    const uniqueCounter = counters.current.event = (counters.current.event || 0) + 1;
+    
     // Convert any message to a safe string representation
     let message;
     if (rawMessage == null) {
@@ -178,19 +188,24 @@ function Dashboard({ account, loading, error }) {
     }
     seenEventSignatures.current.add(signature);
 
-    // Generate a truly unique id for this event using our guaranteed unique ID generator
+    // Create a truly guaranteed unique ID that doesn't depend on timestamp 
+    // This prevents collisions when multiple events are created in the same millisecond
+    const uniqueId = `event-${uniqueCounter}-${Math.random().toString(36).substring(2, 10)}`;
+    
+    // Generate a new event with the guaranteed unique ID
     const event = {
-      id: generateStableId('event'),
+      id: uniqueId,
       timestamp: new Date().toISOString(),
       type,
-      message: message // Ensure message is always a string
+      // Make doubly sure message is always a string
+      message: typeof message === 'string' ? message : String(message)
     };
 
     setDashboardState(s => ({
       ...s,
       events: [event, ...s.events].slice(0, 100) // Keep last 100 events
     }));
-  }, [generateStableId]);
+  }, []);
 
   const handleSubscribeTicker = (ticker) => {
     if (!socket) return;
@@ -203,9 +218,12 @@ function Dashboard({ account, loading, error }) {
         return s; // Already subscribed
       }
 
-      // Add as new chart with guaranteed unique ID using our stable ID generator
+      // Create a genuinely unique ID for the chart with multiple sources of uniqueness
+      const chartId = `chart-${ticker}-${s.activeCharts.length}-${generateStableId('chart')}`;
+      
+      // Add as new chart with guaranteed unique ID 
       const newChart = {
-        id: generateStableId('chart'),
+        id: chartId,
         symbol: ticker
       };
 
