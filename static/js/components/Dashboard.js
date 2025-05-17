@@ -351,7 +351,9 @@ function Dashboard({ account, loading, error }) {
                       }`}>
                         {event.type}
                       </span>
-                      {event.message}
+                      {typeof event.message === 'string' 
+                        ? event.message 
+                        : JSON.stringify(event.message)}
                     </div>
                   ))
                 ) : (
