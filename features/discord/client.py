@@ -315,3 +315,69 @@ def send_test_message(message: str) -> bool:
 def is_client_ready() -> bool:
     """Check if the Discord client is ready."""
     return client_ready
+
+@requires_discord
+def get_channel_messages() -> List[dict]:
+    """
+    Get recent messages from the A+ setups channel.
+    
+    Returns:
+        List of message dictionaries with 'content' and 'timestamp' keys
+    """
+    if not CHANNEL_APLUS_SETUPS_ID:
+        logger.warning("A+ setups channel ID not configured")
+        return []
+    
+    # Sample messages for development/testing
+    # In production, you would use discord.py to fetch actual messages
+    sample_messages = [
+        {
+            'id': '123456789',
+            'content': """
+A+ Trade Setups - Wed, May 15:
+
+1. SPY: Rejection near 520.8. Looking for possible breakdown below 518.2. 
+Targets: 514.5, 512.3
+Bias: Bearish below 520.8
+
+2. AAPL: Breakout above 186.4. Looking for continuation to 190+. 
+Targets: 188.7, 190.2, 192.5
+Bias: Bullish above 186.4
+            """,
+            'timestamp': datetime.utcnow() - timedelta(days=1)
+        },
+        {
+            'id': '123456790',
+            'content': """
+A+ Trade Setups - Thu, May 16:
+
+1. NVDA: Bounce from 950.2 support. Looking for move back to 980-990 range.
+Targets: 965.8, 975.3, 985.7
+Bias: Bullish above 950.2, flips bearish below 945.5
+
+2. TSLA: Breakdown below 174.5. Looking for continuation to 165 area.
+Targets: 170.2, 167.8, 165.3
+Bias: Bearish below 174.5, flips bullish above 177.8
+            """,
+            'timestamp': datetime.utcnow() - timedelta(hours=12)
+        },
+        {
+            'id': '123456791',
+            'content': """
+A+ Trade Setups - Fri, May 17:
+
+1. AMZN: Consolidation in 180-185 range. Watching for breakout direction.
+Targets (breakout): 187.5, 190.0
+Targets (breakdown): 178.5, 175.0
+Bias: Neutral, bullish above 185.0, bearish below 180.0
+
+2. MSFT: Strong rejection at 425.75. Looking for pullback to 415-420 range.
+Targets: 420.5, 417.3, 415.1
+Bias: Bearish below 425.75
+            """,
+            'timestamp': datetime.utcnow() - timedelta(hours=2)
+        }
+    ]
+    
+    logger.info(f"Returning {len(sample_messages)} sample messages from A+ setups channel")
+    return sample_messages

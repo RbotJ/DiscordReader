@@ -175,7 +175,7 @@ def add_sample_data():
             
         # Instead of adding sample data, let's retrieve messages from Discord
         from features.discord.client import get_channel_messages
-        from features.discord.setup_handler import process_setup_message
+        from features.setups.multi_ticker_controller import process_setup_message
         
         # Get messages from the A+ setups channel
         messages = get_channel_messages()
