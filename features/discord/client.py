@@ -355,9 +355,9 @@ def get_channel_messages() -> List[dict]:
                     
                     logger.info(f"Fetching messages from Discord channel: #{channel.name} (ID: {CHANNEL_APLUS_SETUPS_ID})")
                     
-                    # Pull the last few messages (up to 10 to ensure we get some with content)
+                    # Fetch more messages to ensure we capture all the recent trading setups
                     message_count = 0
-                    async for msg in channel.history(limit=10):
+                    async for msg in channel.history(limit=20):
                         # Include all messages, even if they have empty content
                         # This way, we can see what's actually in the channel
                         message_count += 1
@@ -384,12 +384,50 @@ def get_channel_messages() -> List[dict]:
                             combined_content += "\n".join(attachments_info + embeds_info)
                         
                         # Check for message_snapshots which might contain the actual content
-                        if not combined_content and hasattr(msg, 'message_snapshots') and msg.message_snapshots:
-                            for snapshot in msg.message_snapshots:
-                                if 'message' in snapshot and 'content' in snapshot['message'] and snapshot['message']['content']:
-                                    combined_content = snapshot['message']['content']
-                                    logger.info(f"Found content in message_snapshots: {combined_content[:50]}...")
-                                    break
+                        # Try to extract content from message_snapshots if regular content is empty
+                        try:
+                            if not combined_content and hasattr(msg, 'message_snapshots'):
+                                # Log the raw message for debugging
+                                logger.debug(f"Raw message: {msg}")
+                                
+                                # Print the type and a sample of the message_snapshots
+                                logger.info(f"message_snapshots type: {type(msg.message_snapshots)}")
+                                
+                                # Try different approaches to access message_snapshots content
+                                if isinstance(msg.message_snapshots, list):
+                                    for snapshot in msg.message_snapshots:
+                                        try:
+                                            # First approach: try as dictionary
+                                            if isinstance(snapshot, dict) and 'message' in snapshot and 'content' in snapshot['message']:
+                                                combined_content = snapshot['message']['content']
+                                                logger.info(f"Found content in message_snapshots dict: {combined_content[:50]}...")
+                                                break
+                                            
+                                            # Second approach: try as object with message attribute
+                                            elif hasattr(snapshot, 'message'):
+                                                if hasattr(snapshot.message, 'content') and snapshot.message.content:
+                                                    combined_content = snapshot.message.content
+                                                    logger.info(f"Found content in snapshot.message.content: {combined_content[:50]}...")
+                                                    break
+                                        except Exception as snapshot_err:
+                                            logger.error(f"Error processing individual snapshot: {snapshot_err}")
+                                else:
+                                    # Try to access as a single snapshot object
+                                    try:
+                                        if hasattr(msg.message_snapshots, 'message'):
+                                            if hasattr(msg.message_snapshots.message, 'content') and msg.message_snapshots.message.content:
+                                                combined_content = msg.message_snapshots.message.content
+                                                logger.info(f"Found content in message_snapshots.message.content: {combined_content[:50]}...")
+                                    except Exception as single_err:
+                                        logger.error(f"Error processing message_snapshots as single object: {single_err}")
+                        except Exception as e:
+                            logger.error(f"Error extracting from message_snapshots: {e}")
+                            # Try to log raw snapshot data if possible
+                            try:
+                                if hasattr(msg, 'message_snapshots'):
+                                    logger.info(f"Message snapshots raw: {str(msg.message_snapshots)[:500]}...")
+                            except:
+                                pass
                         
                         # If still empty, note that it's empty
                         if not combined_content:
