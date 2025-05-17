@@ -1,0 +1,162 @@
+Here are a few spots where you can tighten this up, improve performance and erase those React warnings:
+
+1. Make your socket “stable” with a ref + useCallback
+Right now you do:
+
+js
+Copy
+Edit
+const [socket, setSocket] = useState(null);
+
+useEffect(() => {
+  const newSocket = io({...});
+  newSocket.on(… , () => addEvent(/*…*/));
+  setSocket(newSocket);
+  return () => newSocket.disconnect();
+}, []);
+✨ Improvement
+Don’t put the socket in state (it’ll re-render unnecessarily).
+
+Use a useRef instead, and wrap addEvent in useCallback so your handlers always see the latest function.
+
+jsx
+Copy
+Edit
+const socketRef = useRef(null);
+
+const addEvent = useCallback((type, message) => {
+  setDashboardState(prev => ({
+    ...prev,
+    events: [{ id: Date.now(), timestamp: new Date().toISOString(), type, message }, ...prev.events].slice(0, 100)
+  }));
+}, []); // no need to list dashboardState
+
+useEffect(() => {
+  socketRef.current = io({ … });
+  const s = socketRef.current;
+  s.on('connect',    () => addEvent('system','WebSocket connected'));
+  s.on('disconnect', () => addEvent('system','WebSocket disconnected'));
+  s.on('market_update', data => {
+    if (data?.symbol && data?.price) {
+      addEvent('market', `…`);
+    } else {
+      addEvent('market','Invalid market payload');
+    }
+  });
+  // …
+  return () => { s.off(); s.disconnect(); };
+}, [addEvent]);
+2. Swap your giant useState({...}) for useReducer
+You’re juggling tickers, positions, activeCharts, events in one blob. A small useReducer:
+
+js
+Copy
+Edit
+function reducer(state, { type, payload }) {
+  switch(type) {
+    case 'SET_TICKERS':      return { ...state, tickers: payload };
+    case 'SET_POSITIONS':    return { ...state, positions: payload };
+    case 'ADD_EVENT':        return { ...state, events: [payload, ...state.events].slice(0,100) };
+    case 'SUBSCRIBE_CHART':  return state.activeCharts.includes(payload)
+                                 ? state
+                                 : { ...state, activeCharts: [...state.activeCharts, payload] };
+    case 'UNSUBSCRIBE_CHART':return { ...state, activeCharts: state.activeCharts.filter(t=>t!==payload) };
+    default: return state;
+  }
+}
+
+const [state, dispatch] = useReducer(reducer, {
+  tickers: [], positions: [], activeCharts: [], events: []
+});
+Then in your fetch effects:
+
+js
+Copy
+Edit
+useEffect(() => {
+  fetch('/api/tickers')
+    .then(r=>r.json())
+    .then(data=>dispatch({ type: 'SET_TICKERS', payload: data }))
+    .catch(()=>dispatch({ type:'ADD_EVENT', payload:{…} }));
+}, []);
+And your event helper:
+
+js
+Copy
+Edit
+const addEvent = useCallback((type, message) => {
+  dispatch({ type:'ADD_EVENT', payload:{ id:Date.now(),timestamp:new Date().toISOString(),type,message }});
+}, []);
+3. Give every list item a real, stable key
+Bad: key={ticker} is fine, but
+Worse: your event log falls back to Date.now() + indexOf, which changes every render—and you still get dupes if two events share a millisecond.
+
+Since your events all have a unique id (timestamp at creation), just do:
+
+jsx
+Copy
+Edit
+{state.events.map(evt => (
+  <div key={evt.id} …>
+    {/* … */}
+  </div>
+))}
+No fallback needed, and React won’t complain.
+
+4. Never render raw objects as children
+You already guard:
+
+jsx
+Copy
+Edit
+{typeof event.message==='string'
+  ? event.message
+  : JSON.stringify(event.message)}
+Even better: only ever put strings or numbers in your JSX. If you have a more complex object you want to show, turn it into a compact string in your reducer:
+
+js
+Copy
+Edit
+const msg = typeof data==='object'
+  ? JSON.stringify(data, null, 2)
+  : String(data);
+dispatch({ type:'ADD_EVENT', payload:{… message: msg }});
+Then your render can simply be {evt.message}.
+
+5. Combine your fetch effects (optional)
+Instead of two separate effects for tickers & positions, you could:
+
+jsx
+Copy
+Edit
+useEffect(() => {
+  Promise.all([
+    fetch('/api/tickers').then(r=>r.json()),
+    fetch('/api/positions').then(r=>r.json())
+  ]).then(([tickers, positions]) => {
+    dispatch({type:'SET_TICKERS', payload: tickers});
+    dispatch({type:'SET_POSITIONS', payload: positions});
+  }).catch(e => dispatch({type:'ADD_EVENT', payload:{…}}));
+}, []);
+That reduces duplication, though separate errors might be more user-friendly.
+
+6. Break this giant component into smaller ones
+<TickerSidebar …/>
+
+<ChartsGrid …/>
+
+<EventLog …/>
+
+Each can receive only the bits it needs (tickers, activeCharts, events) and keeps your Dashboard lean.
+
+With those changes you’ll:
+
+Kill the duplicate-key warnings 💥
+
+Keep your handlers always up-to-date (no stale closures) 🔄
+
+Have a more predictable, testable state machine via useReducer 🎛
+
+Split responsibilities into bite-sized subcomponents 🍽
+
+Let me know if you want code snippets for any of those subcomponents!

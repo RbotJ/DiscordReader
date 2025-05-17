@@ -113,20 +113,25 @@ function Dashboard({ account, loading, error }) {
       });
   }, []);
   
-  // Helper to add events to the event log
-  const addEvent = (type, message) => {
+  // Helper to add events to the event log - using useCallback for stability
+  const addEvent = useCallback((type, message) => {
+    // Convert object message to string to avoid React child errors
+    const formattedMessage = typeof message === 'object' 
+      ? JSON.stringify(message || {}) 
+      : String(message || '');
+      
     const event = {
-      id: Date.now(),
+      id: Date.now() + Math.random().toString(36).substr(2, 5), // Ensure true uniqueness
       timestamp: new Date().toISOString(),
       type,
-      message
+      message: formattedMessage
     };
     
     setDashboardState(prev => ({
       ...prev,
       events: [event, ...prev.events].slice(0, 100) // Keep last 100 events
     }));
-  };
+  }, []);
   
   // Handle subscribing to a ticker
   const handleSubscribeTicker = (ticker) => {
@@ -296,7 +301,7 @@ function Dashboard({ account, loading, error }) {
               <div className="list-group list-group-flush event-log" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                 {dashboardState.events.length > 0 ? (
                   dashboardState.events.map(event => (
-                    <div key={event.id || `event-${Date.now()}-${dashboardState.events.indexOf(event)}`} className="list-group-item py-2">
+                    <div key={`event-${event.id}`} className="list-group-item py-2">
                       <small className="text-muted me-2">
                         {new Date(event.timestamp).toLocaleTimeString()}
                       </small>
@@ -309,7 +314,7 @@ function Dashboard({ account, loading, error }) {
                         {event.type}
                       </span>
                       {typeof event.message === 'string' ? event.message : 
-                       typeof event.message === 'object' ? JSON.stringify(event.message) : 
+                       typeof event.message === 'object' ? JSON.stringify(event.message || {}) : 
                        String(event.message || '')}
                     </div>
                   ))
