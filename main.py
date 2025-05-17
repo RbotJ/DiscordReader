@@ -102,6 +102,14 @@ def register_routes(app):
     except ImportError as e:
         logging.warning(f"Could not import Alpaca trading routes: {e}")
     
+    # Register Options API routes
+    try:
+        from features.alpaca.options_api import register_options_api
+        register_options_api(app)
+        logging.info("Options API routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import Options API routes: {e}")
+    
     # Add other route registrations here as they are implemented
     
     # Add API health check endpoint

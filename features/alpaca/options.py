@@ -13,7 +13,12 @@ from typing import Dict, List, Optional, Union
 
 from alpaca.data.historical import OptionHistoricalDataClient
 from alpaca.data.requests import OptionChainRequest
-from alpaca.data.enums import ContractType, OptionsFeed
+from alpaca.data.enums import OptionsFeed
+
+# Define contract type enum (not available in the current Alpaca SDK version)
+class ContractType:
+    CALL = "call"
+    PUT = "put"
 
 from common.redis_utils import get_redis_client
 from common.constants import OptionType
