@@ -27,6 +27,32 @@
       font-family: monospace;
       font-size: 0.85rem;
     }
+    
+    /* Add styling for the fallback content */
+    .fallback-dashboard {
+      padding: 2rem 0;
+    }
+    
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    
+    .status-indicator.active {
+      background-color: #28a745;
+    }
+    
+    .status-indicator.inactive {
+      background-color: #dc3545;
+    }
+    
+    /* Remove any modal backdrops */
+    .clear-backdrops {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -53,10 +79,183 @@
   </nav>
   
   <!-- React application root element -->
-  <div id="react-root" class="container-fluid py-3"></div>
+  <div id="react-root" class="container-fluid py-3">
+    <!-- Fallback dashboard if React loading fails -->
+    <div class="fallback-dashboard">
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="mb-0">Trading Account</h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-3">
+                  <div class="mb-3">
+                    <h6 class="text-muted">Account Value</h6>
+                    <h4 id="account-value">Loading...</h4>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="mb-3">
+                    <h6 class="text-muted">Buying Power</h6>
+                    <h4 id="buying-power">Loading...</h4>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="mb-3">
+                    <h6 class="text-muted">Open Positions</h6>
+                    <h4 id="open-positions">Loading...</h4>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="mb-3">
+                    <h6 class="text-muted">Market Status</h6>
+                    <h4 id="market-status">Loading...</h4>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="mb-0">System Status</h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="status-indicator" id="strategy-status"></span>
+                    <span>Strategy Detector</span>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="status-indicator" id="execution-status"></span>
+                    <span>Options Execution</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            Select tickers from the sidebar to display charts
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   
   <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  
+  <!-- Fallback initialization script -->
+  <script>
+    // Remove any modal backdrops
+    document.addEventListener('DOMContentLoaded', function() {
+      // Clean up any modal backdrops
+      document.querySelectorAll('.modal-backdrop').forEach(function(el) {
+        el.classList.add('clear-backdrops');
+        el.remove();
+      });
+      
+      // Remove modal-open from body if present
+      document.body.classList.remove('modal-open');
+      
+      // Initialize fallback dashboard if React doesn't load
+      setTimeout(function() {
+        if (!window.reactLoaded) {
+          console.log('React app not detected, activating fallback dashboard');
+          fetchAccountInfo();
+          fetchSystemStatus();
+        }
+      }, 3000);
+    });
+    
+    // Fetch account information
+    function fetchAccountInfo() {
+      fetch('/api/account')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          document.getElementById('account-value').textContent = '$' + parseFloat(data.equity).toFixed(2);
+          document.getElementById('buying-power').textContent = '$' + parseFloat(data.buying_power).toFixed(2);
+          document.getElementById('market-status').textContent = data.market_open ? 'Open' : 'Closed';
+          
+          // Update styling based on market status
+          document.getElementById('market-status').className = data.market_open ? 'text-success' : 'text-danger';
+        })
+        .catch(function(error) {
+          console.error('Error fetching account info:', error);
+          document.getElementById('account-value').textContent = 'Error loading';
+          document.getElementById('buying-power').textContent = 'Error loading';
+          document.getElementById('market-status').textContent = 'Unknown';
+        });
+      
+      fetch('/api/positions')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          document.getElementById('open-positions').textContent = data.length;
+        })
+        .catch(function(error) {
+          console.error('Error fetching positions:', error);
+          document.getElementById('open-positions').textContent = 'Error loading';
+        });
+    }
+    
+    // Fetch system status
+    function fetchSystemStatus() {
+      // Check strategy status
+      fetch('/api/strategy/status')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          const isRunning = data.detector?.running || false;
+          const statusElement = document.getElementById('strategy-status');
+          
+          if (isRunning) {
+            statusElement.classList.add('active');
+            statusElement.classList.remove('inactive');
+          } else {
+            statusElement.classList.add('inactive');
+            statusElement.classList.remove('active');
+          }
+        })
+        .catch(function(error) {
+          console.error('Error fetching strategy status:', error);
+          document.getElementById('strategy-status').classList.add('inactive');
+        });
+      
+      // Check execution status
+      fetch('/api/execution/status')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          const isRunning = data.executor?.running || false;
+          const statusElement = document.getElementById('execution-status');
+          
+          if (isRunning) {
+            statusElement.classList.add('active');
+            statusElement.classList.remove('inactive');
+          } else {
+            statusElement.classList.add('inactive');
+            statusElement.classList.remove('active');
+          }
+        })
+        .catch(function(error) {
+          console.error('Error fetching execution status:', error);
+          document.getElementById('execution-status').classList.add('inactive');
+        });
+    }
+  </script>
   
   <!-- React App -->
   <script src="{{ url_for('static', filename='js/bundle.js') }}"></script>
