@@ -1,26 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef, Component } from 'react';
 import io from 'socket.io-client';
 
-/** 
- * Generate a truly unique ID, using crypto.randomUUID when available.
+/**
+ * Dashboard component - Trading application main interface
+ * 
+ * This component displays real-time trading information including:
+ * - Account information and balances
+ * - Available tickers for trading
+ * - Active charts for selected symbols
+ * - Real-time event notifications
+ * 
+ * Key features:
+ * - WebSocket connections for real-time data
+ * - Unique ID generation for React elements 
+ * - Error boundaries to prevent component crashes
  */
-// Simple counter-based ID generation to ensure uniqueness
-// Using a module-scope counter that persists between renders
-const idCounters = {
-  global: 0,
-  ticker: 0,
-  chart: 0,
-  event: 0
-};
-
-function generateId(prefix = 'id') {
-  // Increment the specific counter or the global one
-  const counter = idCounters[prefix] !== undefined ? 
-    ++idCounters[prefix] : 
-    ++idCounters.global;
-
-  return `${prefix}-${counter}-${Date.now()}`;
-}
 
 /**
  * A simple error boundary so one chart error doesn't kill the whole dashboard.
@@ -53,13 +47,43 @@ function Dashboard({ account, loading, error }) {
     events: []
   });
   const [socket, setSocket] = useState(null);
-  const eventCounter = useRef(0);
-  const tickerCounter = useRef(0);
-  const chartCounter = useRef(0);
+  
   // Used to dedupe exact same messages
   const seenEventSignatures = useRef(new Set());
   
-  const generateStableId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // Global counter for each ID namespace to guarantee uniqueness
+  const counters = useRef({
+    ticker: 0,
+    chart: 0,
+    event: 0
+  });
+  
+  /**
+   * Guaranteed unique ID generation that uses a combination of:
+   * - prefix: namespace for the ID
+   * - timestamp: makes IDs unique across time
+   * - random: makes IDs unique even when created at the exact same millisecond
+   * - counter: absolute guarantee of uniqueness by adding a monotonically increasing number
+   */
+  // Reference removed - using counters only now
+  
+  // Generate guaranteed unique IDs across renders
+  const generateStableId = useCallback((prefix) => {
+    // Initialize counter for this namespace if needed
+    if (!counters.current[prefix]) {
+      counters.current[prefix] = 0;
+    }
+    
+    // Increment the namespace-specific counter
+    counters.current[prefix]++;
+    
+    // Combine all sources of uniqueness
+    const timestamp = Date.now();
+    const counter = counters.current[prefix];
+    const random = Math.random().toString(36).slice(2, 10);
+    
+    return `${prefix}-${timestamp}-${counter}-${random}`;
+  }, []);
 
   useEffect(() => {
     setDashboardState({
@@ -153,8 +177,9 @@ function Dashboard({ account, loading, error }) {
     }
     seenEventSignatures.current.add(signature);
 
+    // Generate a truly unique id for this event using our guaranteed unique ID generator
     const event = {
-      id: `evt-${++eventCounter.current}`,
+      id: generateStableId('event'),
       timestamp: new Date().toISOString(),
       type,
       message
@@ -177,9 +202,9 @@ function Dashboard({ account, loading, error }) {
         return s; // Already subscribed
       }
 
-      // Add as new chart with unique ID
+      // Add as new chart with guaranteed unique ID using our stable ID generator
       const newChart = {
-        id: `chart-${Date.now()}-${++chartCounter.current}`,
+        id: generateStableId('chart'),
         symbol: ticker
       };
 
