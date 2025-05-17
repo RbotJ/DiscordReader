@@ -219,6 +219,31 @@ def register_routes(app):
         """View details of a specific setup."""
         return render_template('setup_detail.html', title="Setup Details")
         
+    @app.route('/api/discord-messages')
+    def get_discord_messages():
+        """
+        Get recent messages from Discord directly.
+        Returns the most recent messages from the A+ setups channel.
+        """
+        try:
+            # Import the Discord client function
+            from features.discord.client import get_channel_messages
+            
+            # Get messages directly from Discord
+            messages = get_channel_messages()
+            
+            # Return as JSON
+            return jsonify({
+                'status': 'success',
+                'data': messages
+            })
+        except Exception as e:
+            logging.error(f"Error fetching Discord messages: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
+            
     @app.route('/api/tickers')
     def get_tickers():
         """

@@ -163,39 +163,17 @@ def get_setup(setup_id):
             'message': f'Error getting setup details: {str(e)}'
         }), 500
 
-@setups_bp.route('/sample', methods=['POST'])
-def add_sample_data():
-    """Add sample setup messages to demonstrate functionality."""
+@setups_bp.route('/sync-discord', methods=['POST'])
+def sync_discord_messages():
+    """Sync recent messages from Discord to the database."""
     try:
-        # Clear existing setup messages if requested by the query param
+        # Check if refreshing is requested
         force_refresh = request.args.get('refresh', 'false').lower() == 'true'
         
-        existing_count = models.SetupMessage.query.count()
-        if existing_count > 0 and not force_refresh:
-            return jsonify({
-                'status': 'info',
-                'message': f'Sample data already exists ({existing_count} records found). Use ?refresh=true to reload.'
-            })
-            
-        # If refreshing, delete existing data first
-        if force_refresh and existing_count > 0:
-            try:
-                # Delete all setup messages (cascade will handle related records)
-                models.SetupMessage.query.delete()
-                db.session.commit()
-                logger.info(f"Cleared {existing_count} existing setup messages for refresh")
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"Error clearing existing setup messages: {e}")
-                return jsonify({
-                    'status': 'error',
-                    'message': f'Failed to clear existing data: {str(e)}'
-                }), 500
-            
         # Import fully qualified models to avoid naming conflicts
         from models import TickerSetup as DBTickerSetup, SetupMessage
         
-        # Instead of adding sample data, let's retrieve messages from Discord
+        # Retrieve messages from Discord
         from features.discord.client import get_channel_messages
         from features.setups.multi_ticker_controller import process_setup_message
         
@@ -207,12 +185,22 @@ def add_sample_data():
                 'status': 'error',
                 'message': 'No Discord messages available. Please wait for messages to be received from Discord.'
             }), 404
-            
-        # Process each message through our setup handler
+        
+        # Check for existing messages with the same content
         processed_count = 0
-        for message in messages[:5]:  # Process up to 5 messages
+        skipped_count = 0
+        
+        for message in messages:
             try:
-                # Process the message text with its timestamp
+                # Check if this message is already in the database (by content)
+                existing = SetupMessage.query.filter_by(raw_text=message['content']).first()
+                
+                if existing and not force_refresh:
+                    logger.info(f"Skipping already processed message: {message['id']}")
+                    skipped_count += 1
+                    continue
+                
+                # Process the message
                 result = process_setup_message(
                     text=message['content'], 
                     message_date=message['timestamp'].date() if 'timestamp' in message else None,
@@ -225,30 +213,30 @@ def add_sample_data():
                     logger.info(f"Successfully processed message with {len(result.get('tickers', []))} tickers: {result.get('tickers', [])}")
             except Exception as e:
                 logger.error(f"Error processing Discord message: {e}")
-                
-        if processed_count == 0:
-            logger.warning("No Discord messages were successfully processed")
-            return jsonify({
-                'status': 'error',
-                'message': 'Failed to process any Discord messages. This could be due to message format issues or database conflicts.'
-            }), 500
         
-        # Commit changes and return response
+        # Return success even if we just processed one message
         db.session.commit()
         
         return jsonify({
             'status': 'success',
-            'message': f'Successfully processed {processed_count} Discord messages',
-            'count': processed_count
+            'message': f'Discord messages processed: {processed_count} new, {skipped_count} skipped',
+            'processed': processed_count,
+            'skipped': skipped_count
         })
         
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Error adding sample data: {e}")
+        logger.error(f"Error syncing Discord messages: {e}")
         return jsonify({
             'status': 'error',
-            'message': f'Error adding sample data: {str(e)}'
+            'message': f'Error syncing Discord messages: {str(e)}'
         }), 500
+        
+@setups_bp.route('/sample', methods=['POST'])
+def add_sample_data():
+    """Add sample setup messages to demonstrate functionality (redirects to sync-discord)."""
+    # Just redirect to the sync-discord endpoint for compatibility
+    return sync_discord_messages()
 
 
 def register_routes(app):

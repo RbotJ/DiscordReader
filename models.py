@@ -74,6 +74,9 @@ class TickerSetup(db.Model):
     text = Column(Text, nullable=True)
     message_id = Column(Integer, ForeignKey('setup_messages.id', ondelete='CASCADE'), nullable=False)
     
+    # Add discriminator column for model type
+    model_type = Column(String(50), nullable=False, default='main')
+    
     # Relationships
     message = relationship("SetupMessage", back_populates="ticker_setups")
     signals = relationship("Signal", back_populates="ticker_setup", cascade="all, delete-orphan")

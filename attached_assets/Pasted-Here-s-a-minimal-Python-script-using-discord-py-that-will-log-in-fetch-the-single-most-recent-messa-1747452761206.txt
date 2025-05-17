@@ -1,0 +1,86 @@
+Here’s a minimal Python script using discord.py that will log in, fetch the single most-recent message from the channel whose ID is in the DISCORD_CHANNEL_APLUS_SETUPS env var, print it to the console, and then cleanly disconnect. It won’t save anything—it just displays the result.
+
+python
+Copy
+Edit
+#!/usr/bin/env python3
+import os
+import asyncio
+import discord
+
+async def main():
+    # Grab your bot token and target channel ID from the environment
+    token = os.getenv('DISCORD_TOKEN')
+    channel_id = os.getenv('DISCORD_CHANNEL_APLUS_SETUPS')
+
+    if not token or not channel_id:
+        print("ERROR: Please set DISCORD_TOKEN and DISCORD_CHANNEL_APLUS_SETUPS")
+        return
+
+    try:
+        channel_id = int(channel_id)
+    except ValueError:
+        print("ERROR: DISCORD_CHANNEL_APLUS_SETUPS must be an integer channel ID")
+        return
+
+    # Create a client with minimal intents
+    intents = discord.Intents.default()
+    client = discord.Client(intents=intents)
+
+    @client.event
+    async def on_ready():
+        try:
+            # Try to get the channel from cache, else fetch
+            channel = client.get_channel(channel_id)
+            if channel is None:
+                channel = await client.fetch_channel(channel_id)
+
+            # Pull the last message
+            msg = None
+            async for m in channel.history(limit=1):
+                msg = m
+
+            if msg:
+                print(f"Most recent message in #{channel.name} (ID {channel_id}):")
+                print(f"  Author:  {msg.author} (ID {msg.author.id})")
+                print(f"  Time:    {msg.created_at.isoformat()}")
+                print(f"  Content: {msg.content}")
+            else:
+                print(f"No messages found in channel ID {channel_id}.")
+
+        except Exception as e:
+            print(f"Failed to fetch messages: {e}")
+        finally:
+            # Disconnect once done
+            await client.close()
+
+    # Start the bot
+    try:
+        await client.start(token)
+    except KeyboardInterrupt:
+        await client.close()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+Usage
+
+Install discord.py:
+
+bash
+Copy
+Edit
+pip install discord.py
+Export your environment variables:
+
+bash
+Copy
+Edit
+export DISCORD_TOKEN="your-bot-token"
+export DISCORD_CHANNEL_APLUS_SETUPS="123456789012345678"
+Run:
+
+bash
+Copy
+Edit
+python3 fetch_last_setup_message.py
+This will print the latest message’s author, timestamp, and content, then exit.

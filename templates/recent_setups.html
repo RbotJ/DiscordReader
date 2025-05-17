@@ -95,26 +95,26 @@
         });
 
         function fetchRecentSetups() {
-            fetch('/api/setups/recent?limit=10')
+            fetch('/api/discord-messages')
                 .then(response => response.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        displaySetups(data.data);
+                        displayDiscordMessages(data.data);
                     } else {
-                        displayError(data.message || 'Failed to load recent setups');
+                        displayError(data.message || 'Failed to load Discord messages');
                     }
                 })
                 .catch(error => {
-                    console.error('Error fetching setups:', error);
+                    console.error('Error fetching Discord messages:', error);
                     displayError('Error connecting to server. Please try again later.');
                 });
         }
 
-        function displaySetups(setups) {
+        function displayDiscordMessages(messages) {
             const container = document.getElementById('setupsContainer');
             container.innerHTML = '';
             
-            if (!setups || setups.length === 0) {
+            if (!messages || messages.length === 0) {
                 container.innerHTML = `
                     <div class="alert alert-info">
                         No trading setups found. New setups from Discord will appear here.
@@ -123,39 +123,49 @@
                 return;
             }
             
-            setups.forEach(setup => {
-                const setupDate = new Date(setup.date).toLocaleDateString('en-US', {
+            messages.forEach(message => {
+                const msgDate = new Date(message.timestamp).toLocaleDateString('en-US', {
                     weekday: 'short',
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric'
                 });
                 
-                const tickerBadges = setup.ticker_symbols.map(symbol => 
+                const msgTime = new Date(message.timestamp).toLocaleTimeString('en-US', {
+                    hour: '2-digit', 
+                    minute: '2-digit'
+                });
+                
+                // Extract ticker symbols from content
+                const tickerRegex = /\b[A-Z]{1,5}\b/g;
+                const tickerMatches = message.content.match(tickerRegex) || [];
+                // Filter out common words that might match the pattern
+                const commonWords = ['A', 'I', 'CEO', 'CFO', 'CTO', 'IPO', 'ETF'];
+                const tickers = tickerMatches.filter(ticker => !commonWords.includes(ticker));
+                
+                const tickerBadges = [...new Set(tickers)].map(symbol => 
                     `<span class="badge bg-primary ticker-badge">${symbol}</span>`
                 ).join('');
-                
-                const createdDate = setup.created_at ? new Date(setup.created_at).toLocaleString() : '';
                 
                 const card = document.createElement('div');
                 card.className = 'card setup-card';
                 card.innerHTML = `
                     <div class="card-header">
                         <div>
-                            <h5 class="mb-0">Trading Setup #${setup.id}</h5>
-                            <small class="setup-date">${setupDate}</small>
+                            <h5 class="mb-0">A+ Trade Setup</h5>
+                            <small class="setup-date">${msgDate} at ${msgTime}</small>
                         </div>
-                        <span class="badge bg-secondary source-badge">${setup.source}</span>
+                        <span class="badge bg-secondary source-badge">Discord</span>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
                             <strong>Tickers:</strong>
                             <div class="mt-2">${tickerBadges}</div>
                         </div>
-                        <a href="/setup/${setup.id}" class="btn btn-sm btn-outline-primary">View Details</a>
+                        <div class="setup-message mb-3">${message.content.replace(/\n/g, '<br>')}</div>
                     </div>
                     <div class="card-footer text-muted">
-                        <small>Received: ${createdDate}</small>
+                        <small>Message ID: ${message.id}</small>
                     </div>
                 `;
                 
