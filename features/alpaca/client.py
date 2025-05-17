@@ -129,44 +129,22 @@ def get_latest_quote(symbol: str) -> Optional[Dict]:
         logger.error(f"Error getting latest quote for {symbol}: {e}")
         return None
 
-def submit_market_order(
-    symbol: str,
-    qty: int,
-    side: str,
-    time_in_force: str = 'day',
-    client_order_id: Optional[str] = None
-) -> Optional[Dict]:
+def submit_market_order(symbol: str, qty: int, side: str) -> Optional[Dict]:
     """
-    Submit a market order to Alpaca.
+    Submit a market order to Alpaca using typed request objects.
     """
     if not trading_client:
         logger.warning("Trading client not initialized")
         return None
 
     try:
-        # Map string side to enum
-        order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
-
-        # Map string time_in_force to enum
-        order_tif = TimeInForce.DAY
-        if time_in_force.lower() == 'gtc':
-            order_tif = TimeInForce.GTC
-        elif time_in_force.lower() == 'ioc':
-            order_tif = TimeInForce.IOC
-        elif time_in_force.lower() == 'fok':
-            order_tif = TimeInForce.FOK
-
-        # Create market order request
-        order_data = MarketOrderRequest(
+        req = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
-            side=order_side,
-            time_in_force=order_tif,
-            client_order_id=client_order_id
+            side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
+            time_in_force=TimeInForce.DAY
         )
-
-        # Submit order
-        order = trading_client.submit_order(order_data)
+        order = trading_client.submit_order(market_order_request=req)
         return order._raw
 
     except Exception as e:
