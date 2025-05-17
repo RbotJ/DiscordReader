@@ -1,0 +1,91 @@
+Handle Forwarded Messages in Raw Fetcher
+
+## Context
+- You have a function `fetch_and_store_setups()` in `features/discord/client.py`.  
+- Right now it fetches the last N messages, dumps `id`, `author`, `content`, `timestamp`, `embeds`, `attachments`, and sets `is_forwarded=False`.  
+- Forwarded (quoted) messages currently come through with empty `content` and no embed data stored.
+
+## Objective
+Update `fetch_and_store_setups()` so that:
+1. **Detect** forwarded/quoted messages via `message.reference`.  
+2. **Resolve** the original message:
+   ```python
+   orig = message.reference.resolved \
+       or await channel.fetch_message(message.reference.message_id)
+Store the original (“forwarded”) message’s key fields under a new "forwarded" sub-object, and set "is_forwarded": true. For example:
+
+json
+Copy
+Edit
+{
+  "id": "...",
+  "author": "...",
+  "content": "",
+  "timestamp": "...",
+  "embeds": [],
+  "attachments": [],
+  "is_forwarded": true,
+  "forwarded": {
+    "id": "...",
+    "author": "...",
+    "content": "Original forwarded text here",
+    "timestamp": "...",
+    "embeds": [ { /* embed.to_dict() */ } ],
+    "attachments": [ "https://..." ]
+  }
+}
+Leave all non-forwarded messages exactly as they are (with "is_forwarded": false and no "forwarded" field).
+
+Constraints
+NO parsing or analysis of message content.
+
+NO changes to downstream parsing modules.
+
+ONLY modify this raw-storage slice.
+
+Acceptance Criteria
+Running python features/discord/client.py against a channel that has quoted/forwarded posts yields JSON entries where:
+
+is_forwarded is true
+
+A "forwarded" object exists with the original message’s content, embeds, and attachments.
+
+Unit tests in tests/ can stub message.reference and verify that the "forwarded" object is stored correctly.
+
+python
+Copy
+Edit
+# Sketch of the core logic to implement:
+for msg in messages:
+    record = {
+        "id": msg.id,
+        "author": msg.author.name,
+        "content": msg.content,
+        "timestamp": msg.created_at.isoformat(),
+        "embeds": [e.to_dict() for e in msg.embeds],
+        "attachments": [a.url for a in msg.attachments],
+        "is_forwarded": False,
+    }
+    if msg.reference:
+        orig = msg.reference.resolved or await channel.fetch_message(msg.reference.message_id)
+        record["is_forwarded"] = True
+        record["forwarded"] = {
+            "id": orig.id,
+            "author": orig.author.name,
+            "content": orig.content,
+            "timestamp": orig.created_at.isoformat(),
+            "embeds": [e.to_dict() for e in orig.embeds],
+            "attachments": [a.url for a in orig.attachments],
+        }
+    store_record(record)
+vbnet
+Copy
+Edit
+
+This prompt tells the agent **exactly** what to add—and what **not** to do—so it won’t wander off into parsing or analysis until you’re ready for that next layer.
+
+
+
+
+
+

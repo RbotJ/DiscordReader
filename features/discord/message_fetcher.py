@@ -95,7 +95,6 @@ async def fetch_latest_messages(channel_id: int, limit: int = 50) -> list:
                     
                     # Add embed data
                     if msg.embeds:
-                        message_data['is_forwarded'] = True
                         for embed in msg.embeds:
                             embed_data = {
                                 'title': embed.title,
@@ -115,6 +114,73 @@ async def fetch_latest_messages(channel_id: int, limit: int = 50) -> list:
                                     })
                             
                             message_data['embeds'].append(embed_data)
+                    
+                    # Handle forwarded/quoted messages
+                    if hasattr(msg, 'reference') and msg.reference:
+                        try:
+                            # Get the original message that was forwarded/quoted
+                            orig = None
+                            if hasattr(msg.reference, 'resolved') and msg.reference.resolved:
+                                orig = msg.reference.resolved
+                            elif hasattr(msg.reference, 'message_id') and msg.reference.message_id:
+                                try:
+                                    orig = await channel.fetch_message(msg.reference.message_id)
+                                except Exception as e:
+                                    logger.warning(f"Could not fetch referenced message {msg.reference.message_id}: {e}")
+                            
+                            if orig:
+                                # Mark as forwarded and add the forwarded message data
+                                message_data['is_forwarded'] = True
+                                
+                                # Create the forwarded object with the original message's data
+                                forwarded_data = {
+                                    'id': str(orig.id),
+                                    'author': str(orig.author),
+                                    'author_id': str(orig.author.id) if hasattr(orig.author, 'id') else None,
+                                    'content': orig.content,
+                                    'timestamp': orig.created_at.isoformat(),
+                                    'embeds': [],
+                                    'attachments': []
+                                }
+                                
+                                # Add the original message's attachments
+                                if orig.attachments:
+                                    for attachment in orig.attachments:
+                                        forwarded_data['attachments'].append({
+                                            'id': str(attachment.id),
+                                            'filename': attachment.filename,
+                                            'url': attachment.url,
+                                            'content_type': attachment.content_type,
+                                            'size': attachment.size
+                                        })
+                                
+                                # Add the original message's embeds
+                                if orig.embeds:
+                                    for embed in orig.embeds:
+                                        embed_data = {
+                                            'title': embed.title,
+                                            'description': embed.description,
+                                            'url': embed.url,
+                                            'timestamp': embed.timestamp.isoformat() if embed.timestamp else None,
+                                            'fields': []
+                                        }
+                                        
+                                        # Add embed fields
+                                        if hasattr(embed, 'fields'):
+                                            for field in embed.fields:
+                                                embed_data['fields'].append({
+                                                    'name': field.name,
+                                                    'value': field.value,
+                                                    'inline': field.inline
+                                                })
+                                        
+                                        forwarded_data['embeds'].append(embed_data)
+                                
+                                # Add the forwarded data to the message
+                                message_data['forwarded'] = forwarded_data
+                                logger.info(f"Detected forwarded message: {msg.id} references {orig.id}")
+                        except Exception as e:
+                            logger.error(f"Error processing forwarded message {msg.id}: {e}")
                     
                     messages.append(message_data)
                     logger.debug(f"Fetched message {msg.id} from {msg.author}")
