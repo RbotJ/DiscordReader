@@ -42,7 +42,9 @@ function Dashboard({ account, loading, error }) {
     events: []
   });
   const [socket, setSocket] = useState(null);
+  // used to dedupe exact same messages and to hand out truly unique IDs
   const seenEventSignatures = useRef(new Set());
+  const eventCounter = useRef(0);
 
   useEffect(() => {
     setDashboardState({
@@ -108,6 +110,7 @@ function Dashboard({ account, loading, error }) {
   }, []);
 
   const addEvent = useCallback((type, rawMessage) => {
+    // Convert any message to a safe string representation
     let message;
     if (rawMessage == null) {
       message = String(rawMessage);
@@ -115,20 +118,22 @@ function Dashboard({ account, loading, error }) {
       try {
         message = JSON.stringify(rawMessage);
       } catch {
-        message = '[Object]';
+        message = '[Object]'; // Fallback for circular references
       }
     } else {
       message = String(rawMessage);
     }
 
+    // Build a signature to detect identical events
     const signature = `${type}:${message}`;
     if (seenEventSignatures.current.has(signature)) {
-      return;
+      return; // Skip duplicate events
     }
     seenEventSignatures.current.add(signature);
 
+    // Use simple incremental IDs to ensure uniqueness
     const event = {
-      id: generateId(),
+      id: `evt-${++eventCounter.current}`,
       timestamp: new Date().toISOString(),
       type,
       message
@@ -136,7 +141,7 @@ function Dashboard({ account, loading, error }) {
 
     setDashboardState(s => ({
       ...s,
-      events: [event, ...s.events].slice(0, 100)
+      events: [event, ...s.events].slice(0, 100) // Keep last 100 events
     }));
   }, []);
 
@@ -232,9 +237,9 @@ function Dashboard({ account, loading, error }) {
             <div className="card-body p-0">
               <div className="list-group list-group-flush">
                 {dashboardState.tickers.length > 0 ? (
-                  dashboardState.tickers.map(ticker => (
+                  dashboardState.tickers.map((ticker, index) => (
                     <button
-                      key={ticker}
+                      key={`ticker-${ticker}-${index}`}
                       className={`list-group-item list-group-item-action ${dashboardState.activeCharts.includes(ticker) ? 'active' : ''}`}
                       onClick={() => handleSubscribeTicker(ticker)}
                     >
@@ -254,8 +259,8 @@ function Dashboard({ account, loading, error }) {
         <div className="col-md-9 mb-4">
           <div className="row mb-4">
             {dashboardState.activeCharts.length > 0 ? (
-              dashboardState.activeCharts.map(ticker => (
-                <div key={ticker} className="col-md-6 mb-3">
+              dashboardState.activeCharts.map((ticker, index) => (
+                <div key={`chart-${ticker}-${index}`} className="col-md-6 mb-3">
                   <ChartErrorBoundary>
                     <div className="card">
                       <div className="card-header d-flex justify-content-between align-items-center">
