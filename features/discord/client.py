@@ -317,6 +317,222 @@ def is_client_ready() -> bool:
     return client_ready
 
 @requires_discord
+async def fetch_latest_messages(channel_id: int, limit: int = 50) -> List[dict]:
+    """
+    Fetch the latest messages from a Discord channel.
+    
+    Args:
+        channel_id: The Discord channel ID to fetch messages from
+        limit: Maximum number of messages to fetch (default: 50)
+        
+    Returns:
+        List of message dictionaries with complete message data
+    """
+    logger.info(f"Fetching latest {limit} messages from Discord channel {channel_id}")
+    
+    if not DISCORD_APP_TOKEN:
+        logger.warning("Discord bot token not configured")
+        return []
+    
+    messages = []
+    
+    try:
+        # Create a client with message content intent enabled
+        intents = discord.Intents.default()
+        intents.message_content = True
+        client = discord.Client(intents=intents)
+        
+        @client.event
+        async def on_ready():
+            try:
+                # Get the channel
+                channel = client.get_channel(channel_id)
+                if channel is None:
+                    channel = await client.fetch_channel(channel_id)
+                
+                logger.info(f"Connected to Discord channel: #{channel.name} (ID: {channel_id})")
+                
+                # Fetch messages
+                message_count = 0
+                async for msg in channel.history(limit=limit):
+                    message_count += 1
+                    
+                    # Create a comprehensive message object with all data
+                    message_data = {
+                        'id': str(msg.id),
+                        'author': str(msg.author),
+                        'author_id': str(msg.author.id),
+                        'content': msg.content,
+                        'timestamp': msg.created_at.isoformat(),
+                        'embeds': [],
+                        'attachments': [],
+                        'is_forwarded': False
+                    }
+                    
+                    # Add attachment data
+                    if msg.attachments:
+                        for attachment in msg.attachments:
+                            message_data['attachments'].append({
+                                'id': attachment.id,
+                                'filename': attachment.filename,
+                                'url': attachment.url,
+                                'content_type': attachment.content_type,
+                                'size': attachment.size
+                            })
+                    
+                    # Add embed data
+                    if msg.embeds:
+                        message_data['is_forwarded'] = True
+                        for embed in msg.embeds:
+                            embed_data = {
+                                'title': embed.title,
+                                'description': embed.description,
+                                'url': embed.url,
+                                'timestamp': embed.timestamp.isoformat() if embed.timestamp else None,
+                                'fields': []
+                            }
+                            
+                            # Add embed fields
+                            if hasattr(embed, 'fields'):
+                                for field in embed.fields:
+                                    embed_data['fields'].append({
+                                        'name': field.name,
+                                        'value': field.value,
+                                        'inline': field.inline
+                                    })
+                            
+                            message_data['embeds'].append(embed_data)
+                    
+                    messages.append(message_data)
+                    logger.debug(f"Fetched message {msg.id} from {msg.author}")
+                
+                logger.info(f"Successfully fetched {message_count} messages from Discord channel {channel_id}")
+                
+                # Disconnect after we're done
+                await client.close()
+                
+            except Exception as e:
+                logger.error(f"Error fetching messages from channel {channel_id}: {e}")
+                await client.close()
+        
+        # Start the client and run until complete
+        await client.start(DISCORD_APP_TOKEN)
+        
+    except Exception as e:
+        logger.error(f"Error connecting to Discord: {e}")
+    
+    return messages
+
+def fetch_and_store_setups(limit: int = 50, filename: str = "setups_raw.json") -> int:
+    """
+    Fetches and stores raw setup messages from the A+ setups Discord channel.
+    
+    Args:
+        limit: Maximum number of messages to fetch (default: 50)
+        filename: Filename to store the raw JSON (default: setups_raw.json)
+        
+    Returns:
+        Number of messages stored
+    """
+    if not CHANNEL_APLUS_SETUPS_ID:
+        logger.warning("A+ setups channel ID not configured")
+        return 0
+    
+    try:
+        # Create an event loop to run our async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Fetch messages from Discord
+        messages = loop.run_until_complete(
+            fetch_latest_messages(CHANNEL_APLUS_SETUPS_ID, limit)
+        )
+        loop.close()
+        
+        if not messages:
+            logger.warning("No messages fetched from Discord")
+            return 0
+        
+        # Store messages to file
+        import json
+        import os
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else '.', exist_ok=True)
+        
+        # Write messages to file
+        with open(filename, 'w') as f:
+            json.dump(messages, f, indent=2)
+        
+        message_count = len(messages)
+        logger.info(f"Fetched {message_count} messages; stored to {filename}")
+        
+        return message_count
+    
+    except Exception as e:
+        logger.error(f"Error fetching and storing setup messages: {e}")
+        return 0
+
+@requires_discord
+def get_channel_messages() -> List[dict]:
+    
+    # Configure logging to console
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Default settings
+    limit = 50
+    output_file = "setups_raw.json"
+    
+    # Parse command line arguments if provided
+    if len(sys.argv) > 1:
+        try:
+            limit = int(sys.argv[1])
+        except ValueError:
+            print(f"Invalid limit value: {sys.argv[1]}. Using default: {limit}")
+    
+    if len(sys.argv) > 2:
+        output_file = sys.argv[2]
+    
+    # Print configuration info
+    print(f"Discord A+ Setups Message Fetcher")
+    print(f"================================")
+    print(f"Bot Token: {DISCORD_APP_TOKEN[:5]}*** (truncated)" if DISCORD_APP_TOKEN else "Bot Token: Not configured")
+    print(f"A+ Setups Channel ID: {CHANNEL_APLUS_SETUPS_ID}" if CHANNEL_APLUS_SETUPS_ID else "A+ Setups Channel ID: Not configured")
+    print(f"Fetch Limit: {limit}")
+    print(f"Output File: {output_file}")
+    print(f"================================")
+    
+    # Check if required environment variables are set
+    if not DISCORD_APP_TOKEN:
+        print("Error: DISCORD_BOT_TOKEN_APLUS environment variable is not set.")
+        print("Please set it to your Discord bot token and try again.")
+        sys.exit(1)
+    
+    if not CHANNEL_APLUS_SETUPS_ID:
+        print("Error: DISCORD_CHANNEL_APLUS_SETUPS environment variable is not set.")
+        print("Please set it to the ID of the A+ Setups channel and try again.")
+        sys.exit(1)
+    
+    # Fetch and store the messages
+    print("Fetching messages from Discord...")
+    count = fetch_and_store_setups(limit=limit, filename=output_file)
+    
+    if count > 0:
+        print(f"[INFO] Fetched {count} messages; stored to {output_file}")
+        
+        # Verify file was created
+        if os.path.exists(output_file):
+            size = os.path.getsize(output_file)
+            print(f"File created successfully: {output_file} ({size} bytes)")
+        else:
+            print(f"Warning: Expected output file {output_file} was not created.")
+    else:
+        print(f"Failed to fetch messages from Discord. Check logs for details.")
+
+
 def get_channel_messages() -> List[dict]:
     """
     Get recent messages from the A+ setups channel.
