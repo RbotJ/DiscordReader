@@ -342,7 +342,7 @@ def register_routes(app):
                 
                 # Then get signals for that ticker setup
                 signals_query = text("""
-                    SELECT id, category, aggressiveness, comparison, trigger, targets, created_at
+                    SELECT id, category, aggressiveness, comparison, trigger_value, targets, created_at
                     FROM signals
                     WHERE ticker_setup_id = :setup_id
                 """)
@@ -356,7 +356,7 @@ def register_routes(app):
                 for signal in signals:
                     try:
                         # Parse JSON fields
-                        trigger = json.loads(signal[4]) if isinstance(signal[4], str) else signal[4]
+                        trigger_value = json.loads(signal[4]) if isinstance(signal[4], str) else signal[4]
                         targets = json.loads(signal[5]) if isinstance(signal[5], str) else signal[5]
                         
                         signal_data = {
@@ -365,7 +365,7 @@ def register_routes(app):
                             'category': signal[1],
                             'aggressiveness': signal[2],
                             'comparison': signal[3],
-                            'trigger': trigger,
+                            'trigger': trigger_value,
                             'targets': targets,
                             'status': 'pending',  # Default status
                             'source': 'database'
