@@ -214,8 +214,9 @@ def register_routes(app):
         """
         try:
             # Query the database for unique tickers from ticker_setups table
-            from models import TickerSetup
-            ticker_results = db.session.query(TickerSetup.symbol).distinct().all()
+            # Use a fully qualified import to avoid model registry conflicts
+            import models
+            ticker_results = db.session.query(models.TickerSetup.symbol).distinct().all()
             tickers = [result[0] for result in ticker_results]
             
             # If no tickers found in the database, return a few sample tickers

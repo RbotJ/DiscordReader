@@ -559,6 +559,56 @@ def get_redis_client() -> RedisClient:
     """
     return RedisClient()
 
+def pubsub_run_in_thread(channel: str, callback: Callable[[Dict[str, Any]], None], sleep_time: float = 0.1) -> threading.Thread:
+    """
+    Subscribe to a channel and run a callback in a background thread.
+    
+    Args:
+        channel: Channel name to subscribe to
+        callback: Function to call for each message
+        sleep_time: Sleep time between checking for messages
+        
+    Returns:
+        Thread object
+    """
+    client = get_redis_client()
+    pubsub = client.subscribe(channel)
+    
+    if hasattr(pubsub, 'run_in_thread'):
+        # Redis implementation with built-in run_in_thread
+        if isinstance(pubsub, redis.client.PubSub):
+            # Re-subscribe with callback
+            pubsub.unsubscribe(channel)
+            pubsub.subscribe(**{channel: callback})
+            return pubsub.run_in_thread(sleep_time=sleep_time)
+        else:
+            # Our FallbackPubSub implementation
+            thread = pubsub.run_in_thread(sleep_time=sleep_time)
+            thread.callback = callback
+            return thread
+    else:
+        # Manual implementation (fallback if neither implementation has run_in_thread)
+        def listener_thread():
+            while getattr(thread, "running", True):
+                message = pubsub.get_message(timeout=sleep_time)
+                if message:
+                    try:
+                        callback(message)
+                    except Exception as e:
+                        logger.error(f"Error in pubsub callback: {e}")
+                time.sleep(0.001)  # Tiny sleep to prevent CPU hogging
+            
+            # Cleanup when stopped
+            if hasattr(pubsub, 'close'):
+                pubsub.close()
+        
+        thread = threading.Thread(target=listener_thread, daemon=True)
+        thread.running = True
+        thread.stop = lambda: setattr(thread, "running", False)
+        thread.start()
+        
+        return thread
+
 def publish_event(channel: str, event_type: str, data: Dict[str, Any]) -> bool:
     """
     Publish an event to a Redis channel.
