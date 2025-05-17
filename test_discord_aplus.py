@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Get Discord config
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN_APLUS')
-CHANNEL_ID = int(os.environ.get('DISCORD_CHANNEL_APLUS_SETUPS', '1372012942848954388'))
+CHANNEL_ID = 1372012942848954388
 
 async def main():
     """Test Discord channel access with the new bot token."""
