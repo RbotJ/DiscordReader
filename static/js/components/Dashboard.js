@@ -278,18 +278,18 @@ function Dashboard({ account, loading, error }) {
         <div className="col-md-9 mb-4">
           <div className="row mb-4">
             {dashboardState.activeCharts.length > 0 ? (
-              dashboardState.activeCharts.map((ticker, index) => (
-                <div key={`chart-${ticker}-${index}`} className="col-md-6 mb-3">
+              dashboardState.activeCharts.map((chart) => (
+                <div key={chart.id} className="col-md-6 mb-3">
                   <ChartErrorBoundary>
                     <div className="card">
                       <div className="card-header d-flex justify-content-between align-items-center">
-                        <h5 className="mb-0">{ticker}</h5>
+                        <h5 className="mb-0">{chart.symbol}</h5>
                         <button 
                           className="btn btn-sm btn-outline-secondary"
                           onClick={() => {
                             setDashboardState(prev => ({
                               ...prev,
-                              activeCharts: prev.activeCharts.filter(t => t !== ticker)
+                              activeCharts: prev.activeCharts.filter(t => t.id !== chart.id)
                             }));
                           }}
                         >
