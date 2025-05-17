@@ -61,6 +61,8 @@ def _cleanup_thread_func() -> None:
     try:
         while _thread_running:
             try:
+                from .client import trading_client
+                
                 # Get current market clock from Alpaca
                 clock = trading_client.get_clock()
                 
