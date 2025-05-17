@@ -177,6 +177,21 @@ def add_sample_data():
                 'message': f'Sample data already exists ({existing_count} records found). Use ?refresh=true to reload.'
             })
             
+        # If refreshing, delete existing data first
+        if force_refresh and existing_count > 0:
+            try:
+                # Delete all setup messages (cascade will handle related records)
+                models.SetupMessage.query.delete()
+                db.session.commit()
+                logger.info(f"Cleared {existing_count} existing setup messages for refresh")
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error clearing existing setup messages: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Failed to clear existing data: {str(e)}'
+                }), 500
+            
         # Import fully qualified models to avoid naming conflicts
         from models import TickerSetup as DBTickerSetup, SetupMessage
         
