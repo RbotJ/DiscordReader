@@ -213,5 +213,49 @@ def cancel_order(order_id: str) -> bool:
         logger.error(f"Error cancelling order {order_id}: {e}")
         return False
 
+def calculate_position_size(symbol: str, risk_amount: float = 500.0) -> int:
+    """
+    Calculate position size based on live option premiums and risk parameters.
+
+    Args:
+        symbol: Option symbol
+        risk_amount: Maximum risk amount per position in dollars
+
+    Returns:
+        int: Number of contracts to trade
+    """
+    try:
+        # Get account information and buying power
+        account = trading_client.get_account()._raw
+        buying_power = float(account["buying_power"])
+
+        # Check if we have enough buying power for minimum risk
+        if buying_power < risk_amount:
+            logger.warning(f"Insufficient buying power (${buying_power}) for minimum risk (${risk_amount})")
+            return 0
+
+        # Fetch latest option quote
+        quote = data_client.get_stock_latest_quote(
+            StockLatestQuoteRequest(symbol_or_symbols=symbol)
+        )[symbol]._raw
+
+        # Get ask price for conservative sizing
+        ask_price = float(quote["ask_price"])
+        if ask_price <= 0:
+            logger.warning(f"Invalid ask price (${ask_price}) for {symbol}")
+            return 1
+
+        # Calculate maximum contracts based on risk amount
+        # One contract controls 100 shares
+        max_contracts = int(risk_amount / (ask_price * 100))
+        position_size = max(1, max_contracts)
+
+        logger.info(f"Calculated position size for {symbol}: {position_size} contracts at ${ask_price}/share")
+        return position_size
+
+    except Exception as e:
+        logger.error(f"Error calculating position size for {symbol}: {e}")
+        return 1  # Default to 1 contract on error
+
 # Initialize clients on module import
 initialize_clients()
