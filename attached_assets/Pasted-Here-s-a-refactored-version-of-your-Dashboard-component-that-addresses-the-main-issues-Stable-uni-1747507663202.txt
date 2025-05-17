@@ -1,0 +1,309 @@
+Here’s a refactored version of your Dashboard component that addresses the main issues:
+
+Stable, unique keys
+
+Switched to crypto.randomUUID() (with a fallback) and dedupe events by content signature rather than a brand-new UUID every time.
+
+No more “object as React child”
+
+We guard the <p> in your error screen and coerce any incoming error prop to a string.
+
+Error Boundary
+
+Wraps the chart grid so if one chart blows up you still see the rest of the dashboard.
+
+jsx
+Copy
+Edit
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  Component
+} from 'react';
+import io from 'socket.io-client';
+
+/** 
+ * Generate a truly unique ID, using crypto.randomUUID when available.
+ */
+function generateId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'id-' + Math.random().toString(36).slice(2);
+}
+
+/**
+ * A simple error boundary so one chart error doesn’t kill the whole dashboard.
+ */
+class ChartErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="alert alert-danger p-3">
+          <strong>Chart failed to load.</strong>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function Dashboard({ account, loading, error }) {
+  const [dashboardState, setDashboardState] = useState({
+    tickers: [],
+    positions: [],
+    activeCharts: [],
+    events: []
+  });
+  const [socket, setSocket] = useState(null);
+  // We'll dedupe events by signature ("type:message")
+  const seenEventSignatures = useRef(new Set());
+
+  // reset on mount
+  useEffect(() => {
+    setDashboardState({
+      tickers: [],
+      positions: [],
+      activeCharts: [],
+      events: []
+    });
+    seenEventSignatures.current.clear();
+  }, []);
+
+  // ----- SOCKET SETUP -----
+  useEffect(() => {
+    const newSocket = io({
+      path: '/socket.io',
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    });
+
+    const logEvent = (type, raw) => addEvent(type, raw);
+
+    newSocket.on('connect', () => logEvent('system', 'WebSocket connected'));
+    newSocket.on('disconnect', () => logEvent('system', 'WebSocket disconnected'));
+    newSocket.on('error', (e) => logEvent('error', e));
+    newSocket.on('market_update', (data) => {
+      if (data && data.symbol && data.price != null) {
+        logEvent('market', `Update for ${data.symbol}: $${data.price}`);
+      } else {
+        logEvent('market', 'Invalid market update payload');
+      }
+    });
+    newSocket.on('signal_update', (data) => {
+      if (data && data.symbol) {
+        const price = data.price != null ? `$${data.price}` : '';
+        logEvent('signal', `Signal for ${data.symbol}: ${data.type || 'unknown'} ${price}`.trim());
+      } else {
+        logEvent('signal', 'Invalid signal update payload');
+      }
+    });
+
+    setSocket(newSocket);
+    return () => newSocket.disconnect();
+  }, []);
+
+  // ----- FETCH TICKERS & POSITIONS -----
+  useEffect(() => {
+    fetch('/api/tickers')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setDashboardState(s => ({ ...s, tickers: data }));
+        else addEvent('error', 'Tickers API returned bad format');
+      })
+      .catch(() => addEvent('error', 'Failed to load tickers'));
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/positions')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setDashboardState(s => ({ ...s, positions: data }));
+        else addEvent('error', 'Positions API returned bad format');
+      })
+      .catch(() => addEvent('error', 'Failed to load positions'));
+  }, []);
+
+  /**
+   * Adds an entry to the event log, deduping by "type:message"
+   */
+  const addEvent = useCallback((type, rawMessage) => {
+    // coerce any object to JSON or toString
+    let message;
+    if (rawMessage == null) {
+      message = String(rawMessage);
+    } else if (typeof rawMessage === 'object') {
+      try {
+        message = JSON.stringify(rawMessage);
+      } catch {
+        message = '[Object]';
+      }
+    } else {
+      message = String(rawMessage);
+    }
+
+    const signature = `${type}:${message}`;
+    if (seenEventSignatures.current.has(signature)) {
+      return; // skip exact duplicates
+    }
+    seenEventSignatures.current.add(signature);
+
+    const event = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      type,
+      message
+    };
+
+    setDashboardState(s => ({
+      ...s,
+      events: [event, ...s.events].slice(0, 100)
+    }));
+  }, []);
+
+  const handleSubscribeTicker = (ticker) => {
+    if (!socket) return;
+    socket.emit('subscribe_ticker', { ticker });
+    addEvent('user', `Subscribed to ${ticker}`);
+    setDashboardState(s => ({
+      ...s,
+      activeCharts: s.activeCharts.includes(ticker)
+        ? s.activeCharts
+        : [...s.activeCharts, ticker]
+    }));
+  };
+
+  // ----- RENDER STATES -----
+  if (loading) {
+    return (
+      <div className="text-center my-5">
+        <div className="spinner-border" role="status" />
+        <p>Loading dashboard data…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    const errMsg = typeof error === 'string'
+      ? error
+      : (error.message || JSON.stringify(error));
+    return (
+      <div className="alert alert-danger m-4">
+        <h4>Error Loading Dashboard</h4>
+        <p>{errMsg}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container-fluid py-3">
+      {/* Account Info */}
+      {/* … your account cards here … */}
+
+      <div className="row">
+        {/* Sidebar */}
+        {/* … ticker list … */}
+
+        {/* Main Content */}
+        <div className="col-md-9">
+          {/* Charts */}
+          <div className="row mb-4">
+            {dashboardState.activeCharts.length > 0 ? (
+              dashboardState.activeCharts.map(ticker => (
+                <div key={ticker} className="col-md-6 mb-3">
+                  <ChartErrorBoundary>
+                    <div className="card">
+                      <div className="card-header d-flex justify-content-between">
+                        <h5>{ticker}</h5>
+                        <button
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() =>
+                            setDashboardState(s => ({
+                              ...s,
+                              activeCharts: s.activeCharts.filter(t => t !== ticker)
+                            }))
+                          }
+                        >
+                          &times;
+                        </button>
+                      </div>
+                      <div className="card-body" id={`chart-${ticker}`}>
+                        {/* hook up your chart library here */}
+                        Loading…
+                      </div>
+                    </div>
+                  </ChartErrorBoundary>
+                </div>
+              ))
+            ) : (
+              <div className="col-12">
+                <div className="alert alert-info">
+                  Select tickers from the sidebar to display charts
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Event Log */}
+          <div className="card">
+            <div className="card-header">
+              <h5>Event Log</h5>
+            </div>
+            <div
+              className="list-group list-group-flush"
+              style={{ maxHeight: 250, overflowY: 'auto' }}
+            >
+              {dashboardState.events.length > 0 ? (
+                dashboardState.events.map(evt => (
+                  <div key={evt.id} className="list-group-item">
+                    <small className="text-muted me-2">
+                      {new Date(evt.timestamp).toLocaleTimeString()}
+                    </small>
+                    <span
+                      className={`badge me-2 ${
+                        evt.type === 'error'
+                          ? 'bg-danger'
+                          : evt.type === 'system'
+                          ? 'bg-secondary'
+                          : evt.type === 'signal'
+                          ? 'bg-primary'
+                          : 'bg-success'
+                      }`}
+                    >
+                      {evt.type}
+                    </span>
+                    {evt.message}
+                  </div>
+                ))
+              ) : (
+                <div className="list-group-item text-center text-muted">
+                  No events yet
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default Dashboard;
+What this fixes
+key collisions: each event now has a stable, deterministic signature‐based dedupe, and an actual UUID for its React key.
+
+Object children: the <p> in the error screen and all event messages are now always plain strings.
+
+Resilience: a lightweight ChartErrorBoundary ensures one bad chart doesn’t blank out your entire dashboard.
+
+Let me know if you run into any new warnings!
