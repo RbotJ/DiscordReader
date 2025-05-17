@@ -202,53 +202,13 @@ def add_sample_data():
                 'message': 'Failed to process any Discord messages'
             }), 500
         
-        # Sample setup message 2: AAPL
-        message2 = models.SetupMessage(
-            date=datetime.now().date(),
-            raw_text="Trade Setups - Friday, May 17:\n\n1. AAPL: Breakout above 186.4. Looking for continuation to 190+. \nTargets: 188.7, 190.2, 192.5\nBias: Bullish above 186.4",
-            source="sample"
-        )
-        db.session.add(message2)
-        
-        # Add ticker setup for AAPL
-        ticker_setup2 = models.TickerSetup(
-            symbol="AAPL",
-            text="Breakout above 186.4. Looking for continuation to 190+. \nTargets: 188.7, 190.2, 192.5\nBias: Bullish above 186.4",
-            message=message2
-        )
-        db.session.add(ticker_setup2)
-        
-        # Add signal for AAPL
-        signal2 = models.Signal(
-            ticker_setup=ticker_setup2,
-            category=models.SignalCategoryEnum.BREAKOUT,
-            aggressiveness=models.AggressivenessEnum.MEDIUM,
-            comparison=models.ComparisonTypeEnum.ABOVE,
-            trigger={"price": 186.4, "timeframe": "15Min"},
-            targets=[
-                {"price": 188.7, "percentage": 0.3}, 
-                {"price": 190.2, "percentage": 0.4},
-                {"price": 192.5, "percentage": 0.3}
-            ]
-        )
-        db.session.add(signal2)
-        
-        # Add bias for AAPL
-        bias2 = models.Bias(
-            ticker_setup=ticker_setup2,
-            direction=models.BiasDirectionEnum.BULLISH,
-            condition=models.ComparisonTypeEnum.ABOVE,
-            price=186.4
-        )
-        db.session.add(bias2)
-        
-        # Commit changes
+        # Commit changes and return response
         db.session.commit()
         
         return jsonify({
             'status': 'success',
-            'message': 'Sample data added successfully',
-            'count': 2
+            'message': f'Successfully processed {processed_count} Discord messages',
+            'count': processed_count
         })
         
     except Exception as e:
