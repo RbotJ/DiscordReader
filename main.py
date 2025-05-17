@@ -93,6 +93,14 @@ def register_routes(app):
         logging.info("Setup webhook routes registered")
     except ImportError as e:
         logging.warning(f"Could not import setup webhook routes: {e}")
+        
+    # Register setup API routes
+    try:
+        from features.setups.api import register_routes as register_setup_api_routes
+        register_setup_api_routes(app)
+        logging.info("Setup API routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import setup API routes: {e}")
     
     # Register Alpaca trading routes
     try:
