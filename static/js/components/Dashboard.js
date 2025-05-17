@@ -1,23 +1,39 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Component } from 'react';
 import io from 'socket.io-client';
 
-/**
- * Generate a UUID-like string for use as unique React keys
+/** 
+ * Generate a truly unique ID, using crypto.randomUUID when available.
  */
-function generateUUID() {
-  // Implementation similar to RFC4122 version 4 UUID
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+function generateId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'id-' + Math.random().toString(36).slice(2);
 }
 
 /**
- * Dashboard Component
- * 
- * Renders the main application dashboard with real-time market data.
+ * A simple error boundary so one chart error doesn't kill the whole dashboard.
  */
+class ChartErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="alert alert-danger p-3">
+          <strong>Chart failed to load.</strong>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function Dashboard({ account, loading, error }) {
   const [dashboardState, setDashboardState] = useState({
     tickers: [],
@@ -25,11 +41,9 @@ function Dashboard({ account, loading, error }) {
     activeCharts: [],
     events: []
   });
-  
   const [socket, setSocket] = useState(null);
-  const seenEventIds = useRef(new Set());
-  
-  // Reset state on component mount to avoid any stale data
+  const seenEventSignatures = useRef(new Set());
+
   useEffect(() => {
     setDashboardState({
       tickers: [],
@@ -37,179 +51,107 @@ function Dashboard({ account, loading, error }) {
       activeCharts: [],
       events: []
     });
-    seenEventIds.current.clear();
-  }, []); 
-  
-  // Connect to websocket on component mount
+    seenEventSignatures.current.clear();
+  }, []);
+
   useEffect(() => {
-    // Create socket connection
     const newSocket = io({
       path: '/socket.io',
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5
     });
-    
-    // Set up event handlers
-    newSocket.on('connect', () => {
-      console.log('Socket connected');
-      // Add to events log
-      addEvent('system', 'WebSocket connected');
-    });
-    
-    newSocket.on('disconnect', () => {
-      console.log('Socket disconnected');
-      // Add to events log
-      addEvent('system', 'WebSocket disconnected');
-    });
-    
-    newSocket.on('error', (error) => {
-      console.log('WebSocket connection error:', error);
-      addEvent('error', 'WebSocket connection error');
-    });
-    
+
+    const logEvent = (type, raw) => addEvent(type, raw);
+
+    newSocket.on('connect', () => logEvent('system', 'WebSocket connected'));
+    newSocket.on('disconnect', () => logEvent('system', 'WebSocket disconnected'));
+    newSocket.on('error', (e) => logEvent('error', e));
     newSocket.on('market_update', (data) => {
-      // Handle market update data
-      console.log('Market update received:', data);
-      try {
-        if (data && typeof data === 'object' && data.symbol && data.price) {
-          addEvent('market', `Received update for ${data.symbol}: $${data.price}`);
-        } else {
-          addEvent('market', 'Received market update with invalid data format');
-        }
-      } catch (error) {
-        console.error('Error processing market update:', error);
+      if (data && data.symbol && data.price != null) {
+        logEvent('market', `Update for ${data.symbol}: $${data.price}`);
+      } else {
+        logEvent('market', 'Invalid market update payload');
       }
     });
-    
     newSocket.on('signal_update', (data) => {
-      // Handle signal updates
-      console.log('Signal update received:', data);
-      try {
-        if (data && typeof data === 'object' && data.symbol) {
-          const price = data.price ? `$${data.price}` : '';
-          const type = data.type || 'unknown';
-          addEvent('signal', `Signal update for ${data.symbol}: ${type} ${price}`.trim());
-        } else {
-          addEvent('signal', 'Received signal update with invalid data format');
-        }
-      } catch (error) {
-        console.error('Error processing signal update:', error);
+      if (data && data.symbol) {
+        const price = data.price != null ? `$${data.price}` : '';
+        logEvent('signal', `Signal for ${data.symbol}: ${data.type || 'unknown'} ${price}`.trim());
+      } else {
+        logEvent('signal', 'Invalid signal update payload');
       }
     });
-    
-    // Save socket to state
+
     setSocket(newSocket);
-    
-    // Clean up on unmount
-    return () => {
-      if (newSocket) {
-        newSocket.disconnect();
-      }
-    };
+    return () => newSocket.disconnect();
   }, []);
-  
-  // Fetch tickers on mount
+
   useEffect(() => {
     fetch('/api/tickers')
-      .then(response => response.json())
+      .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) {
-          setDashboardState(prev => ({
-            ...prev,
-            tickers: data
-          }));
-        } else {
-          console.error('Invalid ticker data format:', data);
-          addEvent('error', 'Received invalid ticker data format');
-        }
+        if (Array.isArray(data)) setDashboardState(s => ({ ...s, tickers: data }));
+        else addEvent('error', 'Tickers API returned bad format');
       })
-      .catch(error => {
-        console.error('Error fetching tickers:', error);
-        addEvent('error', 'Failed to load tickers');
-      });
+      .catch(() => addEvent('error', 'Failed to load tickers'));
   }, []);
-  
-  // Fetch positions separately to avoid closure issues
+
   useEffect(() => {
-    // Fetch positions
     fetch('/api/positions')
-      .then(response => response.json())
+      .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) {
-          setDashboardState(prev => ({
-            ...prev,
-            positions: data
-          }));
-        } else {
-          console.error('Invalid positions data format:', data);
-          addEvent('error', 'Received invalid positions data format');
-        }
+        if (Array.isArray(data)) setDashboardState(s => ({ ...s, positions: data }));
+        else addEvent('error', 'Positions API returned bad format');
       })
-      .catch(error => {
-        console.error('Error fetching positions:', error);
-        addEvent('error', 'Failed to load positions');
-      });
+      .catch(() => addEvent('error', 'Failed to load positions'));
   }, []);
-  
-  // Helper to add events to the event log - using useCallback for stability
-  const addEvent = useCallback((type, message) => {
-    // Convert object message to string to avoid React child errors
-    let formattedMessage = '';
-    
-    if (message === null || message === undefined) {
-      formattedMessage = String(message);
-    } else if (typeof message === 'object') {
+
+  const addEvent = useCallback((type, rawMessage) => {
+    let message;
+    if (rawMessage == null) {
+      message = String(rawMessage);
+    } else if (typeof rawMessage === 'object') {
       try {
-        formattedMessage = JSON.stringify(message);
-      } catch (e) {
-        formattedMessage = '[Object]'; // Fallback for circular references
+        message = JSON.stringify(rawMessage);
+      } catch {
+        message = '[Object]';
       }
     } else {
-      formattedMessage = String(message);
+      message = String(rawMessage);
     }
-    
-    // Generate a truly unique ID
-    const uniqueId = generateUUID();
-    
-    // Check if we've already seen this event (prevent duplicates)
-    if (seenEventIds.current.has(uniqueId)) {
-      return; // Skip duplicate events
+
+    const signature = `${type}:${message}`;
+    if (seenEventSignatures.current.has(signature)) {
+      return;
     }
-    
-    // Add to seen set
-    seenEventIds.current.add(uniqueId);
-    
+    seenEventSignatures.current.add(signature);
+
     const event = {
-      id: uniqueId,
+      id: generateId(),
       timestamp: new Date().toISOString(),
       type,
-      message: formattedMessage
+      message
     };
-    
-    setDashboardState(prev => ({
-      ...prev,
-      events: [event, ...prev.events].slice(0, 100) // Keep last 100 events
+
+    setDashboardState(s => ({
+      ...s,
+      events: [event, ...s.events].slice(0, 100)
     }));
-  }, [seenEventIds]);
-  
-  // Handle subscribing to a ticker
+  }, []);
+
   const handleSubscribeTicker = (ticker) => {
-    if (socket) {
-      socket.emit('subscribe_ticker', { ticker });
-      addEvent('user', `Subscribed to ${ticker}`);
-      
-      // Add to active charts if not already there
-      if (!dashboardState.activeCharts.includes(ticker)) {
-        setDashboardState(prev => ({
-          ...prev,
-          activeCharts: [...prev.activeCharts, ticker]
-        }));
-      }
-    }
+    if (!socket) return;
+    socket.emit('subscribe_ticker', { ticker });
+    addEvent('user', `Subscribed to ${ticker}`);
+    setDashboardState(s => ({
+      ...s,
+      activeCharts: s.activeCharts.includes(ticker)
+        ? s.activeCharts
+        : [...s.activeCharts, ticker]
+    }));
   };
-  
-  // Render loading state
+
   if (loading) {
     return (
       <div className="container-fluid py-3">
@@ -222,24 +164,25 @@ function Dashboard({ account, loading, error }) {
       </div>
     );
   }
-  
-  // Render error state
+
   if (error) {
+    const errMsg = typeof error === 'string'
+      ? error
+      : (error.message || JSON.stringify(error));
     return (
       <div className="container-fluid py-3">
         <div className="alert alert-danger" role="alert">
           <h4 className="alert-heading">Error Loading Dashboard</h4>
-          <p>{error}</p>
+          <p>{errMsg}</p>
           <hr />
           <p className="mb-0">Please try refreshing the page or contact support if the problem persists.</p>
         </div>
       </div>
     );
   }
-  
+
   return (
     <div className="container-fluid py-3">
-      {/* Account Info Row */}
       <div className="row mb-4">
         <div className="col-12">
           <div className="card">
@@ -279,10 +222,8 @@ function Dashboard({ account, loading, error }) {
           </div>
         </div>
       </div>
-      
-      {/* Main Dashboard Row */}
+
       <div className="row">
-        {/* Sidebar */}
         <div className="col-md-3 mb-4">
           <div className="card h-100">
             <div className="card-header">
@@ -309,37 +250,37 @@ function Dashboard({ account, loading, error }) {
             </div>
           </div>
         </div>
-        
-        {/* Main Content */}
+
         <div className="col-md-9 mb-4">
-          {/* Charts Grid */}
           <div className="row mb-4">
             {dashboardState.activeCharts.length > 0 ? (
               dashboardState.activeCharts.map(ticker => (
-                <div key={ticker} className="col-md-6 mb-4">
-                  <div className="card">
-                    <div className="card-header d-flex justify-content-between align-items-center">
-                      <h5 className="mb-0">{ticker}</h5>
-                      <button 
-                        className="btn btn-sm btn-outline-secondary"
-                        onClick={() => {
-                          setDashboardState(prev => ({
-                            ...prev,
-                            activeCharts: prev.activeCharts.filter(t => t !== ticker)
-                          }));
-                        }}
-                      >
-                        <i className="bi bi-x"></i>
-                      </button>
-                    </div>
-                    <div className="card-body">
-                      <div className="chart-container" id={`chart-${ticker}`}>
-                        <div className="d-flex align-items-center justify-content-center h-100">
-                          <p className="text-muted mb-0">Loading chart...</p>
+                <div key={ticker} className="col-md-6 mb-3">
+                  <ChartErrorBoundary>
+                    <div className="card">
+                      <div className="card-header d-flex justify-content-between align-items-center">
+                        <h5 className="mb-0">{ticker}</h5>
+                        <button 
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() => {
+                            setDashboardState(prev => ({
+                              ...prev,
+                              activeCharts: prev.activeCharts.filter(t => t !== ticker)
+                            }));
+                          }}
+                        >
+                          <i className="bi bi-x"></i>
+                        </button>
+                      </div>
+                      <div className="card-body p-0">
+                        <div className="chart-container" id={`chart-${ticker}`}>
+                          <div className="d-flex align-items-center justify-content-center h-100">
+                            <p className="text-muted mb-0">Loading chart...</p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </ChartErrorBoundary>
                 </div>
               ))
             ) : (
@@ -351,8 +292,7 @@ function Dashboard({ account, loading, error }) {
               </div>
             )}
           </div>
-          
-          {/* Event Log */}
+
           <div className="card">
             <div className="card-header">
               <h5 className="mb-0">Event Log</h5>
@@ -373,7 +313,7 @@ function Dashboard({ account, loading, error }) {
                       }`}>
                         {event.type}
                       </span>
-                      {typeof event.message === 'string' ? event.message : JSON.stringify(event.message)}
+                      {event.message}
                     </div>
                   ))
                 ) : (
