@@ -1,0 +1,87 @@
+Here are some targeted suggestions to make your Redis utility module more robust, performant, and maintainable:
+
+Swap manual fallback arrays for collections.deque
+
+python
+Copy
+Edit
+from collections import defaultdict, deque
+_fallback_messages: Dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_FALLBACK_MESSAGES))
+A deque with maxlen automatically drops old messages, so you don’t need to slice lists each publish.
+
+Use queue.Queue for per-subscriber queues
+Instead of managing your own message_queue list plus a lock, you can simplify thread-safety by:
+
+python
+Copy
+Edit
+from queue import Queue, Empty
+self.message_queue: Queue = Queue()
+and then in get_message():
+
+python
+Copy
+Edit
+try:
+    return self.message_queue.get(timeout=timeout)
+except Empty:
+    return None
+This removes explicit locks and makes your fallback PubSub simpler.
+
+Avoid trying to auto-start Redis via subprocess
+Starting Redis from your app risks hanging or permission issues. Instead rely on your container/orchestration (Docker Compose, systemd, Kubernetes) to manage Redis. You can remove _start_redis_server() and ensure_redis_is_running(), and simply log a warning if Redis is down.
+
+Reuse a single redis.ConnectionPool
+Each RedisClient currently does redis.from_url(), which creates a new connection pool. Consider making the pool a module-level singleton so every RedisClient shares it and you don’t exhaust connections:
+
+python
+Copy
+Edit
+_pool = redis.ConnectionPool.from_url(REDIS_URL)
+client = redis.Redis(connection_pool=_pool)
+Leverage Redis-Py’s built-in run_in_thread for Pub/Sub
+Rather than polling with get_message(timeout) + sleep(0.01), you can:
+
+python
+Copy
+Edit
+pubsub = client.pubsub()
+pubsub.subscribe(**{channel: callback})
+thread = pubsub.run_in_thread(sleep_time=0.1)
+This hands off message dispatch to Redis-Py, reduces CPU churn, and cleans up subscriptions automatically.
+
+Restore fallback “get” and “set” semantics
+Currently get() in fallback mode always returns None. If you want your app to continue working in-memory, implement:
+
+python
+Copy
+Edit
+if self.fallback_mode:
+    return fallback_store.get(key)
+and similarly for set(), so that reads/writes still operate when Redis is down.
+
+Isolate fallback logic into its own module/class
+Right now your RedisClient mixes real Redis, fallback pub/sub, and fallback get/set. Extract a separate InMemoryRedis implementation that shares the same interface. Then RedisClient can simply wrap either a real or in-memory client, rather than branching on self.fallback_mode everywhere.
+
+Parameterize host/port/db via constructor or environment
+Rather than hard-coding REDIS_HOST, REDIS_PORT, REDIS_DB, let users pass them in, or at least read them from the url parameter. This makes your module more reusable in different environments.
+
+Graceful shutdown of subscriber threads
+You set self.running = False in unsubscribe, but there’s no way to tell your background subscription loop to exit. Consider adding a public close() method on FallbackPubSub (and on real PubSub thread) that cleanly unsubscribes and stops any thread loops.
+
+Add type hints and docstrings for clarity
+Most of your methods lack return type annotations. Adding -> bool, -> Optional[str], etc., helps with IDE autocompletion and static analysis.
+
+By adopting these changes you’ll get:
+
+Automatic fallback trimming via deque
+
+Cleaner thread-safe queues via queue.Queue
+
+Less CPU busy-waiting via run_in_thread
+
+Simpler, testable fallback logic by isolating it
+
+Greater configurability for real-world deployments
+
+This will make your Redis utilities both leaner and far more reliable in production.

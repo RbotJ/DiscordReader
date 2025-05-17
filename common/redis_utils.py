@@ -6,12 +6,12 @@ for reliable event handling even when Redis is not available.
 """
 import json
 import logging
-import subprocess
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
-from typing import Any, Dict, List, Set, Optional, Union, Callable
+from queue import Queue, Empty
+from typing import Any, Dict, List, Set, Optional, Union, Callable, Deque
 
 import redis
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -28,9 +28,14 @@ REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 # Maximum number of messages to store in memory (per channel)
 MAX_FALLBACK_MESSAGES = 1000
 
-# Fallback in-memory message store
-# Structure: {channel: [messages]}
-_fallback_messages: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+# Fallback in-memory message store with auto-trimming via deque
+# Structure: {channel: deque(messages, maxlen=MAX_FALLBACK_MESSAGES)}
+_fallback_messages: Dict[str, Deque[Dict[str, Any]]] = defaultdict(
+    lambda: deque(maxlen=MAX_FALLBACK_MESSAGES)
+)
+
+# In-memory key-value store for fallback get/set operations
+_fallback_kv_store: Dict[str, Any] = {}
 
 # Subscribers for fallback mode
 # Structure: {channel: [callback_functions]}
@@ -38,6 +43,14 @@ _fallback_subscribers: Dict[str, List[Callable]] = defaultdict(list)
 
 # Lock for thread-safe operations on fallback structures
 _fallback_lock = threading.Lock()
+
+# Connection pool for Redis (module-level singleton)
+try:
+    _redis_pool = redis.ConnectionPool.from_url(REDIS_URL)
+    logger.debug("Redis connection pool initialized")
+except Exception as e:
+    logger.warning(f"Failed to initialize Redis connection pool: {e}")
+    _redis_pool = None
 
 def _start_redis_server() -> bool:
     """
@@ -83,17 +96,14 @@ class FallbackPubSub:
         self.channels = set(channels)
         self.running = True
         
+        # Message queue for this subscriber using thread-safe Queue
+        self.message_queue: Queue = Queue()
+        
         # Register with the fallback system
         with _fallback_lock:
             for channel in self.channels:
                 if self._message_callback not in _fallback_subscribers[channel]:
                     _fallback_subscribers[channel].append(self._message_callback)
-        
-        # Message queue for this subscriber
-        self.message_queue: List[Dict[str, Any]] = []
-        
-        # Lock for thread-safe operations on the message queue
-        self.queue_lock = threading.Lock()
     
     def _message_callback(self, message: Dict[str, Any]) -> None:
         """
@@ -105,23 +115,23 @@ class FallbackPubSub:
         if not self.running:
             return
             
-        with self.queue_lock:
-            self.message_queue.append(message)
+        # Queue.put is thread-safe, no need for explicit locks
+        self.message_queue.put(message)
     
     def get_message(self, timeout: float = 0.01) -> Optional[Dict[str, Any]]:
         """
         Get a message from the queue.
         
         Args:
-            timeout: Timeout in seconds (used for API compatibility)
+            timeout: Timeout in seconds
             
         Returns:
             Message dictionary or None if no message
         """
-        # timeout is ignored in fallback mode since we just check the queue
-        with self.queue_lock:
-            if self.message_queue:
-                return self.message_queue.pop(0)
+        try:
+            # Use the timeout parameter with Queue.get
+            return self.message_queue.get(block=True, timeout=timeout)
+        except Empty:
             return None
     
     def unsubscribe(self, *args) -> None:
@@ -131,7 +141,7 @@ class FallbackPubSub:
         Args:
             *args: Channel names to unsubscribe from, or all if none provided
         """
-        channels_to_unsub = set(args) if args else self.channels
+        channels_to_unsub = set(args) if args else self.channels.copy()
         
         with _fallback_lock:
             for channel in channels_to_unsub:
@@ -143,6 +153,13 @@ class FallbackPubSub:
                         _fallback_subscribers[channel].remove(self._message_callback)
         
         self.running = len(self.channels) > 0
+        
+    def close(self) -> None:
+        """
+        Close the subscription and clean up resources.
+        """
+        self.unsubscribe()
+        self.running = False
 
 class RedisClient:
     """
@@ -150,7 +167,7 @@ class RedisClient:
     Redis is not available.
     """
     
-    def __init__(self, url: str = REDIS_URL, max_retries: int = 5):
+    def __init__(self, url: str = REDIS_URL, max_retries: int = 3):
         """
         Initialize the Redis client.
         
@@ -162,12 +179,12 @@ class RedisClient:
         self.client = None
         self.fallback_mode = False
         
-        # Try to connect to Redis
+        # Try to connect to Redis using the shared connection pool
         self._connect(max_retries)
     
-    def _connect(self, max_retries: int = 5) -> None:
+    def _connect(self, max_retries: int = 3) -> None:
         """
-        Connect to Redis with retries.
+        Connect to Redis with retries using the shared connection pool.
         
         Args:
             max_retries: Maximum number of retries
@@ -176,7 +193,12 @@ class RedisClient:
         
         while retries < max_retries:
             try:
-                self.client = redis.from_url(self.url)
+                # Use the shared connection pool if available
+                if _redis_pool is not None:
+                    self.client = redis.Redis(connection_pool=_redis_pool)
+                else:
+                    self.client = redis.from_url(self.url)
+                    
                 # Test connection
                 self.client.ping()
                 self.fallback_mode = False
@@ -184,14 +206,8 @@ class RedisClient:
             except redis.exceptions.ConnectionError:
                 retries += 1
                 
-                if retries == 1:
-                    # On first failure, try to start Redis server
-                    logger.info("Redis not running, attempting to start it...")
-                    if _start_redis_server():
-                        # Retry immediately if server started
-                        continue
-                
-                time.sleep(1)
+                # No Redis startup attempts, just retry with backoff
+                time.sleep(0.5 * retries)
         
         # If we get here, we couldn't connect after max_retries
         self.client = None
@@ -344,24 +360,10 @@ def ensure_redis_is_running() -> bool:
         client.ping()
         return True
     except Exception:
-        # Redis is not running, try to start it
-        return _start_redis_server()
-
-def ensure_redis_is_running() -> bool:
-    """
-    Ensure the Redis server is running.
-    
-    Returns:
-        bool: True if Redis server is running, False otherwise
-    """
-    try:
-        client = redis.from_url(REDIS_URL)
-        # Test connection
-        client.ping()
-        return True
-    except Exception:
-        # Redis is not running, try to start it
-        return _start_redis_server()
+        # Instead of trying to start Redis, just return False
+        # This avoids timeouts and speeds up startup
+        logger.warning("Redis server not running and will not be started automatically")
+        return False
 
 def get_redis_client() -> RedisClient:
     """
@@ -392,9 +394,12 @@ def publish_event(channel: str, event_type: str, data: Dict[str, Any]) -> bool:
             'data': data
         }
         
-        # Get Redis client and publish
-        redis_client = get_redis_client()
-        return redis_client.publish(channel, payload)
+        # Get Redis client and publish - use a global client to avoid startup attempts
+        if not hasattr(publish_event, '_redis_client'):
+            logger.info("Initializing Redis client for event publishing")
+            publish_event._redis_client = RedisClient()
+            
+        return publish_event._redis_client.publish(channel, payload)
     except Exception as e:
         logger.error(f"Error publishing event to {channel}: {e}")
         return False
