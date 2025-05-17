@@ -1,0 +1,83 @@
+A few suggestions to tighten and future-proof it:
+
+Unify side & TIF mapping in a helper
+You repeat the same string-to-enum logic in three places. Pull it into a small utility so any future enum additions (“OPG”, extended-hours, etc.) only need one change:
+
+python
+Copy
+Edit
+from alpaca.trading.enums import OrderSide, TimeInForce
+
+def map_side(side: str) -> OrderSide:
+    return OrderSide(side.upper())
+
+def map_tif(tif: str) -> TimeInForce:
+    return TimeInForce(tif.upper())
+Then:
+
+python
+Copy
+Edit
+order_data = MarketOrderRequest(
+    symbol=symbol,
+    qty=qty,
+    side=map_side(side),
+    time_in_force=map_tif(time_in_force),
+    extended_hours=extended_hours,
+    client_order_id=client_order_id
+)
+This DRYs up your code and ensures you never mistype an enum value .
+
+Batch your DB commits
+Right now each place_*_order writes the order model then creates a notification in two separate commit() calls. Instead, add both models to the session first, then commit once:
+
+python
+Copy
+Edit
+db.session.add(new_order)
+db.session.add(notification)
+db.session.commit()
+This reduces round-trips and avoids partial writes on failure.
+
+Extract persistence into a repository
+Consider a thin class (e.g. OrderRepository) responsible for “save order + notification.” Your Flask handlers and your service logic can remain focused on trading, not on SQLAlchemy details.
+
+Leverage Alpaca’s built-in order cancellation
+Instead of trading_client.cancel_order_by_id(), you can call:
+
+python
+Copy
+Edit
+trading_client.cancel_order(order_id)
+which also returns the updated order model so you can grab its final status in one call .
+
+Use the Alpaca Clock for position snapshots
+In your get_positions(), you fetch and then immediately persist. If you ever need to snapshot positions over time, drive this from a scheduled job using:
+
+python
+Copy
+Edit
+clock = trading_client.get_clock()
+if clock.is_open:
+    fetch_and_persist_positions()
+Otherwise you may lump weekend/holiday queries into your tables inadvertently .
+
+Avoid app.app_context() within loops
+Wrapping each position update in its own app context can be heavy. Instead:
+
+python
+Copy
+Edit
+with app.app_context():
+    for position in positions:
+        # update/create PositionModel
+    db.session.commit()
+Then do the “closed_at” check and second commit in the same context. Fewer context switches = better performance.
+
+Consider using bulk upsert for positions
+If you expect high volume (many tickers), SQLAlchemy’s bulk_save_objects() or PostgreSQL’s INSERT … ON CONFLICT can reduce round-trips dramatically.
+
+Normalize execute_signal_trade logic
+You re-implement sizing and side-derivation in both the SignalProcessor and here. Factor those into a shared service so you don’t drift into two slightly-different behaviors over time.
+
+With these refactors you’ll have a leaner, more maintainable execution layer that stays aligned with Alpaca-py’s best practices and scales as your strategy grows.
