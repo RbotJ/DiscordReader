@@ -563,23 +563,41 @@ def get_latest_bars(symbols: Union[List[str], str], timeframe: str = '1Day', lim
         # Format response
         result = {}
         
-        # Handle different response formats
-        if isinstance(bars, dict):
-            # Dictionary format with symbol as key
-            for symbol, symbol_bars in bars.items():
-                result[symbol] = []
-                for bar in symbol_bars:
-                    result[symbol].append({
-                        'timestamp': str(bar.timestamp) if hasattr(bar, 'timestamp') else None,
-                        'open': float(bar.open) if hasattr(bar, 'open') else None,
-                        'high': float(bar.high) if hasattr(bar, 'high') else None,
-                        'low': float(bar.low) if hasattr(bar, 'low') else None,
-                        'close': float(bar.close) if hasattr(bar, 'close') else None,
-                        'volume': int(bar.volume) if hasattr(bar, 'volume') else None
-                    })
-        else:
-            # Direct list format or other format
-            logger.warning("Unexpected format in get_stock_bars response")
+        # Handle response format from Alpaca API
+        try:
+            # Try accessing as dictionary
+            if hasattr(bars, 'data') and isinstance(bars.data, dict):
+                # Dictionary format with symbol as key in bars.data
+                for symbol, symbol_bars in bars.data.items():
+                    result[symbol] = []
+                    for bar in symbol_bars:
+                        result[symbol].append({
+                            'timestamp': str(bar.timestamp) if hasattr(bar, 'timestamp') else None,
+                            'open': float(bar.open) if hasattr(bar, 'open') else None,
+                            'high': float(bar.high) if hasattr(bar, 'high') else None,
+                            'low': float(bar.low) if hasattr(bar, 'low') else None,
+                            'close': float(bar.close) if hasattr(bar, 'close') else None,
+                            'volume': int(bar.volume) if hasattr(bar, 'volume') else None
+                        })
+            elif isinstance(bars, dict):
+                # Dictionary format with symbol as key directly
+                for symbol, symbol_bars in bars.items():
+                    result[symbol] = []
+                    for bar in symbol_bars:
+                        result[symbol].append({
+                            'timestamp': str(bar.timestamp) if hasattr(bar, 'timestamp') else None,
+                            'open': float(bar.open) if hasattr(bar, 'open') else None,
+                            'high': float(bar.high) if hasattr(bar, 'high') else None,
+                            'low': float(bar.low) if hasattr(bar, 'low') else None,
+                            'close': float(bar.close) if hasattr(bar, 'close') else None,
+                            'volume': int(bar.volume) if hasattr(bar, 'volume') else None
+                        })
+            else:
+                # Log the actual response type for debugging
+                logger.warning(f"Unexpected format in get_stock_bars response: {type(bars)} - {vars(bars) if hasattr(bars, '__dict__') else 'No vars'}")
+                return {}
+        except Exception as e:
+            logger.error(f"Error processing bars response: {e}")
             return {}
         
         return result
