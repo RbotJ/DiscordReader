@@ -5,9 +5,21 @@ import io from 'socket.io-client';
  * Generate a truly unique ID, using crypto.randomUUID when available.
  */
 // Simple counter-based ID generation to ensure uniqueness
-let idCounter = 0;
+// Using a module-scope counter that persists between renders
+const idCounters = {
+  global: 0,
+  ticker: 0,
+  chart: 0,
+  event: 0
+};
+
 function generateId(prefix = 'id') {
-  return `${prefix}-${++idCounter}`;
+  // Increment the specific counter or the global one
+  const counter = idCounters[prefix] !== undefined ? 
+    ++idCounters[prefix] : 
+    ++idCounters.global;
+  
+  return `${prefix}-${counter}-${Date.now()}`;
 }
 
 /**
@@ -297,7 +309,7 @@ function Dashboard({ account, loading, error }) {
                         </button>
                       </div>
                       <div className="card-body p-0">
-                        <div className="chart-container" id={`chart-${ticker}`}>
+                        <div className="chart-container" id={`chart-${chart.symbol}`}>
                           <div className="d-flex align-items-center justify-content-center h-100">
                             <p className="text-muted mb-0">Loading chart...</p>
                           </div>
