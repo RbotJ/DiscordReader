@@ -37,6 +37,7 @@ discord_client = None
 client_ready = False
 message_handlers = []
 setup_message_callbacks = []
+is_discord_available = bool(DISCORD_APP_TOKEN and CHANNEL_APLUS_SETUPS_ID)
 def register_message_handler(handler: Callable[[discord.Message], Any]) -> None:
     """
     Register a function to handle new messages.
