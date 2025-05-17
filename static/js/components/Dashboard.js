@@ -293,7 +293,7 @@ function Dashboard({ account, loading, error }) {
               <div className="list-group list-group-flush event-log" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                 {dashboardState.events.length > 0 ? (
                   dashboardState.events.map(event => (
-                    <div key={event.id || Date.now() + Math.random()} className="list-group-item py-2">
+                    <div key={event.id || `event-${Date.now()}-${dashboardState.events.indexOf(event)}`} className="list-group-item py-2">
                       <small className="text-muted me-2">
                         {new Date(event.timestamp).toLocaleTimeString()}
                       </small>
@@ -307,7 +307,7 @@ function Dashboard({ account, loading, error }) {
                       </span>
                       {typeof event.message === 'string' ? event.message : 
                        typeof event.message === 'object' ? JSON.stringify(event.message) : 
-                       String(event.message)}
+                       String(event.message || '')}
                     </div>
                   ))
                 ) : (

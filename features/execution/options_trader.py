@@ -495,3 +495,14 @@ def init_options_trader() -> bool:
     except Exception as e:
         logger.error(f"Error initializing options trader: {e}")
         return False
+        
+def trader_running() -> bool:
+    """
+    Check if the options trader is currently running.
+    
+    Returns:
+        bool: True if the trader is initialized and running, False otherwise
+    """
+    global _trading_client, _options_fetcher
+    
+    return _trading_client is not None and _options_fetcher is not None
