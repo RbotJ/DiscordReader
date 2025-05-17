@@ -296,21 +296,48 @@ def get_channel_messages() -> List[dict]:
         return []
 
     async def _fetch_setups() -> List[dict]:
-        chan = discord_client.get_channel(CHANNEL_APLUS_SETUPS_ID)
-        if chan is None:
-            chan = await discord_client.fetch_channel(CHANNEL_APLUS_SETUPS_ID)
+        try:
+            # Get channel object first, using fetch_channel as fallback
+            chan = discord_client.get_channel(CHANNEL_APLUS_SETUPS_ID) or await discord_client.fetch_channel(CHANNEL_APLUS_SETUPS_ID)
+            if not chan:
+                logger.error(f"Could not find channel with ID {CHANNEL_APLUS_SETUPS_ID}")
+                return []
+                
+            messages = []
+            logger.info(f"Fetching messages from channel: {chan.name} (ID: {chan.id})")
             
-        messages = []
-        async for msg in chan.history(limit=20):
-            # Extract msg.content or fall back to first embed.description
-            text = msg.content or next((e.description for e in msg.embeds if e.description), "")
-            messages.append({
-                "id": str(msg.id),
-                "content": text or "(no text/attachments)",
-                "timestamp": msg.created_at,
-                "author": str(msg.author),
-            })
-        return messages
+            async for msg in chan.history(limit=20):
+                # Extract content, prioritizing:
+                # 1. Regular message content
+                # 2. Embed descriptions (for forwarded messages)
+                # 3. Empty string with fallback text
+                
+                # Check for forwarded messages in embeds
+                embed_content = ""
+                if msg.embeds:
+                    for embed in msg.embeds:
+                        if embed.description:
+                            embed_content = embed.description
+                            logger.info(f"Found embed content in message {msg.id}: {embed_content[:50]}...")
+                            break
+                
+                # Use message content or embed content
+                text = msg.content if msg.content else embed_content
+                
+                messages.append({
+                    "id": str(msg.id),
+                    "content": text or "(no text/attachments)",
+                    "timestamp": msg.created_at,
+                    "author": str(msg.author),
+                })
+                logger.info(f"Processed message: {msg.id} from {msg.author}")
+            
+            logger.info(f"Fetched {len(messages)} messages from Discord")
+            return messages
+            
+        except Exception as e:
+            logger.error(f"Error in _fetch_setups: {e}")
+            return []
 
     try:
         future = asyncio.run_coroutine_threadsafe(

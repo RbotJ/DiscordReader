@@ -342,23 +342,12 @@ def handle_discord_setup_message(message_content: str, message_timestamp: dateti
             logger.warning("No valid trading setups found in Discord message")
             return None
         
-        # Store in database
-        with db.session.begin():
-            # Check if this message is already processed (by checking raw_text)
-            existing_setup = SetupModel.query.filter_by(raw_text=message_content).first()
-            if existing_setup:
-                logger.info(f"Skipping already processed setup message (ID: {existing_setup.id})")
-                return existing_setup
-            
-            # Create setup model
-            setup = SetupModel()
-            setup.date = setup_message.date
-            setup.raw_text = setup_message.raw_text
-            setup.source = setup_message.source
-            setup.created_at = datetime.utcnow()
-            
-            db.session.add(setup)
-            db.session.flush()  # Flush to get the ID
+        # We'll skip database operations in the Discord bot thread
+        # to avoid 'Working outside of application context' errors
+        
+        # Just return the parsed message for display purposes
+        logger.info(f"Successfully parsed Discord setup message with {len(setup_message.setups)} ticker setups")
+        return setup_message
             
             # Create ticker setups
             ticker_symbols = []

@@ -79,7 +79,7 @@ def parse_setup_message(
         date=actual_date,
         raw_text=message_text,
         source=source,
-        ticker_setups=ticker_setups
+        setups=ticker_setups
     )
 import logging
 import re
