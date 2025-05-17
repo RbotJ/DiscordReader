@@ -53,8 +53,9 @@ function Dashboard({ account, loading, error }) {
     events: []
   });
   const [socket, setSocket] = useState(null);
-  // Used for generating unique event IDs
   const eventCounter = useRef(0);
+  const tickerCounter = useRef(0);
+  const chartCounter = useRef(0);
   // Used to dedupe exact same messages
   const seenEventSignatures = useRef(new Set());
 
@@ -108,7 +109,7 @@ function Dashboard({ account, loading, error }) {
         if (Array.isArray(data)) {
           // Transform tickers into objects with stable IDs to avoid key collisions
           const tickersWithIds = Array.from(new Set(data)).map(ticker => ({
-            id: generateId('ticker'),
+            id: `ticker-${Date.now()}-${++tickerCounter.current}`,
             symbol: ticker
           }));
           setDashboardState(s => ({ ...s, tickers: tickersWithIds }));
@@ -152,7 +153,7 @@ function Dashboard({ account, loading, error }) {
     seenEventSignatures.current.add(signature);
 
     const event = {
-      id: `evt-${++eventCounter.current}`,
+      id: `evt-${Date.now()}-${++eventCounter.current}`,
       timestamp: new Date().toISOString(),
       type,
       message
@@ -177,7 +178,7 @@ function Dashboard({ account, loading, error }) {
       
       // Add as new chart with unique ID
       const newChart = {
-        id: generateId('chart'),
+        id: `chart-${Date.now()}-${++chartCounter.current}`,
         symbol: ticker
       };
       
