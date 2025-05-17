@@ -324,73 +324,6 @@ def get_channel_messages() -> List[dict]:
     Returns:
         List of message dictionaries with 'content' and 'timestamp' keys
     """
-    try:
-        # In a real environment, we'd fetch from Discord
-        # Since the current Discord channel seems to have empty messages,
-        # we'll use sample data that follows the expected format
-        
-        sample_messages = [
-            {
-                'id': 'msg_001',
-                'content': """
-A+ Trade Setups - Fri, May 17:
-
-1. AMZN: Consolidation in 180-185 range. Watching for breakout direction.
-Targets (breakout): 187.5, 190.0
-Targets (breakdown): 178.5, 175.0
-Bias: Neutral, bullish above 185.0, bearish below 180.0
-
-2. MSFT: Strong rejection at 425.75. Looking for pullback to 415-420 range.
-Targets: 420.5, 417.3, 415.1
-Bias: Bearish below 425.75
-                """,
-                'timestamp': datetime.utcnow() - timedelta(hours=2)
-            },
-            {
-                'id': 'msg_002',
-                'content': """
-A+ Trade Setups - Thu, May 16:
-
-1. SPY: Struggling with the 518.50 level. Watch for confirmation.
-Targets (above): 522.75, 525.00
-Targets (below): 515.25, 512.80
-Bias: Neutral until direction confirmed
-
-2. NVDA: Holding support at 950.00 after earnings. 
-Targets: 980.00, 1000.00, 1025.00
-Bias: Bullish above 950.00
-                """,
-                'timestamp': datetime.utcnow() - timedelta(days=1)
-            },
-            {
-                'id': 'msg_003',
-                'content': """
-A+ Trade Setups - Wed, May 15:
-
-1. AAPL: Testing 190.00 resistance level.
-Targets (breakout): 193.50, 195.00
-Targets (rejection): 187.50, 185.00
-Bias: Neutral, leaning bullish
-
-2. META: Finding support at 475.00.
-Targets: 480.00, 485.00, 490.00
-Bias: Bullish while above 475.00
-                """,
-                'timestamp': datetime.utcnow() - timedelta(days=2)
-            }
-        ]
-        
-        logger.info(f"Returning {len(sample_messages)} sample trading setup messages")
-        return sample_messages
-        
-    except Exception as e:
-        logger.error(f"Error in Discord message fetching: {e}")
-        # Return an empty list if anything fails
-        return []
-        
-    # NOTE: The code below is the original implementation that would fetch from Discord
-    # We're keeping it for reference, but using sample data for now
-    """
     if not CHANNEL_APLUS_SETUPS_ID:
         logger.warning("A+ setups channel ID not configured")
         return []
@@ -419,15 +352,48 @@ Bias: Bullish while above 475.00
                     if channel is None:
                         channel = await client.fetch_channel(CHANNEL_APLUS_SETUPS_ID)
                     
-                    # Pull the last few messages (up to 5)
-                    async for msg in channel.history(limit=5):
-                        # Include all messages
-                        logger.info(f"Found message from Discord: {msg.id}")
+                    logger.info(f"Fetching messages from Discord channel: #{channel.name} (ID: {CHANNEL_APLUS_SETUPS_ID})")
+                    
+                    # Pull the last few messages (up to 10 to ensure we get some with content)
+                    message_count = 0
+                    async for msg in channel.history(limit=10):
+                        # Include all messages, even if they have empty content
+                        # This way, we can see what's actually in the channel
+                        message_count += 1
+                        logger.info(f"Found message from Discord: {msg.id} from {msg.author}, content length: {len(msg.content)}")
+                        
+                        # Check for attachments or embeds
+                        attachments_info = []
+                        if msg.attachments:
+                            for attachment in msg.attachments:
+                                attachments_info.append(f"[Attachment: {attachment.filename}]")
+                        
+                        embeds_info = []
+                        if msg.embeds:
+                            for embed in msg.embeds:
+                                embed_desc = embed.description or "No description"
+                                embed_title = embed.title or "No title"
+                                embeds_info.append(f"[Embed: {embed_title} - {embed_desc[:50]}...]")
+                        
+                        # Create a combined content that includes info about attachments/embeds
+                        combined_content = msg.content
+                        if attachments_info or embeds_info:
+                            if combined_content:
+                                combined_content += "\n\n"
+                            combined_content += "\n".join(attachments_info + embeds_info)
+                        
+                        # If still empty, note that it's empty
+                        if not combined_content:
+                            combined_content = "(Message contains no text content or attachments)"
+                        
                         messages.append({
                             'id': str(msg.id),
-                            'content': msg.content if msg.content else "(Message contains no text content)",
-                            'timestamp': msg.created_at
+                            'content': combined_content,
+                            'timestamp': msg.created_at,
+                            'author': str(msg.author)
                         })
+                    
+                    logger.info(f"Fetched {message_count} messages, {len(messages)} with content")
                     
                     if not messages:
                         logger.warning(f"No messages found in channel {CHANNEL_APLUS_SETUPS_ID}")
@@ -457,11 +423,10 @@ Bias: Bullish while above 475.00
             logger.info(f"Successfully fetched {len(result)} messages from Discord")
             return result
         else:
-            # Return empty list if no messages found
+            logger.warning("No messages found in Discord channel, returning empty list")
             return []
     
     except Exception as e:
         logger.error(f"Error in Discord message fetching: {e}")
         # Return an empty list if anything fails
         return []
-    """
