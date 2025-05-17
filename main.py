@@ -213,11 +213,10 @@ def register_routes(app):
         Returns a list of ticker symbols that have active setups.
         """
         try:
-            # Query the database for unique tickers from ticker_setups table
-            # Use a fully qualified import to avoid model registry conflicts
-            import models
-            ticker_results = db.session.query(models.TickerSetup.symbol).distinct().all()
-            tickers = [result[0] for result in ticker_results]
+            # Use raw SQL to avoid model registry conflicts
+            from sqlalchemy import text
+            results = db.session.execute(text("SELECT DISTINCT symbol FROM ticker_setups")).fetchall()
+            tickers = [row[0] for row in results]
             
             # If no tickers found in the database, return a few sample tickers
             if not tickers:
