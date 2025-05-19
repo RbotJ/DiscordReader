@@ -1,6 +1,13 @@
+"""
+A+ Trading Application Main Module
+
+This is the main entry point for the trading application.
+It configures the Flask application, initializes components,
+and sets up the routes.
+"""
+
 import logging
 import os
-import sys
 from datetime import datetime
 
 # Configure logging
@@ -31,8 +38,19 @@ def create_app():
     # Initialize SocketIO
     socketio.init_app(app, cors_allowed_origins="*")
     
-    # Register all routes
-    register_all_routes(app)
+    # Register feature-specific routes
+    register_feature_routes(app)
+    
+    # Register API routes
+    try:
+        from api_routes import register_api_routes
+        register_api_routes(app, db)
+        logging.info("API routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not register API routes: {e}")
+    
+    # Register web UI routes
+    register_web_routes(app)
     
     # Register SocketIO event handlers
     register_socketio_events()
@@ -74,42 +92,6 @@ def register_socketio_events():
                     'price': 0,  # Will be filled with real data later
                     'timestamp': datetime.now().isoformat()
                 })
-
-def register_all_routes(app):
-    """Register all routes with the Flask application."""
-    # Register feature-specific routes
-    register_feature_routes(app)
-    
-    # Register API routes
-    try:
-        # Import API routes
-        from api_routes import register_api_routes as register_central_api_routes
-        register_central_api_routes(app, db)
-        logging.info("Centralized API routes registered")
-    except ImportError as e:
-        logging.warning(f"Could not import centralized API routes: {e}")
-        # We'll use the built-in routes defined below
-    
-    # Register Web UI routes - no duplicates with API routes
-    @app.route('/')
-    def index():
-        """Main landing page."""
-        return render_template('index.html', title="A+ Trading App")
-    
-    @app.route('/dashboard')
-    def dashboard():
-        """Trading dashboard page."""
-        return render_template('dashboard.html', title="Trading Dashboard")
-    
-    @app.route('/recent-setups')
-    def recent_setups():
-        """Recent setups page displaying messages from Discord."""
-        return render_template('recent_setups.html', title="Recent Trading Setups")
-    
-    @app.route('/setup/<int:setup_id>')
-    def setup_detail(setup_id):
-        """View details of a specific setup."""
-        return render_template('setup_detail.html', title="Setup Details", setup_id=setup_id)
 
 def register_feature_routes(app):
     """Register feature-specific routes from the features directory."""
@@ -170,70 +152,9 @@ def register_feature_routes(app):
     except ImportError as e:
         logging.warning(f"Could not import execution routes: {e}")
 
-# Removed obsolete code
-        
-        # Test account endpoint
-        try:
-            from features.alpaca.client import get_account_info
-            account = get_account_info()
-            results['account'] = {
-                'status': 'success',
-                'data': account
-            }
-        except Exception as e:
-            results['account'] = {
-                'status': 'error',
-                'error': str(e)
-            }
-            
-        # Test positions endpoint
-        try:
-            from features.alpaca.client import get_positions
-            positions = get_positions()
-            results['positions'] = {
-                'status': 'success',
-                'count': len(positions),
-                'data': positions[:2] if positions else []  # Show first 2 positions only
-            }
-        except Exception as e:
-            results['positions'] = {
-                'status': 'error',
-                'error': str(e)
-            }
-            
-        # Test candles endpoint
-        try:
-            from features.alpaca.client import get_bars
-            candles = get_bars('SPY', '1Min', 10)
-            results['candles'] = {
-                'status': 'success',
-                'count': len(candles),
-                'data': candles[:2] if candles else []  # Show only first 2 candles
-            }
-        except Exception as e:
-            results['candles'] = {
-                'status': 'error',
-                'error': str(e)
-            }
-            
-        # Test signals endpoint
-        try:
-            from features.strategy import get_candle_signals
-            signals = get_candle_signals('SPY')
-            results['signals'] = {
-                'status': 'success',
-                'count': len(signals) if signals else 0,
-                'data': signals[:2] if signals else []  # Show only first 2 signals
-            }
-        except Exception as e:
-            results['signals'] = {
-                'status': 'error',
-                'error': str(e)
-            }
-            
-        return jsonify(results)
-    
-    # Add main application routes
+def register_web_routes(app):
+    """Register web UI routes."""
+    # Main UI routes
     @app.route('/')
     def index():
         """Main landing page."""
@@ -249,330 +170,26 @@ def register_feature_routes(app):
         """Recent setups page displaying messages from Discord."""
         return render_template('recent_setups.html', title="Recent Trading Setups")
     
-    # API endpoints for the dashboard
     @app.route('/setup/<int:setup_id>')
     def setup_detail(setup_id):
         """View details of a specific setup."""
-        return render_template('setup_detail.html', title="Setup Details")
-        
-    @app.route('/api/discord-messages')
-    def get_discord_messages():
-        """
-        Get recent messages from Discord directly.
-        Returns the most recent messages from the A+ setups channel.
-        """
-        try:
-            # Import the Discord client function
-            from features.discord.client import get_channel_messages
-            
-            # Get messages directly from Discord
-            messages = get_channel_messages()
-            
-            # Return as JSON
-            return jsonify({
-                'status': 'success',
-                'data': messages
-            })
-        except Exception as e:
-            logging.error(f"Error fetching Discord messages: {e}")
-            return jsonify({
-                'status': 'error',
-                'message': str(e)
-            }), 500
-            
-    @app.route('/api/tickers')
-    def get_tickers():
-        """
-        Get available tickers with trading setups.
-        Returns a list of ticker symbols that have active setups.
-        """
-        try:
-            # Use raw SQL to avoid model registry conflicts
-            from sqlalchemy import text
-            results = db.session.execute(text("SELECT DISTINCT symbol FROM ticker_setups")).fetchall()
-            tickers = [row[0] for row in results]
-            
-            # If no tickers found in the database, return a few sample tickers
-            if not tickers:
-                tickers = ["SPY", "AAPL", "MSFT", "NVDA", "TSLA"]
-            
-            return jsonify(tickers)
-        except Exception as e:
-            logging.error(f"Error fetching tickers: {e}")
-            return jsonify([])
+        return render_template('setup_detail.html', title="Setup Details", setup_id=setup_id)
     
-    @app.route('/api/strategy/status')
-    def strategy_status():
-        """Get the status of the strategy detector."""
-        try:
-            # Check if the strategy detector is running
-            from features.strategy.candle_detector import detector_running
-            
-            is_running = True
-            try:
-                # If the function exists, call it
-                is_running = detector_running() if callable(detector_running) else True
-            except (ImportError, AttributeError):
-                # Function doesn't exist, assume running
-                pass
-                
-            return jsonify({
-                'status': 'success',
-                'detector': {
-                    'running': is_running,
-                    'name': 'Candle Pattern Detector'
-                }
-            })
-        except Exception as e:
-            logging.error(f"Error checking strategy status: {e}")
-            return jsonify({
-                'status': 'error',
-                'message': str(e),
-                'detector': {
-                    'running': False,
-                    'name': 'Candle Pattern Detector'
-                }
-            })
-            
-    @app.route('/api/execution/status')
-    def execution_status():
-        """Get the status of the options execution service."""
-        try:
-            # Check if the options trader is running
-            from features.execution.options_trader import trader_running
-            
-            is_running = True
-            try:
-                # If the function exists, call it
-                is_running = trader_running() if callable(trader_running) else True
-            except (ImportError, AttributeError):
-                # Function doesn't exist, assume running
-                pass
-                
-            return jsonify({
-                'status': 'success',
-                'executor': {
-                    'running': is_running,
-                    'name': 'Options Trader'
-                }
-            })
-        except Exception as e:
-            logging.error(f"Error checking execution status: {e}")
-            return jsonify({
-                'status': 'error',
-                'message': str(e),
-                'executor': {
-                    'running': False,
-                    'name': 'Options Trader'
-                }
-            })
-    
-    @app.route('/api/account')
-    def get_account():
-        """
-        Get account information.
-        Returns account balance, buying power, etc.
-        """
-        try:
-            # Try to get account info from Alpaca
-            from features.alpaca.client import get_account_info
-            account = get_account_info()
-            return jsonify(account)
-        except Exception as e:
-            logging.error(f"Error fetching account information: {e}")
-            # Return fallback account info if there's an error
-            return jsonify({
-                'id': 'paper-account',
-                'equity': 100000.00,
-                'cash': 75000.00,
-                'buying_power': 150000.00,
-                'portfolio_value': 100000.00,
-                'positions_count': 0,
-                'status': 'ACTIVE'
-            })
-    
-    @app.route('/api/positions')
-    def get_positions():
-        """
-        Get current positions.
-        Returns a list of open positions.
-        """
-        try:
-            # Try to get positions from Alpaca
-            from features.alpaca.client import get_positions
-            positions = get_positions()
-            return jsonify(positions)
-        except Exception as e:
-            logging.error(f"Error fetching positions: {e}")
-            return jsonify([])
-    
-    @app.route('/api/candles/<ticker>')
-    def get_candles(ticker):
-        """
-        Get candle data for a ticker.
-        
-        Args:
-            ticker: Ticker symbol
-            
-        Query params:
-            timeframe: Candle timeframe (default: 1min)
-            limit: Number of candles to return (default: 100)
-        """
-        from flask import request
-        
-        timeframe = request.args.get('timeframe', '1Min')
-        limit = int(request.args.get('limit', 100))
-        
-        try:
-            # First try to get candles from historical data provider
-            try:
-                from features.market.historical_data import get_historical_candles
-                candles = get_historical_candles(ticker, timeframe, limit)
-                if candles and len(candles) > 0:
-                    return jsonify(candles)
-            except ImportError:
-                logging.warning(f"Could not import historical data provider for {ticker}")
-            
-            # Fall back to Alpaca client if historical data not available
-            from features.alpaca.client import get_bars
-            candles = get_bars(ticker, timeframe, limit)
-            return jsonify(candles or [])
-        except Exception as e:
-            logging.error(f"Error fetching candles for {ticker}: {e}")
-            return jsonify([])
-    
-    @app.route('/api/signals/<ticker>')
-    def get_signals(ticker):
-        """
-        Get signals for a ticker.
-        
-        Args:
-            ticker: Ticker symbol
-        """
-        try:
-            # First check for active candle signals
-            try:
-                from features.strategy import get_candle_signals
-                active_signals = get_candle_signals(ticker)
-                
-                if active_signals:
-                    # Return all active candle signals
-                    return jsonify(active_signals)
-            except ImportError:
-                logging.warning(f"Could not import candle signals module for {ticker}")
-            
-            # Fall back to database signals if no active candle signals
-            try:
-                from sqlalchemy import text
-                import json
-                
-                # Use raw SQL to avoid model registry conflicts
-                # First get the most recent ticker setup ID
-                setup_query = text("""
-                    SELECT id FROM ticker_setups 
-                    WHERE symbol = :symbol 
-                    ORDER BY id DESC LIMIT 1
-                """)
-                setup_result = db.session.execute(setup_query, {"symbol": ticker}).fetchone()
-                
-                if not setup_result:
-                    return jsonify([])
-                
-                setup_id = setup_result[0]
-                
-                # Then get signals for that ticker setup
-                signals_query = text("""
-                    SELECT id, category, aggressiveness, comparison, trigger_value, targets, created_at
-                    FROM signals
-                    WHERE ticker_setup_id = :setup_id
-                """)
-                signals = db.session.execute(signals_query, {"setup_id": setup_id}).fetchall()
-                
-                if not signals:
-                    return jsonify([])
-                
-                # Convert database signals to API format
-                signal_list = []
-                for signal in signals:
-                    try:
-                        # Parse JSON fields
-                        trigger_value = json.loads(signal[4]) if isinstance(signal[4], str) else signal[4]
-                        targets = json.loads(signal[5]) if isinstance(signal[5], str) else signal[5]
-                        
-                        signal_data = {
-                            'id': signal[0],
-                            'ticker': ticker,
-                            'category': signal[1],
-                            'aggressiveness': signal[2],
-                            'comparison': signal[3],
-                            'trigger': trigger_value,
-                            'targets': targets,
-                            'status': 'pending',  # Default status
-                            'source': 'database'
-                        }
-                        signal_list.append(signal_data)
-                    except Exception as signal_error:
-                        logging.error(f"Error processing signal {signal[0]}: {signal_error}")
-                        continue
-                
-                return jsonify(signal_list)
-            except Exception as db_error:
-                logging.error(f"Database error fetching signals for {ticker}: {db_error}")
-                return jsonify([])
-        except Exception as e:
-            logging.error(f"Error fetching signals for {ticker}: {e}")
-            return jsonify([])
-            
-    @app.route('/api/signals/add', methods=['POST'])
-    def add_signal():
-        """
-        Add a candle signal for testing.
-        
-        Expected JSON payload format:
-        {
-            "ticker": "SPY",
-            "category": "breakout",  # or "breakdown", "rejection", "bounce"
-            "trigger": {
-                "price": 450.0,
-                "timeframe": "15Min"
-            },
-            "targets": [
-                {"price": 455.0, "percentage": 0.25},
-                {"price": 460.0, "percentage": 0.5},
-                {"price": 465.0, "percentage": 0.25}
-            ],
-            "status": "pending"
-        }
-        """
-        try:
-            from flask import request
-            from features.strategy import add_candle_signal
-            
-            # Parse request JSON
-            signal_data = request.json
-            
-            if not signal_data or 'ticker' not in signal_data or 'trigger' not in signal_data:
-                return jsonify({"success": False, "error": "Invalid signal data"}), 400
-            
-            # Add signal to candle detector
-            success = add_candle_signal(signal_data)
-            
-            if success:
-                return jsonify({"success": True, "message": f"Signal added for {signal_data['ticker']}"}), 201
-            else:
-                return jsonify({"success": False, "error": "Failed to add signal"}), 500
-        except Exception as e:
-            logging.error(f"Error adding signal: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+    # Add health check endpoint for web dashboard
+    @app.route('/web/health')
+    def web_health():
+        """Web application health check endpoint."""
+        return jsonify({
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "app": os.environ.get("REPL_SLUG", "aplus-trading-app"),
+            "version": "0.1.0"
+        })
 
 # Create the application
 app = create_app()
 
-# Create database tables on startup
-with app.app_context():
-    db.create_all()
-    logging.info("Database tables created")
-
+# Initialize app components
 def initialize_app_components():
     """Initialize app components on first request."""
     # Initialize Discord integration
@@ -657,4 +274,5 @@ with app.app_context():
         logging.error(f"Error initializing app components: {e}")
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    # Run the application
+    socketio.run(app, host='0.0.0.0', port=5000)
