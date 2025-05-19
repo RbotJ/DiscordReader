@@ -2,7 +2,7 @@
 Streamlit Trading Dashboard - Main Entry Point
 
 This script sets up and runs the trading dashboard using Streamlit,
-connecting directly to Alpaca API for market data and trading functionality.
+connecting to our Flask API backend on port 5000 for market data and trading functionality.
 """
 
 import os
@@ -10,6 +10,7 @@ import time
 import json
 import logging
 import datetime
+import requests
 from threading import Thread, Lock
 from datetime import date, timedelta
 
