@@ -81,10 +81,35 @@ def register_all_routes(app):
     register_feature_routes(app)
     
     # Register API routes
-    register_api_routes(app)
+    try:
+        # Import API routes
+        from api_routes import register_api_routes as register_central_api_routes
+        register_central_api_routes(app, db)
+        logging.info("Centralized API routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import centralized API routes: {e}")
+        # We'll use the built-in routes defined below
     
-    # Register Web UI routes
-    register_web_routes(app)
+    # Register Web UI routes - no duplicates with API routes
+    @app.route('/')
+    def index():
+        """Main landing page."""
+        return render_template('index.html', title="A+ Trading App")
+    
+    @app.route('/dashboard')
+    def dashboard():
+        """Trading dashboard page."""
+        return render_template('dashboard.html', title="Trading Dashboard")
+    
+    @app.route('/recent-setups')
+    def recent_setups():
+        """Recent setups page displaying messages from Discord."""
+        return render_template('recent_setups.html', title="Recent Trading Setups")
+    
+    @app.route('/setup/<int:setup_id>')
+    def setup_detail(setup_id):
+        """View details of a specific setup."""
+        return render_template('setup_detail.html', title="Setup Details", setup_id=setup_id)
 
 def register_feature_routes(app):
     """Register feature-specific routes from the features directory."""
@@ -145,60 +170,7 @@ def register_feature_routes(app):
     except ImportError as e:
         logging.warning(f"Could not import execution routes: {e}")
 
-def register_api_routes(app):
-    """Register centralized API routes."""
-    # Import API routes
-    try:
-        from api_routes import register_api_routes as register_central_api_routes
-        register_central_api_routes(app, db)
-        logging.info("Centralized API routes registered")
-    except ImportError as e:
-        logging.warning(f"Could not import centralized API routes: {e}")
-        # Fall back to local API route definitions
-        register_local_api_routes(app)
-        
-def register_local_api_routes(app):
-    """Register local API routes when centralized routes are not available."""
-    logging.info("Using local API route definitions")
-    
-def register_web_routes(app):
-    """Register web UI routes."""
-    # Register main web UI routes
-    @app.route('/')
-    def index():
-        """Main landing page."""
-        return render_template('index.html', title="A+ Trading App")
-    
-    @app.route('/dashboard')
-    def dashboard():
-        """Trading dashboard page."""
-        return render_template('dashboard.html', title="Trading Dashboard")
-    
-    @app.route('/recent-setups')
-    def recent_setups():
-        """Recent setups page displaying messages from Discord."""
-        return render_template('recent_setups.html', title="Recent Trading Setups")
-    
-    @app.route('/setup/<int:setup_id>')
-    def setup_detail(setup_id):
-        """View details of a specific setup."""
-        return render_template('setup_detail.html', title="Setup Details", setup_id=setup_id)
-    
-    # Web dashboard health check endpoint
-    @app.route('/web/health')
-    def web_health_check():
-        """Web app health check endpoint."""
-        return jsonify({
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "app": os.environ.get("REPL_SLUG", "aplus-trading-app"),
-            "version": "0.1.0"
-        })
-        
-    @app.route('/api/test')
-    def api_test():
-        """Test API endpoints."""
-        results = {}
+# Removed obsolete code
         
         # Test account endpoint
         try:
