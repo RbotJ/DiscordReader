@@ -11,7 +11,7 @@ logging.basicConfig(
 
 from flask import Flask, jsonify, render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
-from common.db import db
+from common.db import db, init_db
 # Import models from the main models.py file
 import models
 
@@ -22,25 +22,17 @@ def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
     
-    # Configure SQLAlchemy
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-    }
-    
     # Configure app secret key
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
     
-    # Initialize extensions
-    db.init_app(app)
+    # Initialize database
+    init_db(app)
     
     # Initialize SocketIO
     socketio.init_app(app, cors_allowed_origins="*")
     
-    # Register routes
-    register_routes(app)
+    # Register all routes
+    register_all_routes(app)
     
     # Register SocketIO event handlers
     register_socketio_events()
@@ -83,8 +75,19 @@ def register_socketio_events():
                     'timestamp': datetime.now().isoformat()
                 })
 
-def register_routes(app):
-    """Register API routes with the Flask application."""
+def register_all_routes(app):
+    """Register all routes with the Flask application."""
+    # Register feature-specific routes
+    register_feature_routes(app)
+    
+    # Register API routes
+    register_api_routes(app)
+    
+    # Register Web UI routes
+    register_web_routes(app)
+
+def register_feature_routes(app):
+    """Register feature-specific routes from the features directory."""
     # Import necessary route registrations
     try:
         # Register webhook routes
@@ -118,12 +121,73 @@ def register_routes(app):
     except ImportError as e:
         logging.warning(f"Could not import Options API routes: {e}")
     
-    # Add other route registrations here as they are implemented
+    # Register market data routes
+    try:
+        from features.market.api import register_routes as register_market_routes
+        register_market_routes(app)
+        logging.info("Market data routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import market data routes: {e}")
     
-    # Add API health check endpoint
-    @app.route('/api/health')
-    def health_check():
-        """API health check endpoint."""
+    # Register strategy routes
+    try:
+        from features.strategy.api import register_routes as register_strategy_routes
+        register_strategy_routes(app)
+        logging.info("Strategy routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import strategy routes: {e}")
+    
+    # Register execution routes
+    try:
+        from features.execution.api import register_routes as register_execution_routes
+        register_execution_routes(app)
+        logging.info("Execution routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import execution routes: {e}")
+
+def register_api_routes(app):
+    """Register centralized API routes."""
+    # Import API routes
+    try:
+        from api_routes import register_api_routes as register_central_api_routes
+        register_central_api_routes(app, db)
+        logging.info("Centralized API routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import centralized API routes: {e}")
+        # Fall back to local API route definitions
+        register_local_api_routes(app)
+        
+def register_local_api_routes(app):
+    """Register local API routes when centralized routes are not available."""
+    logging.info("Using local API route definitions")
+    
+def register_web_routes(app):
+    """Register web UI routes."""
+    # Register main web UI routes
+    @app.route('/')
+    def index():
+        """Main landing page."""
+        return render_template('index.html', title="A+ Trading App")
+    
+    @app.route('/dashboard')
+    def dashboard():
+        """Trading dashboard page."""
+        return render_template('dashboard.html', title="Trading Dashboard")
+    
+    @app.route('/recent-setups')
+    def recent_setups():
+        """Recent setups page displaying messages from Discord."""
+        return render_template('recent_setups.html', title="Recent Trading Setups")
+    
+    @app.route('/setup/<int:setup_id>')
+    def setup_detail(setup_id):
+        """View details of a specific setup."""
+        return render_template('setup_detail.html', title="Setup Details", setup_id=setup_id)
+    
+    # Web dashboard health check endpoint
+    @app.route('/web/health')
+    def web_health_check():
+        """Web app health check endpoint."""
         return jsonify({
             "status": "ok",
             "timestamp": datetime.now().isoformat(),
