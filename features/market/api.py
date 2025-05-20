@@ -328,3 +328,6 @@ def register_routes(app):
     """Register the market API routes with the Flask app."""
     app.register_blueprint(bp)
     logger.info("Market API routes registered")
+
+# Expose market routes for importing in other modules
+market_routes = bp
