@@ -395,8 +395,8 @@ def display_trade_monitor():
     st.header("Active Ticker Charts")
     st.markdown("---")
     
-    # Get tickers from the sample message
-    tickers = sample_message.get('tickers', [])
+    # Get tickers from the setup message
+    tickers = setup_message.get('tickers', [])
     
     # Skip ticker 'A' if it exists (likely not a real ticker in this context)
     tickers = [ticker for ticker in tickers if ticker != 'A']
