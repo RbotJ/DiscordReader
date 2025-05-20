@@ -17,6 +17,13 @@ from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest, StockL
 from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import Adjustment
 
+# Import our local option side enum and order request classes
+from features.alpaca.options_enums import OptionSide
+from features.alpaca.order_requests import (
+    MarketOrderRequest, LimitOrderRequest, StopOrderRequest, 
+    StopLimitOrderRequest, BracketOrderRequest
+)
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -477,6 +484,311 @@ def get_bars(
 def alpaca_market_client() -> Optional[StockHistoricalDataClient]:
     """Alias for get_stock_data_client() for backward compatibility."""
     return get_stock_data_client()
+
+# Order execution functions
+def submit_market_order(
+    symbol: str,
+    qty: float,
+    side: str,
+    time_in_force: str = 'day',
+    extended_hours: bool = False
+) -> Optional[Dict]:
+    """
+    Submit a market order.
+    
+    Args:
+        symbol: Symbol to trade
+        qty: Order quantity
+        side: Order side ('buy' or 'sell')
+        time_in_force: Time in force ('day', 'gtc', 'opg', 'cls', 'ioc', 'fok')
+        extended_hours: Whether to allow trading in extended hours
+        
+    Returns:
+        Order information or None if error
+    """
+    client = get_trading_client()
+    if not client:
+        logger.warning("Trading client not initialized")
+        return None
+        
+    try:
+        # Create order request
+        order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
+        order_tif = getattr(TimeInForce, time_in_force.upper())
+        
+        request = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=order_side,
+            time_in_force=order_tif,
+            extended_hours=extended_hours
+        )
+        
+        # Submit order
+        order = client.submit_order(request)
+        
+        # Format response
+        return {
+            'id': order.id,
+            'client_order_id': order.client_order_id,
+            'symbol': order.symbol,
+            'asset_class': order.asset_class,
+            'qty': float(order.qty) if order.qty else None,
+            'filled_qty': float(order.filled_qty) if order.filled_qty else None,
+            'type': order.type.name if order.type else None,
+            'side': order.side.name if order.side else None,
+            'time_in_force': order.time_in_force.name if order.time_in_force else None,
+            'status': order.status.name if order.status else None,
+            'created_at': order.created_at.isoformat() if order.created_at else None,
+            'updated_at': order.updated_at.isoformat() if order.updated_at else None,
+            'submitted_at': order.submitted_at.isoformat() if order.submitted_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error submitting market order: {e}")
+        return None
+        
+def submit_limit_order(
+    symbol: str,
+    qty: float,
+    side: str,
+    limit_price: float,
+    time_in_force: str = 'day',
+    extended_hours: bool = False
+) -> Optional[Dict]:
+    """
+    Submit a limit order.
+    
+    Args:
+        symbol: Symbol to trade
+        qty: Order quantity
+        side: Order side ('buy' or 'sell')
+        limit_price: Order limit price
+        time_in_force: Time in force ('day', 'gtc', 'opg', 'cls', 'ioc', 'fok')
+        extended_hours: Whether to allow trading in extended hours
+        
+    Returns:
+        Order information or None if error
+    """
+    client = get_trading_client()
+    if not client:
+        logger.warning("Trading client not initialized")
+        return None
+        
+    try:
+        # Create order request
+        order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
+        order_tif = getattr(TimeInForce, time_in_force.upper())
+        
+        request = LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=order_side,
+            limit_price=limit_price,
+            time_in_force=order_tif,
+            extended_hours=extended_hours
+        )
+        
+        # Submit order
+        order = client.submit_order(request)
+        
+        # Format response
+        return {
+            'id': order.id,
+            'client_order_id': order.client_order_id,
+            'symbol': order.symbol,
+            'asset_class': order.asset_class,
+            'qty': float(order.qty) if order.qty else None,
+            'filled_qty': float(order.filled_qty) if order.filled_qty else None,
+            'type': order.type.name if order.type else None,
+            'side': order.side.name if order.side else None,
+            'time_in_force': order.time_in_force.name if order.time_in_force else None,
+            'limit_price': float(order.limit_price) if order.limit_price else None,
+            'status': order.status.name if order.status else None,
+            'created_at': order.created_at.isoformat() if order.created_at else None,
+            'updated_at': order.updated_at.isoformat() if order.updated_at else None,
+            'submitted_at': order.submitted_at.isoformat() if order.submitted_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error submitting limit order: {e}")
+        return None
+
+def submit_bracket_order(
+    symbol: str,
+    qty: float,
+    side: str,
+    take_profit_price: float,
+    stop_loss_price: float,
+    limit_price: Optional[float] = None,
+    time_in_force: str = 'day',
+    extended_hours: bool = False
+) -> Optional[Dict]:
+    """
+    Submit a bracket order with take profit and stop loss.
+    
+    Args:
+        symbol: Symbol to trade
+        qty: Order quantity
+        side: Order side ('buy' or 'sell')
+        take_profit_price: Take profit price
+        stop_loss_price: Stop loss price
+        limit_price: Limit price for entry order (optional, market order if None)
+        time_in_force: Time in force ('day', 'gtc', 'opg', 'cls', 'ioc', 'fok')
+        extended_hours: Whether to allow trading in extended hours
+        
+    Returns:
+        Order information or None if error
+    """
+    client = get_trading_client()
+    if not client:
+        logger.warning("Trading client not initialized")
+        return None
+        
+    try:
+        # Create order request
+        order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
+        order_tif = getattr(TimeInForce, time_in_force.upper())
+        
+        request = BracketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=order_side,
+            type=OrderType.LIMIT if limit_price else OrderType.MARKET,
+            time_in_force=order_tif,
+            extended_hours=extended_hours,
+            limit_price=limit_price,
+            take_profit=dict(limit_price=take_profit_price),
+            stop_loss=dict(stop_price=stop_loss_price)
+        )
+        
+        # Submit order
+        order = client.submit_order(request)
+        
+        # Format response
+        return {
+            'id': order.id,
+            'client_order_id': order.client_order_id,
+            'symbol': order.symbol,
+            'asset_class': order.asset_class,
+            'qty': float(order.qty) if order.qty else None,
+            'filled_qty': float(order.filled_qty) if order.filled_qty else None,
+            'type': order.type.name if order.type else None,
+            'side': order.side.name if order.side else None,
+            'time_in_force': order.time_in_force.name if order.time_in_force else None,
+            'limit_price': float(order.limit_price) if order.limit_price else None,
+            'status': order.status.name if order.status else None,
+            'created_at': order.created_at.isoformat() if order.created_at else None,
+            'updated_at': order.updated_at.isoformat() if order.updated_at else None,
+            'submitted_at': order.submitted_at.isoformat() if order.submitted_at else None,
+            'legs': order.legs if hasattr(order, 'legs') else None
+        }
+    except Exception as e:
+        logger.error(f"Error submitting bracket order: {e}")
+        return None
+
+def cancel_order(order_id: str) -> bool:
+    """
+    Cancel an order.
+    
+    Args:
+        order_id: Order ID to cancel
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    client = get_trading_client()
+    if not client:
+        logger.warning("Trading client not initialized")
+        return False
+        
+    try:
+        client.cancel_order_by_id(order_id)
+        return True
+    except Exception as e:
+        logger.error(f"Error canceling order {order_id}: {e}")
+        return False
+        
+def close_position(symbol: str, percentage: float = 1.0) -> Optional[Dict]:
+    """
+    Close a position.
+    
+    Args:
+        symbol: Symbol to close position for
+        percentage: Percentage of position to close (0.0-1.0)
+        
+    Returns:
+        Order information or None if error
+    """
+    client = get_trading_client()
+    if not client:
+        logger.warning("Trading client not initialized")
+        return None
+        
+    try:
+        # Get position
+        try:
+            position = client.get_position(symbol)
+        except Exception as e:
+            logger.error(f"Error getting position for {symbol}: {e}")
+            return None
+            
+        # Calculate quantity to close
+        qty = float(position.qty) * percentage
+        if qty <= 0:
+            logger.warning(f"Invalid quantity to close: {qty}")
+            return None
+            
+        # Determine side
+        side = OrderSide.SELL if float(position.qty) > 0 else OrderSide.BUY
+        
+        # Close position
+        request = MarketOrderRequest(
+            symbol=symbol,
+            qty=abs(qty),
+            side=side,
+            time_in_force=TimeInForce.DAY
+        )
+        
+        # Submit order
+        order = client.submit_order(request)
+        
+        # Format response
+        return {
+            'id': order.id,
+            'client_order_id': order.client_order_id,
+            'symbol': order.symbol,
+            'asset_class': order.asset_class,
+            'qty': float(order.qty) if order.qty else None,
+            'filled_qty': float(order.filled_qty) if order.filled_qty else None,
+            'type': order.type.name if order.type else None,
+            'side': order.side.name if order.side else None,
+            'time_in_force': order.time_in_force.name if order.time_in_force else None,
+            'status': order.status.name if order.status else None,
+            'created_at': order.created_at.isoformat() if order.created_at else None,
+            'updated_at': order.updated_at.isoformat() if order.updated_at else None,
+            'submitted_at': order.submitted_at.isoformat() if order.submitted_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error closing position for {symbol}: {e}")
+        return None
+
+def get_account_info() -> Optional[Dict]:
+    """Alias for get_account() for backward compatibility."""
+    return get_account()
+
+def get_latest_quote(symbol: str) -> Optional[Dict]:
+    """
+    Get the latest quote for a symbol.
+    
+    Args:
+        symbol: Symbol to get quote for
+        
+    Returns:
+        Quote information or None if error
+    """
+    quotes = get_latest_quotes(symbol)
+    if quotes and symbol in quotes:
+        return quotes[symbol]
+    return None
 
 # Initialize clients on module import
 initialize_clients()

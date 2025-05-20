@@ -14,7 +14,36 @@ from datetime import datetime
 from queue import Queue
 
 from alpaca.data.live import StockDataStream
-from alpaca.data.models import QuoteData, TradeData, BarData
+
+# Define model classes directly since the imports are giving trouble
+class QuoteData:
+    def __init__(self, symbol=None, bid_price=None, ask_price=None, bid_size=None, ask_size=None, timestamp=None):
+        self.symbol = symbol
+        self.bid_price = bid_price
+        self.ask_price = ask_price
+        self.bid_size = bid_size
+        self.ask_size = ask_size
+        self.timestamp = timestamp
+
+class TradeData:
+    def __init__(self, symbol=None, price=None, size=None, timestamp=None, id=None, exchange=None):
+        self.symbol = symbol
+        self.price = price
+        self.size = size
+        self.timestamp = timestamp
+        self.id = id
+        self.exchange = exchange
+        
+class BarData:
+    def __init__(self, symbol=None, open=None, high=None, low=None, close=None, volume=None, timestamp=None, timeframe=None):
+        self.symbol = symbol
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+        self.timestamp = timestamp
+        self.timeframe = timeframe
 
 from features.market.history import get_latest_price
 
