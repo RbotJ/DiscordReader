@@ -3,6 +3,15 @@ Flask-Streamlit Trading Dashboard
 
 This dashboard uses Streamlit for the UI but connects to our existing Flask API 
 for all data and trading functionality.
+
+The dashboard provides:
+1. Account & market status overview
+2. Real-time position monitoring 
+3. Active trading setups with price levels
+4. Interactive candlestick charts
+5. Option chain data for selected tickers
+6. Position management controls
+7. Trading performance reports
 """
 
 import os
@@ -184,6 +193,104 @@ def get_signals(ticker):
     except Exception as e:
         add_event('error', f"Error fetching signals for {ticker}: {str(e)}")
         return []
+        
+def get_active_setups():
+    """Get active trading setups from the integration API"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/integration/active-setups")
+        if response.status_code == 200:
+            data = response.json()
+            if 'setups' in data:
+                return data['setups']
+            return {}
+        else:
+            add_event('error', f"Failed to fetch active setups: {response.status_code}")
+            return {}
+    except Exception as e:
+        add_event('error', f"Error fetching active setups: {str(e)}")
+        return {}
+
+def get_active_trades():
+    """Get active trades from the integration API"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/integration/active-trades")
+        if response.status_code == 200:
+            data = response.json()
+            if 'trades' in data:
+                return data['trades']
+            return {}
+        else:
+            add_event('error', f"Failed to fetch active trades: {response.status_code}")
+            return {}
+    except Exception as e:
+        add_event('error', f"Error fetching active trades: {str(e)}")
+        return {}
+        
+def get_trade_history():
+    """Get trade history from the integration API"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/integration/trade-history")
+        if response.status_code == 200:
+            data = response.json()
+            if 'history' in data:
+                return data['history']
+            return {}
+        else:
+            add_event('error', f"Failed to fetch trade history: {response.status_code}")
+            return {}
+    except Exception as e:
+        add_event('error', f"Error fetching trade history: {str(e)}")
+        return {}
+        
+def get_performance_report():
+    """Get performance report from the integration API"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/integration/performance-report")
+        if response.status_code == 200:
+            data = response.json()
+            if 'report' in data:
+                return data['report']
+            return None
+        else:
+            add_event('error', f"Failed to fetch performance report: {response.status_code}")
+            return None
+    except Exception as e:
+        add_event('error', f"Error fetching performance report: {str(e)}")
+        return None
+
+def evaluate_setups():
+    """Trigger setup evaluation from the integration API"""
+    try:
+        response = requests.post(f"{API_BASE_URL}/integration/evaluate")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                count = data.get('processed_count', 0)
+                add_event('signal', f"Evaluated setups: {count} processed")
+            return data
+        else:
+            add_event('error', f"Failed to evaluate setups: {response.status_code}")
+            return None
+    except Exception as e:
+        add_event('error', f"Error evaluating setups: {str(e)}")
+        return None
+
+def monitor_trades():
+    """Trigger trade monitoring from the integration API"""
+    try:
+        response = requests.post(f"{API_BASE_URL}/integration/monitor")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                count = data.get('updated_count', 0)
+                add_event('signal', f"Monitored trades: {count} updated")
+            return data
+        else:
+            add_event('error', f"Failed to monitor trades: {response.status_code}")
+            return None
+    except Exception as e:
+        add_event('error', f"Error monitoring trades: {str(e)}")
+        return None
 
 def place_order(symbol, qty, side):
     """Place an order via the API"""
@@ -310,6 +417,11 @@ def create_candlestick_chart(symbol, data=None):
 def refresh_data():
     """Refresh all data from the API"""
     st.session_state.last_refresh = datetime.datetime.now()
+    
+    # Evaluate setups and monitor trades
+    evaluate_setups()
+    monitor_trades()
+    
     add_event('system', "Data refreshed")
 
 # Sidebar
@@ -467,8 +579,104 @@ else:
                         if result:
                             st.success(f"Sold 10 shares of {ticker}")
 
+# Trading Setups section
+st.header("Trading Setups")
+st.markdown("---")
+
+# Get active trading setups
+active_setups = get_active_setups()
+if not active_setups:
+    st.info("No active setups detected")
+else:
+    # Convert to list of dicts for easier display
+    setup_list = []
+    for setup_id, setup in active_setups.items():
+        setup_data = {
+            'setup_id': setup_id,
+            'ticker': setup.get('primary_ticker', ''),
+            'signal': setup.get('signal_type', ''),
+            'bias': setup.get('bias', ''),
+            'status': setup.get('status', ''),
+            'confidence': setup.get('confidence', 0),
+            'timestamp': setup.get('timestamp', '')
+        }
+        setup_list.append(setup_data)
+    
+    # Create DataFrame
+    setups_df = pd.DataFrame(setup_list)
+    
+    # Format columns
+    if not setups_df.empty:
+        if 'timestamp' in setups_df.columns:
+            setups_df['timestamp'] = pd.to_datetime(setups_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+        if 'confidence' in setups_df.columns:
+            setups_df['confidence'] = setups_df['confidence'].apply(lambda x: f"{x*100:.0f}%" if x else "")
+    
+    # Display setups table
+    st.subheader(f"Active Setups ({len(setup_list)})")
+    st.dataframe(setups_df, use_container_width=True)
+    
+    # Add a button to evaluate setups
+    if st.button("Evaluate Trading Setups"):
+        result = evaluate_setups()
+        if result and result.get('success'):
+            st.success(f"Evaluated setups: {result.get('processed_count', 0)} processed")
+        else:
+            st.warning("No new setups to process at this time")
+
+# Active Trades section
+st.header("Active Trades")
+st.markdown("---")
+
+# Get active trades
+active_trades = get_active_trades()
+if not active_trades:
+    st.info("No active trades at this time")
+else:
+    # Convert to list of dicts for easier display
+    trade_list = []
+    for setup_id, trade in active_trades.items():
+        trade_data = trade.get('trade_data', {})
+        trade_info = {
+            'setup_id': setup_id,
+            'ticker': trade.get('primary_ticker', ''),
+            'signal': trade.get('signal_type', ''),
+            'entry_price': trade_data.get('entry_price', ''),
+            'current_price': trade_data.get('current_price', ''),
+            'p&l': trade_data.get('profit_loss', 0),
+            'quantity': trade_data.get('quantity', ''),
+            'status': trade_data.get('status', '')
+        }
+        trade_list.append(trade_info)
+    
+    # Create DataFrame
+    trades_df = pd.DataFrame(trade_list)
+    
+    # Format columns
+    if not trades_df.empty:
+        if 'p&l' in trades_df.columns:
+            trades_df['p&l'] = trades_df['p&l'].apply(lambda x: f"{x:.2f}%" if x is not None else "")
+        
+        # Format prices as currency
+        for col in ['entry_price', 'current_price']:
+            if col in trades_df.columns:
+                trades_df[col] = trades_df[col].apply(lambda x: format_currency(x) if x else "")
+    
+    # Display trades table
+    st.subheader(f"Active Trades ({len(trade_list)})")
+    st.dataframe(trades_df, use_container_width=True)
+    
+    # Add a button to monitor trades
+    if st.button("Monitor Active Trades"):
+        result = monitor_trades()
+        if result and result.get('success'):
+            st.success(f"Monitored trades: {result.get('updated_count', 0)} updated")
+        else:
+            st.warning("No trades updated at this time")
+
 # Positions table
 st.header("Positions")
+st.markdown("---")
 
 positions = get_positions()
 if not positions:
@@ -478,8 +686,134 @@ else:
     positions_df = pd.DataFrame(positions)
     
     # Format values for display
-    positions_df['unrealized_pl'] = positions_df['unrealized_pl'].apply(lambda x: f"${float(x):.2f}")
-    positions_df['unrealized_plpc'] = positions_df['unrealized_plpc'].apply(lambda x: f"{float(x)*100:.2f}%")
+    if 'unrealized_pl' in positions_df.columns:
+        positions_df['unrealized_pl'] = positions_df['unrealized_pl'].apply(lambda x: f"${float(x):.2f}" if x else "$0.00")
+    if 'unrealized_plpc' in positions_df.columns:
+        positions_df['unrealized_plpc'] = positions_df['unrealized_plpc'].apply(lambda x: f"{float(x)*100:.2f}%" if x else "0.00%")
+    
+    st.dataframe(positions_df, use_container_width=True)
+
+# Performance Report section
+st.header("Trading Performance")
+st.markdown("---")
+
+# Get performance report
+performance_report = get_performance_report()
+
+if not performance_report or 'total_trades' not in performance_report or performance_report['total_trades'] == 0:
+    st.info("No trading history available for performance analysis")
+else:
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="Total Trades",
+            value=str(performance_report.get('total_trades', 0))
+        )
+    
+    with col2:
+        win_rate = performance_report.get('win_rate', 0) * 100
+        st.metric(
+            label="Win Rate",
+            value=f"{win_rate:.1f}%"
+        )
+    
+    with col3:
+        avg_profit = performance_report.get('avg_profit_loss', 0)
+        st.metric(
+            label="Avg P/L Per Trade",
+            value=f"{avg_profit:.2f}%",
+            delta=None
+        )
+    
+    with col4:
+        total_pl = performance_report.get('total_profit_loss', 0)
+        st.metric(
+            label="Total P/L",
+            value=f"{total_pl:.2f}%",
+            delta=None
+        )
+    
+    # Performance by ticker
+    st.subheader("Performance by Ticker")
+    ticker_performance = performance_report.get('ticker_performance', {})
+    
+    if not ticker_performance:
+        st.info("No ticker-specific performance data available")
+    else:
+        ticker_data = []
+        for ticker, data in ticker_performance.items():
+            ticker_data.append({
+                'ticker': ticker,
+                'trades': data.get('trades', 0),
+                'winning': data.get('winning', 0),
+                'losing': data.get('losing', 0),
+                'win_rate': data.get('winning', 0) / data.get('trades', 1) * 100 if data.get('trades', 0) > 0 else 0,
+                'total_pl': data.get('total_pl', 0)
+            })
+        
+        ticker_df = pd.DataFrame(ticker_data)
+        
+        # Format columns
+        if not ticker_df.empty:
+            ticker_df['win_rate'] = ticker_df['win_rate'].apply(lambda x: f"{x:.1f}%")
+            ticker_df['total_pl'] = ticker_df['total_pl'].apply(lambda x: f"{x:.2f}%")
+        
+        st.dataframe(ticker_df, use_container_width=True)
+    
+    # Best and worst tickers
+    best_ticker = performance_report.get('best_ticker')
+    worst_ticker = performance_report.get('worst_ticker')
+    
+    if best_ticker or worst_ticker:
+        st.subheader("Top Performers")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if best_ticker:
+                st.success(f"Best: {best_ticker}")
+        
+        with col2:
+            if worst_ticker:
+                st.error(f"Worst: {worst_ticker}")
+    
+    # Recent trade history
+    st.subheader("Recent Trades")
+    trades = performance_report.get('trades', [])
+    
+    if not trades:
+        st.info("No recent trades to display")
+    else:
+        # Only show the 10 most recent trades
+        recent_trades = trades[:10] if len(trades) > 10 else trades
+        
+        trade_history = []
+        for trade in recent_trades:
+            trade_data = trade.get('trade_data', {})
+            trade_info = {
+                'ticker': trade.get('primary_ticker', ''),
+                'signal': trade.get('signal_type', ''),
+                'entry_price': trade_data.get('entry_price', ''),
+                'exit_price': trade_data.get('exit_price', ''),
+                'p&l': trade_data.get('profit_loss', 0),
+                'status': trade_data.get('status', '')
+            }
+            trade_history.append(trade_info)
+        
+        history_df = pd.DataFrame(trade_history)
+        
+        # Format columns
+        if not history_df.empty:
+            if 'p&l' in history_df.columns:
+                history_df['p&l'] = history_df['p&l'].apply(lambda x: f"{x:.2f}%" if x is not None else "")
+            
+            # Format prices as currency
+            for col in ['entry_price', 'exit_price']:
+                if col in history_df.columns:
+                    history_df[col] = history_df[col].apply(lambda x: format_currency(x) if x else "")
+        
+        st.dataframe(history_df, use_container_width=True)
     positions_df['avg_entry_price'] = positions_df['avg_entry_price'].apply(lambda x: f"${float(x):.2f}")
     positions_df['current_price'] = positions_df['current_price'].apply(lambda x: f"${float(x):.2f}")
     positions_df['market_value'] = positions_df['market_value'].apply(lambda x: f"${float(x):.2f}")
