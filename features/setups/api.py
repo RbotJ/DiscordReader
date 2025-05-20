@@ -10,7 +10,8 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc
 from common.db import db
 from sqlalchemy import text
-from common.db_models import SetupModel as SetupMessage, TickerSetupModel as TickerSetup
+from common.db_models import SetupModel as SetupMessage, TickerSetupModel as TickerSetup, SignalModel as Signal
+from models import SignalCategoryEnum, AggressivenessEnum, ComparisonTypeEnum, BiasDirectionEnum
 
 # Create blueprint
 bp = Blueprint('setups_api', __name__, url_prefix='/api/setups')
