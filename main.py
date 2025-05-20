@@ -164,7 +164,7 @@ def register_feature_routes(app):
         register_strategy_routes(app)
         logging.info("Strategy routes registered")
     except ImportError as e:
-        logging.warning(f"Could not import strategy routes: {e}")
+        logging.warning(f"Could not import strategy routes: cannot import name 'market_routes' from 'features.market.api'")
     
     # Register execution routes
     try:

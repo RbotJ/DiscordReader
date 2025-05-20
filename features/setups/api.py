@@ -9,7 +9,8 @@ import logging
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc
 from common.db import db
-from models import SetupMessage, TickerSetup, Signal, Bias
+from sqlalchemy import text
+from common.db_models import SetupModel as SetupMessage, TickerSetupModel as TickerSetup
 
 # Create blueprint
 bp = Blueprint('setups_api', __name__, url_prefix='/api/setups')
