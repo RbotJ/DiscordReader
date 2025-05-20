@@ -152,11 +152,35 @@ def register_feature_routes(app):
     
     # Register market data routes
     try:
-        from features.market.api import register_routes
-        register_routes(app)
+        from features.market.api_routes import register_routes as register_market_routes
+        register_market_routes(app)
         logging.info("Market data routes registered")
     except ImportError as e:
         logging.warning(f"Could not import market data routes: {e}")
+    
+    # Register options data routes
+    try:
+        from features.options.api_routes import register_routes as register_options_routes
+        register_options_routes(app)
+        logging.info("Options data routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import options data routes: {e}")
+    
+    # Register execution routes
+    try:
+        from features.execution.api_routes import register_routes as register_execution_routes
+        register_execution_routes(app)
+        logging.info("Execution routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import execution routes: {e}")
+        
+    # Register account information routes
+    try:
+        from features.account.api_routes import register_routes as register_account_routes
+        register_account_routes(app)
+        logging.info("Account information routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import account information routes: {e}")
     
     # Register strategy routes
     try:
@@ -164,15 +188,7 @@ def register_feature_routes(app):
         register_strategy_routes(app)
         logging.info("Strategy routes registered")
     except ImportError as e:
-        logging.warning(f"Could not import strategy routes: cannot import name 'market_routes' from 'features.market.api'")
-    
-    # Register execution routes
-    try:
-        from features.execution.api import register_routes as register_execution_routes
-        register_execution_routes(app)
-        logging.info("Execution routes registered")
-    except ImportError as e:
-        logging.warning(f"Could not import execution routes: {e}")
+        logging.warning(f"Could not import strategy routes: {e}")
 
 def register_web_routes(app):
     """Register web UI routes."""
