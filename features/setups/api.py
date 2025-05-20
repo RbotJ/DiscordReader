@@ -1,95 +1,279 @@
 """
-Trading Setup API Module
+Trading Setups API Module
 
-This module provides API endpoints for retrieving trading setup data.
+This module provides API endpoints for retrieving and managing trading setups.
 """
-import logging
-from datetime import datetime
-from flask import Blueprint, jsonify, request, current_app
-from app import db
-# Import specific models from the database models
-import models
 
+import datetime
+import logging
+from flask import Blueprint, jsonify, request
+from sqlalchemy import func, desc
+from common.db import db
+from models import SetupMessage, TickerSetup, Signal, Bias
+
+# Create blueprint
+bp = Blueprint('setups_api', __name__, url_prefix='/api/setups')
 logger = logging.getLogger(__name__)
 
-# Create blueprint for setup API
-setups_bp = Blueprint('setups', __name__, url_prefix='/api/setups')
-
-@setups_bp.route('/recent', methods=['GET'])
-def get_recent_setups():
+@bp.route('/active', methods=['GET'])
+def get_active_setups():
     """
-    Get recent setup messages.
-    
-    Query parameters:
-    - limit: Maximum number of setups to return (default: 10)
-    - symbol: Filter by ticker symbol (optional)
+    Get active trading setups for the current day.
     
     Returns:
-        JSON response with recent setup messages
+        JSON response with active setup data
     """
     try:
-        # Get query parameters
-        limit = request.args.get('limit', default=10, type=int)
-        symbol = request.args.get('symbol', default=None, type=str)
+        # Get today's date
+        today = datetime.date.today()
         
-        # Validate limit
-        if limit <= 0 or limit > 100:
-            return jsonify({
-                'status': 'error',
-                'message': 'Limit must be between 1 and 100'
-            }), 400
+        # Get recent setups with their ticker symbols
+        recent_setups = (
+            db.session.query(TickerSetup)
+            .join(SetupMessage)
+            .filter(SetupMessage.date == today)
+            .order_by(desc(SetupMessage.created_at))
+            .all()
+        )
         
-        # Build query
-        query = models.SetupMessage.query.order_by(models.SetupMessage.created_at.desc())
-        
-        # Add symbol filter if provided
-        if symbol:
-            # Use the renamed model to avoid conflicts
-            from models import TickerSetup as DBTickerSetup
-            query = query.join(models.SetupMessage.ticker_setups).filter(DBTickerSetup.symbol == symbol)
-        
-        # Get limited results
-        messages = query.limit(limit).all()
-        
-        # Convert to response format
-        result = []
-        for message in messages:
-            message_data = {
-                'id': message.id,
-                'date': message.date.isoformat() if message.date else None,
-                'source': message.source,
-                'created_at': message.created_at.isoformat() if message.created_at else None,
-                'ticker_count': len(message.ticker_setups),
-                'ticker_symbols': [ts.symbol for ts in message.ticker_setups]
+        # Format the response
+        setups = []
+        for setup in recent_setups:
+            # Get signals for this ticker setup
+            signals = Signal.query.filter_by(ticker_setup_id=setup.id).all()
+            
+            setup_data = {
+                'id': setup.id,
+                'symbol': setup.symbol,
+                'text': setup.text,
+                'message_id': setup.message_id,
+                'created_at': setup.message.created_at.isoformat(),
+                'signals': [
+                    {
+                        'id': signal.id,
+                        'category': signal.category.value,
+                        'aggressiveness': signal.aggressiveness.value,
+                        'comparison': signal.comparison.value,
+                        'trigger': signal.trigger,
+                        'targets': signal.targets
+                    }
+                    for signal in signals
+                ],
+                'last_price': get_latest_price(setup.symbol)
             }
-            result.append(message_data)
+            
+            # Add bias information if available
+            if setup.bias:
+                setup_data['bias'] = {
+                    'direction': setup.bias.direction.value,
+                    'condition': setup.bias.condition.value,
+                    'price': setup.bias.price
+                }
+                
+                if setup.bias.bias_flip:
+                    setup_data['bias']['flip'] = {
+                        'direction': setup.bias.bias_flip.direction.value,
+                        'price_level': setup.bias.bias_flip.price_level
+                    }
+            
+            setups.append(setup_data)
         
         return jsonify({
             'status': 'success',
-            'data': result
-        }), 200
-        
+            'setups': setups
+        })
+    
     except Exception as e:
-        logger.error(f"Error getting recent setups: {str(e)}")
+        logger.error(f"Error getting active setups: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'message': f'Error getting recent setups: {str(e)}'
+            'message': 'Error retrieving active setups'
         }), 500
 
-@setups_bp.route('/<int:setup_id>', methods=['GET'])
-def get_setup(setup_id):
+
+@bp.route('/historical', methods=['GET'])
+def get_historical_setups():
     """
-    Get a setup message by ID.
+    Get historical trading setups for a specified date.
     
-    Args:
-        setup_id: The ID of the setup message
+    Query parameters:
+        date: Date in YYYY-MM-DD format
         
     Returns:
-        JSON response with setup message data
+        JSON response with historical setup data
     """
     try:
-        # Get setup message by ID
-        setup = models.SetupMessage.query.get(setup_id)
+        # Get the requested date (default to today)
+        date_str = request.args.get('date')
+        if date_str:
+            try:
+                requested_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Invalid date format. Use YYYY-MM-DD'
+                }), 400
+        else:
+            requested_date = datetime.date.today()
+        
+        # Get setups for the requested date
+        setups = (
+            db.session.query(TickerSetup)
+            .join(SetupMessage)
+            .filter(SetupMessage.date == requested_date)
+            .order_by(desc(SetupMessage.created_at))
+            .all()
+        )
+        
+        # Format the response
+        formatted_setups = []
+        for setup in setups:
+            # Get signals for this ticker setup
+            signals = Signal.query.filter_by(ticker_setup_id=setup.id).all()
+            
+            setup_data = {
+                'id': setup.id,
+                'symbol': setup.symbol,
+                'text': setup.text,
+                'message_id': setup.message_id,
+                'created_at': setup.message.created_at.isoformat(),
+                'signals': [
+                    {
+                        'id': signal.id,
+                        'category': signal.category.value,
+                        'aggressiveness': signal.aggressiveness.value,
+                        'comparison': signal.comparison.value,
+                        'trigger': signal.trigger,
+                        'targets': signal.targets
+                    }
+                    for signal in signals
+                ],
+                # For historical data, we use the closing price from that day
+                'last_price': get_historical_price(setup.symbol, requested_date)
+            }
+            
+            # Add bias information if available
+            if setup.bias:
+                setup_data['bias'] = {
+                    'direction': setup.bias.direction.value,
+                    'condition': setup.bias.condition.value,
+                    'price': setup.bias.price
+                }
+                
+                if setup.bias.bias_flip:
+                    setup_data['bias']['flip'] = {
+                        'direction': setup.bias.bias_flip.direction.value,
+                        'price_level': setup.bias.bias_flip.price_level
+                    }
+            
+            formatted_setups.append(setup_data)
+        
+        return jsonify({
+            'status': 'success',
+            'date': requested_date.isoformat(),
+            'setups': formatted_setups
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting historical setups: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'Error retrieving historical setups'
+        }), 500
+
+
+@bp.route('/ticker/<symbol>', methods=['GET'])
+def get_ticker_setups(symbol):
+    """
+    Get all trading setups for a specific ticker symbol.
+    
+    Args:
+        symbol: Ticker symbol
+        
+    Returns:
+        JSON response with ticker setup data
+    """
+    try:
+        # Get all setups for this ticker
+        ticker_setups = (
+            TickerSetup.query
+            .filter_by(symbol=symbol.upper())
+            .join(SetupMessage)
+            .order_by(desc(SetupMessage.created_at))
+            .all()
+        )
+        
+        # Format the response
+        setups = []
+        for setup in ticker_setups:
+            # Get signals for this ticker setup
+            signals = Signal.query.filter_by(ticker_setup_id=setup.id).all()
+            
+            setup_data = {
+                'id': setup.id,
+                'symbol': setup.symbol,
+                'text': setup.text,
+                'message_id': setup.message_id,
+                'date': setup.message.date.isoformat(),
+                'created_at': setup.message.created_at.isoformat(),
+                'signals': [
+                    {
+                        'id': signal.id,
+                        'category': signal.category.value,
+                        'aggressiveness': signal.aggressiveness.value,
+                        'comparison': signal.comparison.value,
+                        'trigger': signal.trigger,
+                        'targets': signal.targets
+                    }
+                    for signal in signals
+                ]
+            }
+            
+            # Add bias information if available
+            if setup.bias:
+                setup_data['bias'] = {
+                    'direction': setup.bias.direction.value,
+                    'condition': setup.bias.condition.value,
+                    'price': setup.bias.price
+                }
+                
+                if setup.bias.bias_flip:
+                    setup_data['bias']['flip'] = {
+                        'direction': setup.bias.bias_flip.direction.value,
+                        'price_level': setup.bias.bias_flip.price_level
+                    }
+            
+            setups.append(setup_data)
+        
+        return jsonify({
+            'status': 'success',
+            'symbol': symbol.upper(),
+            'count': len(setups),
+            'setups': setups
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting setups for ticker {symbol}: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'Error retrieving setups for {symbol}'
+        }), 500
+
+
+@bp.route('/detail/<int:setup_id>', methods=['GET'])
+def get_setup_detail(setup_id):
+    """
+    Get detailed information for a specific setup.
+    
+    Args:
+        setup_id: ID of the ticker setup
+        
+    Returns:
+        JSON response with detailed setup data
+    """
+    try:
+        # Get the setup
+        setup = TickerSetup.query.get(setup_id)
         
         if not setup:
             return jsonify({
@@ -97,29 +281,31 @@ def get_setup(setup_id):
                 'message': f'Setup with ID {setup_id} not found'
             }), 404
         
-        # Convert to response format
+        # Get signals for this ticker setup
+        signals = Signal.query.filter_by(ticker_setup_id=setup.id).all()
+        
+        # Get the full message (which may contain multiple tickers)
+        message = SetupMessage.query.get(setup.message_id)
+        
+        # Get all ticker setups for this message
+        related_tickers = (
+            TickerSetup.query
+            .filter_by(message_id=setup.message_id)
+            .filter(TickerSetup.id != setup.id)
+            .all()
+        )
+        
         setup_data = {
             'id': setup.id,
-            'date': setup.date.isoformat() if setup.date else None,
-            'source': setup.source,
-            'created_at': setup.created_at.isoformat() if setup.created_at else None,
-            'raw_text': setup.raw_text,
-            'ticker_setups': []
-        }
-        
-        # Add ticker setups
-        for ts in setup.ticker_setups:
-            ticker_setup = {
-                'id': ts.id,
-                'symbol': ts.symbol,
-                'text': ts.text,
-                'signals': [],
-                'bias': None
-            }
-            
-            # Add signals
-            for signal in ts.signals:
-                signal_data = {
+            'symbol': setup.symbol,
+            'text': setup.text,
+            'message_id': setup.message_id,
+            'message_text': message.raw_text,
+            'date': message.date.isoformat(),
+            'created_at': message.created_at.isoformat(),
+            'source': message.source,
+            'signals': [
+                {
                     'id': signal.id,
                     'category': signal.category.value,
                     'aggressiveness': signal.aggressiveness.value,
@@ -127,119 +313,104 @@ def get_setup(setup_id):
                     'trigger': signal.trigger,
                     'targets': signal.targets
                 }
-                ticker_setup['signals'].append(signal_data)
-            
-            # Add bias if present
-            if ts.bias:
-                bias_data = {
-                    'id': ts.bias.id,
-                    'direction': ts.bias.direction.value,
-                    'condition': ts.bias.condition.value,
-                    'price': ts.bias.price,
-                    'flip': None
+                for signal in signals
+            ],
+            'related_tickers': [
+                {
+                    'id': ticker.id,
+                    'symbol': ticker.symbol,
+                    'text': ticker.text
                 }
-                
-                # Add bias flip if present
-                if ts.bias.bias_flip:
-                    bias_data['flip'] = {
-                        'id': ts.bias.bias_flip.id,
-                        'direction': ts.bias.bias_flip.direction.value,
-                        'price_level': ts.bias.bias_flip.price_level
-                    }
-                
-                ticker_setup['bias'] = bias_data
+                for ticker in related_tickers
+            ],
+            'last_price': get_latest_price(setup.symbol)
+        }
+        
+        # Add bias information if available
+        if setup.bias:
+            setup_data['bias'] = {
+                'direction': setup.bias.direction.value,
+                'condition': setup.bias.condition.value,
+                'price': setup.bias.price
+            }
             
-            setup_data['ticker_setups'].append(ticker_setup)
+            if setup.bias.bias_flip:
+                setup_data['bias']['flip'] = {
+                    'direction': setup.bias.bias_flip.direction.value,
+                    'price_level': setup.bias.bias_flip.price_level
+                }
         
         return jsonify({
             'status': 'success',
-            'data': setup_data
-        }), 200
-        
+            'setup': setup_data
+        })
+    
     except Exception as e:
-        logger.error(f"Error getting setup details: {str(e)}")
+        logger.error(f"Error getting setup detail: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'message': f'Error getting setup details: {str(e)}'
+            'message': 'Error retrieving setup details'
         }), 500
 
-@setups_bp.route('/sync-discord', methods=['POST'])
-def sync_discord_messages():
-    """Sync recent messages from Discord to the database."""
+
+def get_latest_price(symbol):
+    """
+    Get the latest price for a symbol.
+    
+    In a real implementation, this would fetch from a market data provider.
+    For now, we'll use a placeholder implementation.
+    
+    Args:
+        symbol: Ticker symbol
+        
+    Returns:
+        Latest price for the symbol
+    """
     try:
-        # Check if refreshing is requested
-        force_refresh = request.args.get('refresh', 'false').lower() == 'true'
-        
-        # Import fully qualified models to avoid naming conflicts
-        from models import TickerSetup as DBTickerSetup, SetupMessage
-        
-        # Retrieve messages from Discord
-        from features.discord.client import get_channel_messages
-        from features.setups.multi_ticker_controller import process_setup_message
-        
-        # Get messages from the A+ setups channel
-        messages = get_channel_messages()
-        
-        if not messages or len(messages) == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'No Discord messages available. Please wait for messages to be received from Discord.'
-            }), 404
-        
-        # Check for existing messages with the same content
-        processed_count = 0
-        skipped_count = 0
-        
-        for message in messages:
-            try:
-                # Check if this message is already in the database (by content)
-                existing = SetupMessage.query.filter_by(raw_text=message['content']).first()
-                
-                if existing and not force_refresh:
-                    logger.info(f"Skipping already processed message: {message['id']}")
-                    skipped_count += 1
-                    continue
-                
-                # Process the message
-                result = process_setup_message(
-                    text=message['content'], 
-                    message_date=message['timestamp'].date() if 'timestamp' in message else None,
-                    source='discord'
-                )
-                
-                # Only count if successful
-                if result.get('status') == 'success':
-                    processed_count += 1
-                    logger.info(f"Successfully processed message with {len(result.get('tickers', []))} tickers: {result.get('tickers', [])}")
-            except Exception as e:
-                logger.error(f"Error processing Discord message: {e}")
-        
-        # Return success even if we just processed one message
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Discord messages processed: {processed_count} new, {skipped_count} skipped',
-            'processed': processed_count,
-            'skipped': skipped_count
-        })
-        
+        # This is where we would call the market data service
+        # For now, return a simulated price
+        import random
+        base_price = 100 + hash(symbol) % 400  # Deterministic base price based on symbol
+        jitter = random.uniform(-5, 5)  # Add some randomness
+        return round(base_price + jitter, 2)
     except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error syncing Discord messages: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Error syncing Discord messages: {str(e)}'
-        }), 500
+        logger.error(f"Error getting latest price for {symbol}: {str(e)}")
+        return None
+
+
+def get_historical_price(symbol, date):
+    """
+    Get the historical closing price for a symbol on a specific date.
+    
+    In a real implementation, this would fetch from a market data provider.
+    For now, we'll use a placeholder implementation.
+    
+    Args:
+        symbol: Ticker symbol
+        date: Historical date
         
-@setups_bp.route('/sample', methods=['POST'])
-def add_sample_data():
-    """Add sample setup messages to demonstrate functionality (redirects to sync-discord)."""
-    # Just redirect to the sync-discord endpoint for compatibility
-    return sync_discord_messages()
+    Returns:
+        Closing price for the symbol on the specified date
+    """
+    try:
+        # This is where we would call the market data service
+        # For now, return a simulated price
+        import random
+        from datetime import datetime
+        
+        # Create a deterministic but variable price based on symbol and date
+        date_seed = int(datetime.combine(date, datetime.min.time()).timestamp())
+        random.seed(hash(symbol) + date_seed)
+        
+        base_price = 100 + hash(symbol) % 400
+        day_factor = random.uniform(0.95, 1.05)
+        return round(base_price * day_factor, 2)
+    except Exception as e:
+        logger.error(f"Error getting historical price for {symbol} on {date}: {str(e)}")
+        return None
 
 
 def register_routes(app):
-    """Register routes with the Flask application."""
-    app.register_blueprint(setups_bp)
-    logger.info("Setup API routes registered")
+    """Register the setups API routes with the Flask app."""
+    app.register_blueprint(bp)
+    logger.info("Setups API routes registered")

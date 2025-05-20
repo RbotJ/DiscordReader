@@ -152,8 +152,8 @@ def register_feature_routes(app):
     
     # Register market data routes
     try:
-        from features.market.api import register_routes as register_market_routes
-        register_market_routes(app)
+        from features.market.api import register_routes
+        register_routes(app)
         logging.info("Market data routes registered")
     except ImportError as e:
         logging.warning(f"Could not import market data routes: {e}")
@@ -176,6 +176,11 @@ def register_feature_routes(app):
 
 def register_web_routes(app):
     """Register web UI routes."""
+    
+    @app.route('/monitor')
+    def monitor():
+        """Setup monitoring page with candlestick charts and real-time updates."""
+        return render_template('monitor.html', title="Setup Monitor")
     # Main UI routes
     @app.route('/')
     def index():
