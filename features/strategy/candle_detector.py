@@ -72,12 +72,22 @@ def _candle_detector_thread() -> None:
     # Subscribe to candle updates using Redis pubsub
     candle_channel = "candles:all"
     
-    # Get Redis client
-    import redis
-    from common.redis_utils import get_redis_client
-    redis_conn = get_redis_client()
-    pubsub = redis_conn.pubsub()
-    pubsub.subscribe(candle_channel)
+    # Get Redis client with error handling for when Redis is not available
+    try:
+        import redis
+        from common.redis_utils import get_redis_client
+        redis_conn = get_redis_client()
+        pubsub = redis_conn.pubsub()
+        pubsub.subscribe(candle_channel)
+        logger.info(f"Successfully subscribed to {candle_channel}")
+    except Exception as e:
+        # Create a dummy pubsub that won't fail the application
+        logger.warning(f"Failed to subscribe to Redis channel: {e} - Using dummy implementation")
+        class DummyPubSub:
+            def get_message(self, timeout=None):
+                time.sleep(0.1)  # Don't burn CPU cycles
+                return None
+        pubsub = DummyPubSub()
     
     while _thread_running:
         try:
