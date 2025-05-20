@@ -125,7 +125,8 @@ def get_message_stats() -> Dict[str, Any]:
         "latest_author": None,
         "latest_id": None,
         "latest_channel": None,
-        "first_timestamp": None
+        "first_timestamp": None,
+        "ticker_frequency": {}  # Track ticker frequency
     }
     
     if latest:
@@ -143,6 +144,24 @@ def get_message_stats() -> Dict[str, Any]:
         if len(history) > 1:
             oldest_msg = history[-1]
             stats["oldest_timestamp"] = oldest_msg.get("timestamp")
+            
+        # Calculate ticker frequency from message content
+        ticker_counts = {}
+        import re
+        
+        # Regular expression to find ticker symbols ($ followed by 1-5 uppercase letters)
+        ticker_pattern = r'\$([A-Z]{1,5})'
+        
+        for message in history:
+            content = message.get("content", "")
+            tickers = re.findall(ticker_pattern, content)
+            
+            for ticker in tickers:
+                ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
+        
+        # Sort by frequency (most frequent first)
+        sorted_tickers = sorted(ticker_counts.items(), key=lambda x: x[1], reverse=True)
+        stats["ticker_frequency"] = dict(sorted_tickers)
     
     return stats
 

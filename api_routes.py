@@ -21,6 +21,9 @@ def register_api_routes(app, db):
         app: Flask application instance
         db: SQLAlchemy database instance
     """
+    
+    # Import here to avoid circular imports
+    from discord_message_storage import get_message_stats, get_latest_message, get_message_history
     # ------------------------------------------------------------------
     # Health and Status Routes
     # ------------------------------------------------------------------
