@@ -13,13 +13,13 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Regular expressions for parsing
-TICKER_PATTERN = r'\$?([A-Z]{1,5})'
+TICKER_PATTERN = r'\b\$?([A-Z]{1,5})\b'  # Word boundary to prevent partial matches
 PRICE_PATTERN = r'(?:\$|price:?\s*)(\d+\.?\d*)'
-RESISTANCE_PATTERN = r'(?:resistance|res)(?:\s+at)?\s*:?\s*(\d+\.?\d*)'
-SUPPORT_PATTERN = r'(?:support|sup)(?:\s+at)?\s*:?\s*(\d+\.?\d*)'
-TARGET_PATTERN = r'(?:target|tgt)(?:\s+at)?\s*:?\s*(\d+\.?\d*)'
-STOP_PATTERN = r'(?:stop|sl)(?:\s+at)?\s*:?\s*(\d+\.?\d*)'
-ENTRY_PATTERN = r'(?:entry|enter)(?:\s+at)?\s*:?\s*(\d+\.?\d*)'
+RESISTANCE_PATTERN = r'(?:resistance|res)(?:\s+at)?\s*:?\s*\$?(\d+\.?\d*)'
+SUPPORT_PATTERN = r'(?:support|sup)(?:\s+at)?\s*:?\s*\$?(\d+\.?\d*)'
+TARGET_PATTERN = r'(?:target|tgt)(?:\s+at|:)?\s*:?\s*\$?(\d+\.?\d*)'
+STOP_PATTERN = r'(?:stop|sl)(?:\s+at|:)?\s*:?\s*\$?(\d+\.?\d*)'
+ENTRY_PATTERN = r'(?:entry|enter)(?:\s+at|:)?\s*:?\s*\$?(\d+\.?\d*)'
 EXPIRY_PATTERN = r'(?:expiry|exp)(?:\s+at)?\s*:?\s*(\d+[dw])'
 
 # Signal types
@@ -112,9 +112,25 @@ def extract_tickers(text: str) -> Set[str]:
     matches = re.findall(TICKER_PATTERN, text)
     
     # Filter out common words that match the pattern but aren't tickers
-    non_tickers = {'A', 'I', 'AT', 'BE', 'BY', 'DO', 'GO', 'IF', 'IN', 'IS', 'IT', 'ME', 'MY', 'ON', 'OR', 'SO', 'TO', 'UP', 'US', 'WE'}
+    non_tickers = {
+        'A', 'I', 'AT', 'BE', 'BY', 'DO', 'GO', 'IF', 'IN', 'IS', 'IT', 'ME', 'MY', 'ON', 'OR', 'SO', 'TO', 'UP', 'US', 'WE',
+        'AM', 'AN', 'AS', 'AT', 'BE', 'BY', 'DT', 'ET', 'GO', 'HE', 'HI', 'IF', 'IN', 'IS', 'IT', 'MA', 'ME', 'MY', 'NO', 'OF',
+        'OH', 'OK', 'ON', 'OR', 'PI', 'PM', 'PT', 'RE', 'RT', 'SO', 'TO', 'UP', 'US', 'VS', 'WE', 'DTE', 'RSI', 'MACD', 'EMA',
+        'SMA', 'OTM', 'ITM', 'ATM', 'CALL', 'PUT', 'BUY', 'SELL', 'SEP', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY',
+        'JUN', 'JUL', 'AUG'
+    }
     
-    return {match for match in matches if match not in non_tickers and len(match) >= 1 and len(match) <= 5}
+    # Only consider likely ticker symbols
+    known_tickers = {'SPY', 'QQQ', 'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD', 'INTC', 'NFLX'}
+    
+    # First pass: Get high confidence tickers (prefixed with $ or known tickers)
+    high_confidence = {match for match in matches if match in known_tickers or f'${match}' in text}
+    
+    # Second pass: Filter out non-tickers and ensure reasonable length
+    filtered = {match for match in matches if match not in non_tickers and len(match) >= 2 and len(match) <= 5}
+    
+    # If we found high confidence tickers, return those, otherwise return filtered set
+    return high_confidence if high_confidence else filtered
 
 def detect_signal_type(text: str) -> Optional[str]:
     """
