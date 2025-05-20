@@ -17,9 +17,9 @@ TICKER_PATTERN = r'\b\$?([A-Z]{1,5})\b'  # Word boundary to prevent partial matc
 PRICE_PATTERN = r'(?:\$|price:?\s*)(\d+\.?\d*)'
 RESISTANCE_PATTERN = r'(?:resistance|res)(?:\s+at)?\s*:?\s*\$?(\d+\.?\d*)'
 SUPPORT_PATTERN = r'(?:support|sup)(?:\s+at)?\s*:?\s*\$?(\d+\.?\d*)'
-TARGET_PATTERN = r'(?:target|tgt)(?:\s+at|:)?\s*:?\s*\$?(\d+\.?\d*)'
-STOP_PATTERN = r'(?:stop|sl)(?:\s+at|:)?\s*:?\s*\$?(\d+\.?\d*)'
-ENTRY_PATTERN = r'(?:entry|enter)(?:\s+at|:)?\s*:?\s*\$?(\d+\.?\d*)'
+TARGET_PATTERN = r'(?:target|tgt)(?:[:\s]+at|:|\s+)?\s*:?\s*\$?(\d+\.?\d*)'
+STOP_PATTERN = r'(?:stop|sl)(?:[:\s]+at|:|\s+)?\s*:?\s*\$?(\d+\.?\d*)'
+ENTRY_PATTERN = r'(?:entry|enter)(?:[:\s]+at|:|\s+)?\s*:?\s*\$?(\d+\.?\d*)'
 EXPIRY_PATTERN = r'(?:expiry|exp)(?:\s+at)?\s*:?\s*(\d+[dw])'
 
 # Signal types
@@ -128,12 +128,23 @@ def parse_message(message: str) -> Dict:
             # Process this ticker's text block
             data['signal_type'] = detect_signal_type(block_text)
             data['bias'] = detect_bias(block_text)
-            data['detected_prices'] = extract_prices(block_text)
+            
+            # Extract price levels for this ticker's text block
             data['support_levels'] = extract_support_levels(block_text)
             data['resistance_levels'] = extract_resistance_levels(block_text)
             data['target_levels'] = extract_target_levels(block_text)
             data['stop_levels'] = extract_stop_levels(block_text)
             data['entry_levels'] = extract_entry_levels(block_text)
+            
+            # Add all detected prices (general price mentions)
+            other_prices = extract_prices(block_text)
+            
+            # Collect all prices from specific categories
+            all_categorized = data['support_levels'] + data['resistance_levels'] + \
+                             data['target_levels'] + data['stop_levels'] + data['entry_levels']
+            
+            # Only include uncategorized prices in 'detected_prices'
+            data['detected_prices'] = [p for p in other_prices if p not in all_categorized]
             
             # Add to global collections for backward compatibility
             result['detected_prices'].extend(data['detected_prices'])
@@ -289,8 +300,25 @@ def extract_support_levels(text: str) -> List[float]:
     Returns:
         List of support levels
     """
-    matches = re.findall(SUPPORT_PATTERN, text)
-    return [float(match) for match in matches]
+    # Standard pattern
+    matches = re.findall(SUPPORT_PATTERN, text.lower())
+    
+    # Check for "Support at X" or "X support" patterns
+    support_matches = []
+    
+    # Look for "Support at $X" pattern
+    pattern1 = r'support\s+at\s+\$?(\d+\.?\d*)'
+    support_matches.extend(re.findall(pattern1, text.lower()))
+    
+    # Look for "X support" pattern
+    pattern2 = r'\$?(\d+\.?\d*)\s+support'
+    support_matches.extend(re.findall(pattern2, text.lower()))
+    
+    # Add any matches from both patterns and standard pattern
+    all_matches = matches + support_matches
+    
+    # Remove duplicates and convert to float
+    return [float(match) for match in set(all_matches)]
 
 def extract_resistance_levels(text: str) -> List[float]:
     """
@@ -302,8 +330,25 @@ def extract_resistance_levels(text: str) -> List[float]:
     Returns:
         List of resistance levels
     """
-    matches = re.findall(RESISTANCE_PATTERN, text)
-    return [float(match) for match in matches]
+    # Standard pattern
+    matches = re.findall(RESISTANCE_PATTERN, text.lower())
+    
+    # Check for "Resistance at X" or "X resistance" patterns
+    resistance_matches = []
+    
+    # Look for "Resistance at $X" pattern
+    pattern1 = r'resistance\s+at\s+\$?(\d+\.?\d*)'
+    resistance_matches.extend(re.findall(pattern1, text.lower()))
+    
+    # Look for "X resistance" pattern
+    pattern2 = r'\$?(\d+\.?\d*)\s+resistance'
+    resistance_matches.extend(re.findall(pattern2, text.lower()))
+    
+    # Add any matches from both patterns and standard pattern
+    all_matches = matches + resistance_matches
+    
+    # Remove duplicates and convert to float
+    return [float(match) for match in set(all_matches)]
 
 def extract_target_levels(text: str) -> List[float]:
     """
@@ -315,8 +360,25 @@ def extract_target_levels(text: str) -> List[float]:
     Returns:
         List of target levels
     """
-    matches = re.findall(TARGET_PATTERN, text)
-    return [float(match) for match in matches]
+    # Standard pattern
+    matches = re.findall(TARGET_PATTERN, text.lower())
+    
+    # Check for "Target: X" patterns
+    target_matches = []
+    
+    # Look for "Target: $X" pattern
+    pattern1 = r'target:?\s+\$?(\d+\.?\d*)'
+    target_matches.extend(re.findall(pattern1, text.lower()))
+    
+    # Look for "Target $X" pattern
+    pattern2 = r'target\s+\$?(\d+\.?\d*)'
+    target_matches.extend(re.findall(pattern2, text.lower()))
+    
+    # Add any matches from both patterns and standard pattern
+    all_matches = matches + target_matches
+    
+    # Remove duplicates and convert to float
+    return [float(match) for match in set(all_matches)]
 
 def extract_stop_levels(text: str) -> List[float]:
     """
@@ -328,8 +390,25 @@ def extract_stop_levels(text: str) -> List[float]:
     Returns:
         List of stop loss levels
     """
-    matches = re.findall(STOP_PATTERN, text)
-    return [float(match) for match in matches]
+    # Standard pattern
+    matches = re.findall(STOP_PATTERN, text.lower())
+    
+    # Check for "Stop: X" patterns
+    stop_matches = []
+    
+    # Look for "Stop: $X" pattern
+    pattern1 = r'stop:?\s+\$?(\d+\.?\d*)'
+    stop_matches.extend(re.findall(pattern1, text.lower()))
+    
+    # Look for "SL $X" pattern
+    pattern2 = r'sl\s+\$?(\d+\.?\d*)'
+    stop_matches.extend(re.findall(pattern2, text.lower()))
+    
+    # Add any matches from both patterns and standard pattern
+    all_matches = matches + stop_matches
+    
+    # Remove duplicates and convert to float
+    return [float(match) for match in set(all_matches)]
 
 def extract_entry_levels(text: str) -> List[float]:
     """
@@ -341,8 +420,25 @@ def extract_entry_levels(text: str) -> List[float]:
     Returns:
         List of entry levels
     """
-    matches = re.findall(ENTRY_PATTERN, text)
-    return [float(match) for match in matches]
+    # Standard pattern
+    matches = re.findall(ENTRY_PATTERN, text.lower())
+    
+    # Check for "Entry: X" or "Enter at X" patterns
+    entry_matches = []
+    
+    # Look for "Entry: $X" pattern
+    pattern1 = r'entry:?\s+\$?(\d+\.?\d*)'
+    entry_matches.extend(re.findall(pattern1, text.lower()))
+    
+    # Look for "Enter at $X" pattern
+    pattern2 = r'enter\s+at\s+\$?(\d+\.?\d*)'
+    entry_matches.extend(re.findall(pattern2, text.lower()))
+    
+    # Add any matches from both patterns and standard pattern
+    all_matches = matches + entry_matches
+    
+    # Remove duplicates and convert to float
+    return [float(match) for match in set(all_matches)]
 
 def determine_primary_ticker(text: str, tickers: Set[str]) -> str:
     """
