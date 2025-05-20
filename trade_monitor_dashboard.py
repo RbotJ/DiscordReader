@@ -198,7 +198,55 @@ def display_message_card(message):
         return
     
     st.subheader("Latest Trading Setup")
+    
+    # Try to get message stats
+    message_stats = {}
+    try:
+        import discord_message_storage
+        message_stats = discord_message_storage.get_message_stats()
+    except ImportError:
+        # If module not available, continue without stats
+        pass
+    
     with st.container():
+        # Add message count and stats at the top
+        if message_stats:
+            # Create a status row
+            stat_cols = st.columns(3)
+            
+            # Message count
+            with stat_cols[0]:
+                st.metric(
+                    label="Total Messages", 
+                    value=message_stats.get('count', 0)
+                )
+            
+            # Latest message timestamp
+            with stat_cols[1]:
+                latest_time = message_stats.get('latest_timestamp')
+                if latest_time:
+                    try:
+                        # Convert ISO format to datetime
+                        dt = datetime.fromisoformat(latest_time)
+                        formatted_time = dt.strftime("%m/%d/%Y %H:%M")
+                    except:
+                        formatted_time = latest_time
+                else:
+                    formatted_time = "N/A"
+                
+                st.metric(
+                    label="Latest Message", 
+                    value=formatted_time
+                )
+            
+            # Latest author
+            with stat_cols[2]:
+                st.metric(
+                    label="Author", 
+                    value=message_stats.get('latest_author', 'N/A')
+                )
+        
+        # Main message content
         col1, col2 = st.columns([3, 1])
         
         with col1:
@@ -213,6 +261,19 @@ def display_message_card(message):
             primary_ticker = message.get('primary_ticker', 'N/A')
             st.markdown(f"**Primary Ticker:** {primary_ticker}")
             st.markdown(f"**Tickers:** {', '.join(message.get('tickers', []))}")
+            
+            # Add discord info if available
+            if message.get('discord_id'):
+                st.markdown("---")
+                st.markdown("**Discord Info:**")
+                st.markdown(f"ID: {message.get('discord_id')}")
+                if message.get('discord_timestamp'):
+                    try:
+                        dt = datetime.fromisoformat(message.get('discord_timestamp'))
+                        formatted_time = dt.strftime("%m/%d/%Y %H:%M")
+                        st.markdown(f"Time: {formatted_time}")
+                    except:
+                        st.markdown(f"Time: {message.get('discord_timestamp')}")
 
 def display_ticker_chart_card(ticker, message):
     """Display a chart card for a specific ticker"""

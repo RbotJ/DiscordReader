@@ -66,14 +66,30 @@ async def fetch_latest_discord_message():
                     "content": message.content,
                     "author": str(message.author),
                     "timestamp": message.created_at.isoformat(),
-                    "channel_name": channel.name
+                    "channel_name": channel.name,
+                    "fetch_timestamp": datetime.now().isoformat()
                 }
                 
-                # Save to file
-                with open(LATEST_MESSAGE_FILE, 'w') as f:
-                    json.dump(message_data, f, indent=2)
-                
-                logger.info(f"Message saved to {LATEST_MESSAGE_FILE}")
+                # Import the storage module to save the message
+                try:
+                    import discord_message_storage
+                    
+                    # Save to storage (this will handle both latest message and history)
+                    success = discord_message_storage.save_message(message_data)
+                    if success:
+                        # Get updated stats after saving
+                        stats = discord_message_storage.get_message_stats()
+                        logger.info(f"Message saved to storage. Total messages: {stats['count']}")
+                    else:
+                        # Fallback to just saving the latest message file
+                        with open(LATEST_MESSAGE_FILE, 'w') as f:
+                            json.dump(message_data, f, indent=2)
+                        logger.warning(f"Used fallback storage method - saved only to {LATEST_MESSAGE_FILE}")
+                except ImportError:
+                    # Fallback to just saving the latest message file
+                    with open(LATEST_MESSAGE_FILE, 'w') as f:
+                        json.dump(message_data, f, indent=2)
+                    logger.warning(f"Message storage module not found. Saved only to {LATEST_MESSAGE_FILE}")
             
             await client.close()
         
