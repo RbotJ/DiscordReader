@@ -250,8 +250,20 @@ class RedisEventManager:
     
     def _initialize(self):
         """Initialize the event manager"""
-        self._client = get_redis_client()
-        self._pubsub = self._client.pubsub(ignore_subscribe_messages=True)
+        # Use the global redis_client if available, otherwise create a new one
+        global redis_client
+        if redis_client is not None:
+            self._client = redis_client.client
+        else:
+            self._client = get_redis_client()
+            
+        # Initialize pubsub and other properties
+        try:
+            self._pubsub = self._client.pubsub(ignore_subscribe_messages=True)
+        except Exception as e:
+            logger.error(f"Error initializing Redis pubsub: {e}")
+            self._pubsub = None
+            
         self._listeners = {}  # Map of channel -> list of callbacks
         self._running = False
         self._thread = None
