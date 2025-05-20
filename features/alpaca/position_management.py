@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
-from .client import get_positions, submit_market_order, get_account_info
+from .client import get_positions, submit_market_order, get_account_info, get_trading_client
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -39,9 +39,14 @@ def close_all_positions() -> bool:
         
         try:
             logger.info("Closing all positions")
-            trading_client.close_all_positions(cancel_orders=True)
-            logger.info("Successfully closed all positions")
-            return True
+            trading_client = get_trading_client()
+            if trading_client:
+                trading_client.close_all_positions(cancel_orders=True)
+                logger.info("Successfully closed all positions")
+                return True
+            else:
+                logger.error("Trading client not initialized")
+                return False
         except Exception as e:
             logger.error(f"Failed to close all positions: {e}")
             return False
