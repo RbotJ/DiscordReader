@@ -117,26 +117,37 @@ def get_candles(symbol):
                 'message': f'Invalid timeframe. Supported timeframes: {", ".join(TIMEFRAMES.keys())}'
             }), 400
         
-        # Generate sample candle data
-        # In a real implementation, this would fetch from Alpaca or another data provider
-        candle_data = generate_candle_data(symbol, timeframe, limit, date_str)
-        
-        return jsonify({
-            'status': 'success',
-            'symbol': symbol.upper(),
-            'timeframe': timeframe,
-            'display_timeframe': TIMEFRAMES[timeframe]['display'],
-            'count': len(candle_data.index),
-            'data': {
-                'timestamp': candle_data.index.astype(str).tolist(),
-                'open': candle_data['open'].tolist(),
-                'high': candle_data['high'].tolist(),
-                'low': candle_data['low'].tolist(),
-                'close': candle_data['close'].tolist(),
-                'volume': candle_data['volume'].tolist()
-            }
-        })
-    
+        # Generate or fetch candle data from Alpaca
+        try:
+            # We'll fetch real data from Alpaca when available
+            # For now, generate sample data for testing
+            candle_data = generate_candle_data(symbol, timeframe, limit, date_str)
+            
+            # Format the response for frontend compatibility
+            candles = []
+            for timestamp, row in candle_data.iterrows():
+                candle = {
+                    'timestamp': timestamp.isoformat(),
+                    'open': float(row['open']),
+                    'high': float(row['high']),
+                    'low': float(row['low']),
+                    'close': float(row['close']),
+                    'volume': int(row['volume'])
+                }
+                candles.append(candle)
+                
+            return jsonify({
+                'status': 'success',
+                'symbol': symbol.upper(),
+                'timeframe': timeframe,
+                'candles': candles
+            })
+        except Exception as e:
+            logger.error(f"Error processing candle data: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Error processing candle data'
+            }), 500
     except Exception as e:
         logger.error(f"Error getting candles for {symbol}: {str(e)}", exc_info=True)
         return jsonify({

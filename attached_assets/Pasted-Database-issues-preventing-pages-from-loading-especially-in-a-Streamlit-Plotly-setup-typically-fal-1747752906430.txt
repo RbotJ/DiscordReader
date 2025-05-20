@@ -1,0 +1,68 @@
+Database issues preventing pages from loading—especially in a Streamlit + Plotly setup—typically fall into a few common categories. Here's a diagnostic breakdown and how to make your system more robust:
+
+🔍 Likely Causes
+1. Blocking Queries or Timeouts
+Streamlit is synchronous by default. If your database query is slow or blocking, the UI will hang.
+
+Plotly charts waiting for data won't render, making the entire section appear broken.
+
+Fix:
+Use @st.cache_data or asyncio patterns with connection pooling (e.g., asyncpg for PostgreSQL) to pre-fetch and store data.
+
+2. Missing or Corrupt Data
+If a setup or ticker is parsed but not saved properly, queries may return None or crash chart rendering.
+
+Fix:
+Add robust null-checks before trying to render charts. Also log missing records to debug faster.
+
+python
+Copy
+Edit
+if df is None or df.empty:
+    st.warning("No data available for this ticker.")
+    st.stop()
+3. Schema Drift
+Your chart expects certain fields (like timestamp, open, close), but a change in the DB model or data type can break serialization.
+
+Fix:
+Run validation on the DataFrame before plotting:
+
+python
+Copy
+Edit
+required_cols = ['timestamp', 'open', 'high', 'low', 'close']
+missing = [c for c in required_cols if c not in df.columns]
+if missing:
+    st.error(f"Missing columns: {missing}")
+4. Concurrent Access or Locked DB
+On Replit or shared environments, too many simultaneous writes/reads may hit SQLite’s locking limits.
+
+Fix:
+Consider switching to a managed PostgreSQL (via Supabase, Neon, etc.), or adding retry logic using something like tenacity.
+
+🛠️ Robustness Improvements
+Database Access Layer with Graceful Fallbacks
+
+Create a wrapper function for DB reads that includes retry, timeout, and null handling.
+
+Log All Exceptions
+
+Add try/except blocks around all DB calls and chart renderers.
+
+Preload and Cache
+
+Preload today's setups and prices at app start, store in st.session_state or st.cache_data.
+
+Monitor Page Fault-Tolerance
+
+Render non-critical UI elements even if a specific chart fails.
+
+✅ Immediate Fix Checklist
+Check	Description
+✅ DB Connection	Ensure the DB connection is alive and not stale
+✅ Query Profiling	Log query durations to spot bottlenecks
+✅ Data Integrity	Add sanity checks for each ticker's OHLC data
+✅ Caching Layer	Use Streamlit's @st.cache_data or Redis pub/sub where possible
+✅ Error Handling	Catch and surface all exceptions to UI logs
+✅ Fallback Charts	Display a placeholder chart or “data unavailable” message when necessary
+
