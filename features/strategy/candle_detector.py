@@ -69,9 +69,15 @@ def _candle_detector_thread() -> None:
     
     logger.info("Candle detector thread started")
     
-    # Subscribe to candle updates
+    # Subscribe to candle updates using Redis pubsub
     candle_channel = "candles:all"
-    pubsub = redis_client.subscribe(candle_channel)
+    
+    # Get Redis client
+    import redis
+    from common.redis_utils import get_redis_client
+    redis_conn = get_redis_client()
+    pubsub = redis_conn.pubsub()
+    pubsub.subscribe(candle_channel)
     
     while _thread_running:
         try:
