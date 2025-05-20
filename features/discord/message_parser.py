@@ -45,41 +45,125 @@ def parse_message(message: str) -> Dict:
         Dictionary containing extracted information
     """
     try:
-        # Clean up the message
-        cleaned_message = message.replace('\n', ' ').strip()
+        # Extract tickers first
+        tickers = extract_tickers(message)
         
-        # Extract basic information
-        tickers = extract_tickers(cleaned_message)
-        prices = extract_prices(cleaned_message)
-        signal_type = detect_signal_type(cleaned_message)
-        bias = detect_bias(cleaned_message)
+        if not tickers:
+            logger.warning("No valid tickers found in message")
+            return {
+                'datetime': datetime.now().isoformat(),
+                'raw_message': message,
+                'error': "No valid tickers found",
+                'tickers': [],
+                'signal_type': None,
+                'bias': None
+            }
         
-        # Extract levels
-        support_levels = extract_support_levels(cleaned_message)
-        resistance_levels = extract_resistance_levels(cleaned_message)
-        target_levels = extract_target_levels(cleaned_message)
-        stop_levels = extract_stop_levels(cleaned_message)
-        entry_levels = extract_entry_levels(cleaned_message)
-        
-        # Build the result
+        # Initialize result structure
         result = {
             'datetime': datetime.now().isoformat(),
             'raw_message': message,
             'tickers': list(tickers),
-            'signal_type': signal_type,
-            'bias': bias,
-            'detected_prices': prices,
-            'support_levels': support_levels,
-            'resistance_levels': resistance_levels,
-            'target_levels': target_levels,
-            'stop_levels': stop_levels,
-            'entry_levels': entry_levels
+            'signal_type': None,
+            'bias': None,
+            'detected_prices': [],
+            'support_levels': [],
+            'resistance_levels': [],
+            'target_levels': [],
+            'stop_levels': [],
+            'entry_levels': [],
+            'ticker_specific_data': {}  # Store data by ticker
         }
         
+        # Initialize ticker-specific data
+        for ticker in tickers:
+            result['ticker_specific_data'][ticker] = {
+                'signal_type': None,
+                'bias': None,
+                'detected_prices': [],
+                'support_levels': [],
+                'resistance_levels': [],
+                'target_levels': [],
+                'stop_levels': [],
+                'entry_levels': [],
+                'text_block': ""  # Will store the text related to this ticker
+            }
+        
+        # Split message into lines and assign to tickers
+        lines = message.split('\n')
+        current_ticker = None
+        unassigned_lines = []
+        
+        # First pass: Map lines to tickers
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check if this line mentions a ticker
+            mentioned_ticker = None
+            for ticker in tickers:
+                ticker_pattern = re.compile(r'(?:\$|^|\s)' + re.escape(ticker) + r'(?:$|\s|\.|\,|\:|\;)')
+                if ticker_pattern.search(line):
+                    mentioned_ticker = ticker
+                    break
+            
+            if mentioned_ticker:
+                # Found a ticker, switch to this ticker's block
+                current_ticker = mentioned_ticker
+                result['ticker_specific_data'][current_ticker]['text_block'] += line + "\n"
+            elif current_ticker:
+                # Continue with current ticker's block
+                result['ticker_specific_data'][current_ticker]['text_block'] += line + "\n"
+            else:
+                # No current ticker, add to unassigned lines
+                unassigned_lines.append(line)
+        
+        # Process ticker-specific blocks
+        for ticker, data in result['ticker_specific_data'].items():
+            block_text = data['text_block']
+            if not block_text:
+                continue
+                
+            # Process this ticker's text block
+            data['signal_type'] = detect_signal_type(block_text)
+            data['bias'] = detect_bias(block_text)
+            data['detected_prices'] = extract_prices(block_text)
+            data['support_levels'] = extract_support_levels(block_text)
+            data['resistance_levels'] = extract_resistance_levels(block_text)
+            data['target_levels'] = extract_target_levels(block_text)
+            data['stop_levels'] = extract_stop_levels(block_text)
+            data['entry_levels'] = extract_entry_levels(block_text)
+            
+            # Add to global collections for backward compatibility
+            result['detected_prices'].extend(data['detected_prices'])
+            result['support_levels'].extend(data['support_levels'])
+            result['resistance_levels'].extend(data['resistance_levels'])
+            result['target_levels'].extend(data['target_levels'])
+            result['stop_levels'].extend(data['stop_levels'])
+            result['entry_levels'].extend(data['entry_levels'])
+        
+        # Process unassigned lines
+        unassigned_text = "\n".join(unassigned_lines)
+        if unassigned_text:
+            # Extract global signal type and bias
+            global_signal = detect_signal_type(unassigned_text)
+            global_bias = detect_bias(unassigned_text)
+            
+            # Apply global signal/bias to tickers that don't have them
+            for ticker, data in result['ticker_specific_data'].items():
+                if not data['signal_type'] and global_signal:
+                    data['signal_type'] = global_signal
+                if not data['bias'] and global_bias:
+                    data['bias'] = global_bias
+        
         # Determine primary ticker (if multiple found)
-        if tickers:
-            primary_ticker = determine_primary_ticker(cleaned_message, tickers)
-            result['primary_ticker'] = primary_ticker
+        primary_ticker = determine_primary_ticker(message, tickers)
+        result['primary_ticker'] = primary_ticker
+        
+        # Set global signal type and bias from primary ticker
+        result['signal_type'] = result['ticker_specific_data'][primary_ticker]['signal_type']
+        result['bias'] = result['ticker_specific_data'][primary_ticker]['bias']
         
         # Add confidence level based on completeness of the setup
         confidence = calculate_confidence(result)
