@@ -29,6 +29,7 @@ def get_active_setups():
         # Get today's date
         today = datetime.date.today()
         
+        import random
         # For demonstration, create sample ticker setups with signals
         # This ensures our monitor page always has data to display
         sample_tickers = ["SPY", "AAPL", "NVDA", "TSLA", "AMZN"]

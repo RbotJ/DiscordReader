@@ -143,12 +143,15 @@ def get_candles(symbol):
                 'candles': candles
             })
         except Exception as e:
+            # Inner exception handling for data processing issues
             logger.error(f"Error processing candle data: {e}")
             return jsonify({
                 'status': 'error',
                 'message': 'Error processing candle data'
             }), 500
+            
     except Exception as e:
+        # Outer exception handling for request parameter issues
         logger.error(f"Error getting candles for {symbol}: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
