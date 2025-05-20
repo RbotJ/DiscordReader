@@ -1,0 +1,339 @@
+/**
+ * Typography styles for the Trading Application
+ * 
+ * This file contains typography-specific styles including
+ * font definitions, headings, paragraphs, and text utilities.
+ */
+
+/* Font families */
+:root {
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --font-family-serif: Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
+/* Font weights */
+.font-thin {
+  font-weight: 100;
+}
+
+.font-extralight {
+  font-weight: 200;
+}
+
+.font-light {
+  font-weight: 300;
+}
+
+.font-normal {
+  font-weight: 400;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.font-extrabold {
+  font-weight: 800;
+}
+
+.font-black {
+  font-weight: 900;
+}
+
+/* Font sizes */
+.text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.text-base {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.text-xl {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.text-2xl {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.text-3xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
+.text-4xl {
+  font-size: 2.25rem;
+  line-height: 2.5rem;
+}
+
+.text-5xl {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.text-6xl {
+  font-size: 3.75rem;
+  line-height: 1;
+}
+
+/* Text transforms */
+.uppercase {
+  text-transform: uppercase;
+}
+
+.lowercase {
+  text-transform: lowercase;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+.normal-case {
+  text-transform: none;
+}
+
+/* Text alignment */
+.text-left {
+  text-align: left;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.text-justify {
+  text-align: justify;
+}
+
+/* Text decoration */
+.underline {
+  text-decoration: underline;
+}
+
+.line-through {
+  text-decoration: line-through;
+}
+
+.no-underline {
+  text-decoration: none;
+}
+
+/* Font style */
+.italic {
+  font-style: italic;
+}
+
+.not-italic {
+  font-style: normal;
+}
+
+/* Letter spacing */
+.tracking-tighter {
+  letter-spacing: -0.05em;
+}
+
+.tracking-tight {
+  letter-spacing: -0.025em;
+}
+
+.tracking-normal {
+  letter-spacing: 0;
+}
+
+.tracking-wide {
+  letter-spacing: 0.025em;
+}
+
+.tracking-wider {
+  letter-spacing: 0.05em;
+}
+
+.tracking-widest {
+  letter-spacing: 0.1em;
+}
+
+/* Line height */
+.leading-none {
+  line-height: 1;
+}
+
+.leading-tight {
+  line-height: 1.25;
+}
+
+.leading-snug {
+  line-height: 1.375;
+}
+
+.leading-normal {
+  line-height: 1.5;
+}
+
+.leading-relaxed {
+  line-height: 1.625;
+}
+
+.leading-loose {
+  line-height: 2;
+}
+
+/* Text colors */
+.text-finance-gain {
+  color: #10b981; /* Gain/profit green */
+}
+
+.text-finance-loss {
+  color: #ef4444; /* Loss/negative red */
+}
+
+.text-finance-neutral {
+  color: #6b7280; /* Neutral gray */
+}
+
+.text-market-closed {
+  color: #9ca3af; /* Market closed gray */
+}
+
+.text-market-open {
+  color: #22c55e; /* Market open green */
+}
+
+.text-market-premarket {
+  color: #3b82f6; /* Pre-market blue */
+}
+
+.text-market-afterhours {
+  color: #8b5cf6; /* After-hours purple */
+}
+
+/* Typography for specific elements */
+
+/* Headings with financial styling */
+.heading-finance {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+/* Price display */
+.price-display {
+  font-family: var(--font-family-mono);
+  font-weight: 500;
+}
+
+/* Percent change */
+.percent-change {
+  font-family: var(--font-family-mono);
+  font-weight: 500;
+}
+
+.percent-change.positive {
+  color: #10b981;
+}
+
+.percent-change.negative {
+  color: #ef4444;
+}
+
+/* Money values */
+.money-value {
+  font-family: var(--font-family-mono);
+  font-weight: 500;
+}
+
+/* Data labels */
+.data-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+/* Quote attribution */
+.quote-attribution {
+  font-style: italic;
+  color: #6b7280;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Code and pre */
+code, pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.875em;
+  background-color: #f3f4f6;
+  border-radius: 0.25rem;
+}
+
+code {
+  padding: 0.125rem 0.25rem;
+}
+
+pre {
+  padding: 1rem;
+  margin-top: 0.5rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+
+/* Financial terms glossary */
+.finance-term {
+  font-weight: 500;
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* Date and time formatting */
+.datetime {
+  font-family: var(--font-family-mono);
+  white-space: nowrap;
+}
+
+/* Responsive typography */
+@media (max-width: 640px) {
+  h1 {
+    font-size: 1.875rem;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+  }
+  
+  h3 {
+    font-size: 1.25rem;
+  }
+  
+  .text-5xl, .text-6xl {
+    font-size: 2.25rem;
+  }
+}
