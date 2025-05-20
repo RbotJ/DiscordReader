@@ -1,316 +1,237 @@
 """
-Options Contract Selector Module
+Options Contract Selector
 
-This module provides intelligent selection of options contracts based on
-trading signals, price levels, and risk parameters. It integrates with
-the options pricing service to find optimal contracts to trade.
+This module provides functionality to select the most appropriate options contracts
+for trading based on signals and market conditions.
 """
 import logging
-from typing import Dict, List, Optional, Tuple, Union, Any
-from datetime import datetime, date
+import datetime
+from typing import Dict, List, Optional, Tuple, Union
 
-from features.options.pricing import get_options_pricing
-from features.market.history import get_history_provider
+from features.alpaca.client import get_option_data_client, get_stock_data_client
+from features.alpaca.options_enums import OptionSide
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-class OptionsContractSelector:
+def find_atm_options(
+    symbol: str,
+    expiration_days: int = 0,
+    option_side: str = "call",
+    price_buffer_percent: float = 0.02
+) -> List[Dict]:
     """
-    Service for selecting optimal options contracts based on trading signals.
+    Find at-the-money options for a given symbol.
+    
+    Args:
+        symbol: The underlying ticker symbol
+        expiration_days: Days until expiration (0 for same-day expiry)
+        option_side: "call" or "put"
+        price_buffer_percent: Percentage buffer around current price to consider ATM
+        
+    Returns:
+        List of option contract dictionaries
     """
-    
-    def __init__(self):
-        """Initialize the options contract selector."""
-        self.options_pricing = get_options_pricing()
-        self.history_provider = get_history_provider()
-        
-    def select_contract_for_signal(
-        self,
-        symbol: str,
-        signal_type: str,
-        price_level: float,
-        risk_amount: float = 500.0,
-        expiration_date: Optional[Union[str, date]] = None,
-        aggressiveness: str = "medium"
-    ) -> Optional[Dict]:
-        """
-        Select the optimal options contract based on a trading signal.
-        
-        Args:
-            symbol: Underlying ticker symbol
-            signal_type: Signal type ('breakout', 'breakdown', 'rejection', 'bounce')
-            price_level: Price level for the signal
-            risk_amount: Maximum risk amount per trade
-            expiration_date: Expiration date (optional, defaults to 0 DTE)
-            aggressiveness: Trade aggressiveness ('conservative', 'medium', 'aggressive')
-            
-        Returns:
-            Dict with selected contract data or None if no suitable contract found
-        """
-        try:
-            # Determine direction based on signal type
-            if signal_type.lower() in ['breakout', 'bounce']:
-                direction = 'call'
-            elif signal_type.lower() in ['breakdown', 'rejection']:
-                direction = 'put'
-            else:
-                logger.warning(f"Unknown signal type: {signal_type}")
-                return None
-                
-            # Get current market price
-            latest_data = self.history_provider.get_candles(symbol, '1m', limit=1)
-            if not latest_data or not latest_data[0]:
-                logger.warning(f"Could not get latest price for {symbol}")
-                return None
-                
-            current_price = latest_data[0]['close']
-            
-            # Determine strike selection based on signal type and aggressiveness
-            strikes_above = 0
-            strikes_below = 0
-            
-            if direction == 'call':
-                # For calls, look above current price for breakouts/bounces
-                if aggressiveness == 'conservative':
-                    # ATM or slightly ITM
-                    strikes_above = 0
-                    strikes_below = 1
-                elif aggressiveness == 'medium':
-                    # ATM
-                    strikes_above = 0
-                    strikes_below = 0
-                else:  # aggressive
-                    # OTM
-                    strikes_above = 1
-                    strikes_below = 0
-            else:  # put
-                # For puts, look below current price for breakdowns/rejections
-                if aggressiveness == 'conservative':
-                    # ATM or slightly ITM
-                    strikes_above = 1
-                    strikes_below = 0
-                elif aggressiveness == 'medium':
-                    # ATM
-                    strikes_above = 0
-                    strikes_below = 0
-                else:  # aggressive
-                    # OTM
-                    strikes_above = 0
-                    strikes_below = 1
-                    
-            # Get near-the-money options (preferably 0 DTE)
-            if expiration_date:
-                options_data = self.options_pricing.get_near_the_money_options(
-                    symbol,
-                    expiration_date,
-                    num_strikes=3,
-                    underlying_price=current_price
-                )
-            else:
-                options_data = self.options_pricing.get_odte_options(
-                    symbol,
-                    num_strikes=3
-                )
-                
-            if not options_data:
-                logger.warning(f"No options data found for {symbol}")
-                return None
-                
-            # Select contracts based on direction
-            contracts = options_data['calls'] if direction == 'call' else options_data['puts']
-            
-            if not contracts:
-                logger.warning(f"No {direction} contracts found for {symbol}")
-                return None
-                
-            # Sort contracts by strike
-            contracts.sort(key=lambda x: x['strike_price'])
-            
-            # Find the ATM contract (closest to current price)
-            atm_idx = min(range(len(contracts)), 
-                         key=lambda i: abs(contracts[i]['strike_price'] - current_price))
-            
-            # Select contract based on aggressiveness
-            selected_idx = atm_idx
-            
-            if direction == 'call':
-                if aggressiveness == 'conservative':
-                    # Slightly ITM call
-                    selected_idx = max(0, atm_idx - 1)
-                elif aggressiveness == 'aggressive':
-                    # OTM call
-                    selected_idx = min(len(contracts) - 1, atm_idx + 1)
-            else:  # put
-                if aggressiveness == 'conservative':
-                    # Slightly ITM put
-                    selected_idx = min(len(contracts) - 1, atm_idx + 1)
-                elif aggressiveness == 'aggressive':
-                    # OTM put
-                    selected_idx = max(0, atm_idx - 1)
-                    
-            # Get the selected contract
-            contract = contracts[selected_idx]
-            
-            # Calculate position size based on risk amount
-            position_size = self._calculate_position_size(contract, risk_amount)
-            
-            # Add trade details to the contract
-            contract['direction'] = direction
-            contract['position_size'] = position_size
-            contract['signal_type'] = signal_type
-            contract['price_level'] = price_level
-            contract['aggressiveness'] = aggressiveness
-            contract['risk_amount'] = risk_amount
-            contract['cost_basis'] = round(position_size * 100 * (contract.get('ask') or 0), 2)
-            
-            return contract
-        except Exception as e:
-            logger.error(f"Error selecting contract for {symbol} {signal_type}: {e}", exc_info=True)
-            return None
-    
-    def _calculate_position_size(self, contract: Dict, risk_amount: float) -> int:
-        """
-        Calculate the number of contracts to trade based on risk amount.
-        
-        Args:
-            contract: Option contract data
-            risk_amount: Maximum risk amount
-            
-        Returns:
-            Number of contracts to trade
-        """
-        # Use ask price if available, otherwise use last price or default
-        contract_price = contract.get('ask') or contract.get('last') or 1.0
-        
-        # Calculate how many contracts we can buy with the risk amount
-        # Each contract is for 100 shares
-        max_contracts = int(risk_amount / (contract_price * 100))
-        
-        # Always trade at least 1 contract
-        return max(1, max_contracts)
-        
-    def select_contracts_for_ticker(
-        self,
-        symbol: str,
-        signals: List[Dict],
-        risk_total: float = 1000.0
-    ) -> List[Dict]:
-        """
-        Select multiple contracts based on multiple signals for a ticker.
-        
-        Args:
-            symbol: Underlying ticker symbol
-            signals: List of signal dictionaries (each containing type, price_level, etc.)
-            risk_total: Total risk amount to allocate across all signals
-            
-        Returns:
-            List of selected contracts
-        """
-        if not signals:
+    try:
+        # Get current price
+        stock_client = get_stock_data_client()
+        if not stock_client:
+            logger.error("Stock data client not initialized")
             return []
             
-        # Allocate risk amount per signal
-        risk_per_signal = risk_total / len(signals)
+        # Get latest quote
+        quote_response = stock_client.get_stock_latest_quote(symbol_or_symbols=symbol)
+        if not quote_response or symbol not in quote_response:
+            logger.error(f"Could not get latest quote for {symbol}")
+            return []
+            
+        quote = quote_response[symbol]
         
-        # Select contracts for each signal
-        contracts = []
-        for signal in signals:
-            contract = self.select_contract_for_signal(
-                symbol,
-                signal.get('category', 'unknown'),
-                signal.get('trigger', {}).get('price', 0.0),
-                risk_per_signal,
-                aggressiveness=signal.get('aggressiveness', 'medium')
+        # Calculate mid price
+        if not hasattr(quote, 'ask_price') or not hasattr(quote, 'bid_price'):
+            logger.error(f"Invalid quote for {symbol}")
+            return []
+            
+        current_price = (quote.ask_price + quote.bid_price) / 2
+        
+        # Calculate price range
+        price_buffer = current_price * price_buffer_percent
+        min_strike = current_price - price_buffer
+        max_strike = current_price + price_buffer
+        
+        # Get option client
+        option_client = get_option_data_client()
+        if not option_client:
+            logger.error("Option data client not initialized")
+            return []
+            
+        # Calculate expiration date
+        today = datetime.date.today()
+        expiration_date = today + datetime.timedelta(days=expiration_days)
+        
+        # Format the date for Alpaca API
+        expiration_str = expiration_date.strftime("%Y-%m-%d")
+        
+        # Convert option_side to OptionSide enum
+        side = OptionSide.CALL if option_side.lower() == "call" else OptionSide.PUT
+        
+        # Get options chain
+        try:
+            options_chain = option_client.get_option_chain(
+                symbol_or_symbols=symbol,
+                expiration_date=expiration_str
             )
             
-            if contract:
-                # Add signal details to contract
-                contract['signal_id'] = signal.get('id')
-                contracts.append(contract)
+            if not options_chain:
+                logger.error(f"No options chain found for {symbol} with expiration {expiration_str}")
+                return []
                 
-        return contracts
-        
-    def get_option_trading_parameters(
-        self,
-        symbol: str,
-        direction: str,
-        expiration: Optional[str] = None,
-        strike_price: Optional[float] = None,
-        quantity: int = 1
-    ) -> Dict:
-        """
-        Get full trading parameters for an option contract.
-        
-        Args:
-            symbol: Underlying ticker symbol
-            direction: 'call' or 'put'
-            expiration: Expiration date (YYYY-MM-DD)
-            strike_price: Strike price
-            quantity: Number of contracts to trade
+            # Filter for at-the-money options
+            atm_options = []
             
-        Returns:
-            Dict with all trading parameters
-        """
-        # If no expiration specified, get nearest
-        if not expiration:
-            exp_date = self.options_pricing.get_nearest_expiration(symbol)
-            if exp_date:
-                expiration = exp_date.isoformat()
-            else:
-                logger.warning(f"Could not determine expiration for {symbol}")
-                return {}
+            for contract in options_chain:
+                if not hasattr(contract, 'strike_price') or not hasattr(contract, 'side'):
+                    continue
+                    
+                strike_price = contract.strike_price
+                contract_side = contract.side
                 
-        # If no strike specified, get ATM
-        if not strike_price:
-            latest_data = self.history_provider.get_candles(symbol, '1m', limit=1)
-            if latest_data and latest_data[0]:
-                current_price = latest_data[0]['close']
-                
-                # Get near-the-money options
-                options = self.options_pricing.get_near_the_money_options(
-                    symbol,
-                    expiration,
-                    num_strikes=1,
-                    underlying_price=current_price
-                )
-                
-                if options:
-                    contracts = options['calls'] if direction == 'call' else options['puts']
-                    if contracts:
-                        # Use the middle (ATM) contract
-                        contract = contracts[len(contracts) // 2]
-                        strike_price = contract['strike_price']
+                # Check if strike is within range and matches requested side
+                if (min_strike <= strike_price <= max_strike and 
+                    contract_side == side):
+                    
+                    # Format contract info
+                    contract_info = {
+                        'symbol': contract.symbol,
+                        'underlying': symbol,
+                        'strike': strike_price,
+                        'expiration': contract.expiration_date,
+                        'side': option_side,
+                        'status': contract.status
+                    }
+                    
+                    # Add additional info if available
+                    if hasattr(contract, 'ask_price') and contract.ask_price:
+                        contract_info['ask'] = contract.ask_price
+                    if hasattr(contract, 'bid_price') and contract.bid_price:
+                        contract_info['bid'] = contract.bid_price
+                    if hasattr(contract, 'mid_price') and contract.mid_price:
+                        contract_info['mid'] = contract.mid_price
+                    elif 'ask' in contract_info and 'bid' in contract_info:
+                        contract_info['mid'] = (contract_info['ask'] + contract_info['bid']) / 2
                         
-        if not strike_price:
-            logger.warning(f"Could not determine strike price for {symbol}")
-            return {}
+                    atm_options.append(contract_info)
             
-        # Format strike price for the option symbol
-        strike_str = f"{strike_price:.2f}".replace('.', '')
-        
-        # Build option symbol (OCC format)
-        option_type = 'C' if direction.lower() == 'call' else 'P'
-        expiration_date = expiration.replace('-', '')
-        option_symbol = f"{symbol}{expiration_date}{option_type}{strike_str}"
-        
-        return {
-            "symbol": option_symbol,
-            "underlying": symbol,
-            "quantity": quantity,
-            "direction": direction,
-            "expiration": expiration,
-            "strike_price": strike_price
-        }
+            # Sort by closest strike to current price
+            atm_options.sort(key=lambda x: abs(x['strike'] - current_price))
+            
+            return atm_options
+            
+        except Exception as e:
+            logger.error(f"Error getting options chain for {symbol}: {e}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"Error finding ATM options for {symbol}: {e}")
+        return []
 
-# Global instance
-options_selector = OptionsContractSelector()
-
-def get_options_selector() -> OptionsContractSelector:
+def select_best_option_contract(
+    symbol: str,
+    signal_type: str,
+    price_target: float,
+    current_price: Optional[float] = None,
+    risk_amount: float = 500.0
+) -> Optional[Dict]:
     """
-    Get the global options contract selector instance.
+    Select the best option contract for a trading signal.
     
+    Args:
+        symbol: The underlying ticker symbol
+        signal_type: Type of signal (breakout, breakdown, rejection, bounce)
+        price_target: Target price for the signal
+        current_price: Current price of the underlying (optional)
+        risk_amount: Maximum risk amount in dollars
+        
     Returns:
-        OptionsContractSelector instance
+        Dictionary with selected option contract details or None if no suitable contract found
     """
-    return options_selector
+    try:
+        # Determine if we should use calls or puts based on signal type
+        if signal_type in ["breakout", "bounce"]:
+            option_side = "call"
+        elif signal_type in ["breakdown", "rejection"]:
+            option_side = "put"
+        else:
+            logger.warning(f"Unknown signal type: {signal_type}")
+            option_side = "call"  # Default to calls
+            
+        # Get current price if not provided
+        if current_price is None:
+            stock_client = get_stock_data_client()
+            if not stock_client:
+                logger.error("Stock data client not initialized")
+                return None
+                
+            # Get latest quote
+            quote_response = stock_client.get_stock_latest_quote(symbol_or_symbols=symbol)
+            if not quote_response or symbol not in quote_response:
+                logger.error(f"Could not get latest quote for {symbol}")
+                return None
+                
+            quote = quote_response[symbol]
+            
+            # Calculate mid price
+            if not hasattr(quote, 'ask_price') or not hasattr(quote, 'bid_price'):
+                logger.error(f"Invalid quote for {symbol}")
+                return None
+                
+            current_price = (quote.ask_price + quote.bid_price) / 2
+            
+        # Find ATM options
+        atm_options = find_atm_options(
+            symbol=symbol,
+            expiration_days=0,  # 0DTE
+            option_side=option_side
+        )
+        
+        if not atm_options:
+            # Try with 1 day expiration if 0DTE not available
+            atm_options = find_atm_options(
+                symbol=symbol,
+                expiration_days=1,
+                option_side=option_side
+            )
+            
+        if not atm_options:
+            logger.warning(f"No suitable option contracts found for {symbol}")
+            return None
+            
+        # Select the contract with strike closest to current price
+        best_contract = atm_options[0]
+        
+        # Calculate quantity based on risk
+        if 'mid' in best_contract:
+            # Use mid price if available
+            contract_price = best_contract['mid']
+        elif 'ask' in best_contract:
+            # Fall back to ask price
+            contract_price = best_contract['ask']
+        else:
+            logger.warning(f"No price information for contract {best_contract['symbol']}")
+            return None
+            
+        # Calculate quantity
+        max_contracts = int(risk_amount / (contract_price * 100))
+        quantity = max(1, max_contracts)  # At least 1 contract
+        
+        # Add quantity to contract info
+        best_contract['quantity'] = quantity
+        best_contract['signal_type'] = signal_type
+        best_contract['price_target'] = price_target
+        best_contract['current_price'] = current_price
+        
+        return best_contract
+        
+    except Exception as e:
+        logger.error(f"Error selecting option contract for {symbol}: {e}")
+        return None

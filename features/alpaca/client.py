@@ -194,6 +194,15 @@ def get_positions() -> List[Dict]:
         logger.error(f"Error getting positions: {e}")
         return []
 
+def get_open_orders() -> List[Dict]:
+    """
+    Get open orders.
+    
+    Returns:
+        List of open orders or empty list if error
+    """
+    return get_orders(status='open')
+
 def get_orders(status: Optional[str] = None, limit: int = 100) -> List[Dict]:
     """
     Get orders.

@@ -66,9 +66,13 @@ def _cleanup_thread_func() -> None:
     try:
         while _thread_running:
             try:
-                from .client import trading_client
-                
                 # Get current market clock from Alpaca
+                trading_client = get_trading_client()
+                if not trading_client:
+                    logger.error("Trading client not available")
+                    time.sleep(60)
+                    continue
+                    
                 clock = trading_client.get_clock()
                 
                 # If market is open and within 5 minutes of close
