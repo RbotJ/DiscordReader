@@ -237,10 +237,15 @@ def display_ticker_chart_card(ticker, message):
             }
             
             # Extract the first value from each list or use None
-            price_levels = {k: v[0] if v else None for k, v in price_levels.items()}
+            parsed_price_levels = {}
+            for k, v in price_levels.items():
+                if v and isinstance(v, list) and len(v) > 0:
+                    parsed_price_levels[k] = v[0] 
+                else:
+                    parsed_price_levels[k] = None
             
             # Create and display the chart
-            fig = create_candlestick_chart(ticker, data=None, price_levels=price_levels)
+            fig = create_candlestick_chart(ticker, data=None, price_levels=parsed_price_levels)
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -252,14 +257,29 @@ def display_ticker_chart_card(ticker, message):
             st.markdown(f"**Bias:** {ticker_data.get('bias', 'N/A')}")
             
             # Display price levels
-            if ticker_data.get('support_levels'):
-                st.markdown(f"**Support:** {ticker_data['support_levels'][0] if ticker_data['support_levels'] else 'N/A'}")
-            if ticker_data.get('resistance_levels'):
-                st.markdown(f"**Resistance:** {ticker_data['resistance_levels'][0] if ticker_data['resistance_levels'] else 'N/A'}")
-            if ticker_data.get('target_levels'):
-                st.markdown(f"**Target:** {ticker_data['target_levels'][0] if ticker_data['target_levels'] else 'N/A'}")
-            if ticker_data.get('stop_levels'):
-                st.markdown(f"**Stop:** {ticker_data['stop_levels'][0] if ticker_data['stop_levels'] else 'N/A'}")
+            support_levels = ticker_data.get('support_levels', [])
+            if support_levels and isinstance(support_levels, list) and len(support_levels) > 0:
+                st.markdown(f"**Support:** {support_levels[0]}")
+            else:
+                st.markdown("**Support:** N/A")
+                
+            resistance_levels = ticker_data.get('resistance_levels', [])
+            if resistance_levels and isinstance(resistance_levels, list) and len(resistance_levels) > 0:
+                st.markdown(f"**Resistance:** {resistance_levels[0]}")
+            else:
+                st.markdown("**Resistance:** N/A")
+                
+            target_levels = ticker_data.get('target_levels', [])
+            if target_levels and isinstance(target_levels, list) and len(target_levels) > 0:
+                st.markdown(f"**Target:** {target_levels[0]}")
+            else:
+                st.markdown("**Target:** N/A")
+                
+            stop_levels = ticker_data.get('stop_levels', [])
+            if stop_levels and isinstance(stop_levels, list) and len(stop_levels) > 0:
+                st.markdown(f"**Stop:** {stop_levels[0]}")
+            else:
+                st.markdown("**Stop:** N/A")
             
             # Add trade status
             trade_status = "No active trade"
@@ -376,15 +396,29 @@ def display_trade_monitor():
     active_trades = get_active_trades()
     if active_trades:
         st.header("Active Trades")
-        for trade_id, trade_data in active_trades.items():
-            st.subheader(f"{trade_data.get('primary_ticker')} Trade")
-            st.markdown(f"**Signal:** {trade_data.get('signal_type')}")
-            st.markdown(f"**Status:** {trade_data.get('status')}")
-            if 'trade_data' in trade_data:
-                st.markdown(f"**Entry Price:** {format_currency(trade_data['trade_data'].get('entry_price', 0))}")
-                st.markdown(f"**Current Price:** {format_currency(trade_data['trade_data'].get('current_price', 0))}")
-                st.markdown(f"**P/L:** {format_percent(trade_data['trade_data'].get('profit_loss', 0))}")
-            st.markdown("---")
+        # Check if active_trades is a dict or list
+        if isinstance(active_trades, dict):
+            # Handle dictionary format
+            for trade_id, trade_data in active_trades.items():
+                st.subheader(f"{trade_data.get('primary_ticker')} Trade")
+                st.markdown(f"**Signal:** {trade_data.get('signal_type')}")
+                st.markdown(f"**Status:** {trade_data.get('status')}")
+                if 'trade_data' in trade_data:
+                    st.markdown(f"**Entry Price:** {format_currency(trade_data['trade_data'].get('entry_price', 0))}")
+                    st.markdown(f"**Current Price:** {format_currency(trade_data['trade_data'].get('current_price', 0))}")
+                    st.markdown(f"**P/L:** {format_percent(trade_data['trade_data'].get('profit_loss', 0))}")
+                st.markdown("---")
+        elif isinstance(active_trades, list):
+            # Handle list format
+            for trade_data in active_trades:
+                st.subheader(f"{trade_data.get('primary_ticker', 'Unknown')} Trade")
+                st.markdown(f"**Signal:** {trade_data.get('signal_type', 'N/A')}")
+                st.markdown(f"**Status:** {trade_data.get('status', 'Unknown')}")
+                if 'trade_data' in trade_data:
+                    st.markdown(f"**Entry Price:** {format_currency(trade_data['trade_data'].get('entry_price', 0))}")
+                    st.markdown(f"**Current Price:** {format_currency(trade_data['trade_data'].get('current_price', 0))}")
+                    st.markdown(f"**P/L:** {format_percent(trade_data['trade_data'].get('profit_loss', 0))}")
+                st.markdown("---")
 
 if __name__ == "__main__":
     display_trade_monitor()
