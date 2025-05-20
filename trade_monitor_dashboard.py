@@ -289,94 +289,46 @@ def display_trade_monitor():
     """Display the main trade monitoring dashboard"""
     st.title("A+ Trading Monitor")
     
-    # Check API health
-    if not api_health_check():
-        st.error("API is not available. Please check the server status.")
-        sample_message = {
-            "datetime": datetime.now().isoformat(),
-            "raw_message": """
-    A+ Trade Setups - Thursday May 20
-    
-    $SPY Rejection Near 586
-    Bias: Bearish
-    
-    $AAPL Breaking Support
-    Support at $182
-    Target: $178
-    Stop: $185
-    
-    $NVDA Bounce at $920
-    Looks strong heading into earnings next week
-            """,
-            "tickers": ["SPY", "AAPL", "NVDA"],
-            "primary_ticker": "SPY",
-            "signal_type": "rejection",
-            "bias": "bearish",
-            "confidence": 0.95,
-            "ticker_specific_data": {
-                "SPY": {
-                    "signal_type": "rejection",
-                    "bias": "bearish",
-                    "detected_prices": [],
-                    "support_levels": [],
-                    "resistance_levels": [586],
-                    "target_levels": [],
-                    "stop_levels": [],
-                    "text_block": "$SPY Rejection Near 586\nBias: Bearish\n"
-                },
-                "AAPL": {
-                    "signal_type": "support",
-                    "bias": "bearish",
-                    "detected_prices": [],
-                    "support_levels": [182],
-                    "resistance_levels": [],
-                    "target_levels": [178],
-                    "stop_levels": [185],
-                    "text_block": "$AAPL Breaking Support\nSupport at $182\nTarget: $178\nStop: $185\n"
-                },
-                "NVDA": {
-                    "signal_type": "bounce",
-                    "bias": "bullish",
-                    "detected_prices": [920],
-                    "support_levels": [920],
-                    "resistance_levels": [],
-                    "target_levels": [],
-                    "stop_levels": [],
-                    "text_block": "$NVDA Bounce at $920\nLooks strong heading into earnings next week\n"
-                }
-            }
-        }
-    else:
-        # Get active setups
-        active_setups = get_active_setups()
-        if active_setups:
-            sample_message = active_setups[0]
-        else:
-            # Get recent Discord messages
-            recent_messages = get_recent_messages()
-            if recent_messages:
-                sample_message = recent_messages[0]
+    # Try to get setup data from our provider
+    try:
+        import setup_data_provider
+        setup_message = setup_data_provider.get_latest_setup()
+        
+        if not setup_message:
+            setup_data_provider.update_setup_from_discord()
+            setup_message = setup_data_provider.get_latest_setup()
+        
+        if not setup_message:
+            st.error("Could not retrieve trading setup data.")
+            
+            # Fallback to sample data from the provider
+            setup_message = setup_data_provider.get_sample_setup()
+    except Exception as e:
+        st.error(f"Error retrieving setup data: {str(e)}")
+        
+        # If the API is available, try to get data from there
+        if api_health_check():
+            # Get active setups
+            active_setups = get_active_setups()
+            if active_setups:
+                setup_message = active_setups[0]
             else:
-                # Use sample message as fallback
-                st.warning("No recent setup data available. Using sample data for demonstration.")
-                sample_message = {
-                    "datetime": datetime.now().isoformat(),
-                    "raw_message": "A+ Trade Setups - Sample Data\n\n$SPY Rejection Near 586\nBias: Bearish",
-                    "tickers": ["SPY"],
-                    "signal_type": "rejection",
-                    "bias": "bearish",
-                    "confidence": 0.8,
-                    "ticker_specific_data": {
-                        "SPY": {
-                            "signal_type": "rejection",
-                            "bias": "bearish",
-                            "resistance_levels": [586]
-                        }
-                    }
-                }
+                # Get recent Discord messages
+                recent_messages = get_recent_messages()
+                if recent_messages:
+                    setup_message = recent_messages[0]
+                else:
+                    # Use fallback sample message
+                    st.warning("No recent setup data available.")
+                    from setup_data_provider import get_sample_setup
+                    setup_message = get_sample_setup()
+        else:
+            st.error("API is not available. Please check the server status.")
+            from setup_data_provider import get_sample_setup
+            setup_message = get_sample_setup()
     
     # Display the latest setup message
-    display_message_card(sample_message)
+    display_message_card(setup_message)
     
     # Display charts for each ticker
     st.header("Active Ticker Charts")
