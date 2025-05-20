@@ -1,589 +1,496 @@
-import logging
-import json
-import uuid
-import threading
-import time
-from datetime import datetime, date
-from typing import Dict, List, Any, Optional
-from flask import Blueprint, jsonify, request, current_app
-from alpaca.trading import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest, GetOrdersRequest, ClosePositionRequest
-from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, QueryOrderStatus
-from common.models import TradeOrder, Position
-from common.utils import generate_client_order_id
-from common.redis_utils import RedisClient
+"""
+Order Execution Module
 
-# Configure logging
+This module provides functionality for executing trades through Alpaca's API,
+including order placement, management, and monitoring.
+"""
+import os
+import logging
+import time
+import json
+from typing import Dict, List, Optional, Union, Any
+from datetime import datetime
+
+from features.alpaca.client import (
+    submit_market_order, submit_limit_order, cancel_order,
+    get_orders, get_open_orders, get_account_info
+)
+from common.redis_utils import get_redis_client
+
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Initialize Blueprint
-execution_routes = Blueprint('execution', __name__, url_prefix='/api/execution')
-
-# Redis channels
-SIGNAL_TRIGGERED_CHANNEL = "aplus.strategy.signal_triggered"
-ORDER_PLACED_CHANNEL = "aplus.execution.order_placed"
-ORDER_FILLED_CHANNEL = "aplus.execution.order_filled"
-POSITION_UPDATE_CHANNEL = "aplus.execution.position_update"
-
-# Background thread for subscription
-subscription_thread = None
-is_running = False
-
-
-def initialize_trading_client():
-    """Initialize Alpaca Trading client."""
-    api_key = current_app.config.get("ALPACA_API_KEY", "")
-    api_secret = current_app.config.get("ALPACA_API_SECRET", "")
-    paper = current_app.config.get("PAPER_TRADING", True)
+class OrderExecutor:
+    """
+    Service for executing and managing trading orders.
+    """
     
-    if not api_key or not api_secret:
-        logger.error("Alpaca API credentials not set. Trading features will not work.")
-        return None
-    
-    try:
-        # Initialize trading client
-        trading_client = TradingClient(api_key, api_secret, paper=paper)
-        return trading_client
-    except Exception as e:
-        logger.error(f"Error initializing Alpaca Trading client: {str(e)}", exc_info=True)
-        return None
-
-
-def start_subscription_thread():
-    """Start a background thread for Redis subscription."""
-    global subscription_thread, is_running
-    
-    if subscription_thread and subscription_thread.is_alive():
-        logger.info("Subscription thread already running")
-        return
-    
-    is_running = True
-    subscription_thread = threading.Thread(target=run_subscription_listener)
-    subscription_thread.daemon = True
-    subscription_thread.start()
-    logger.info("Started subscription thread")
-
-
-def run_subscription_listener():
-    """Run the Redis subscription listener in a background thread."""
-    global is_running
-    
-    # Get Redis client
-    redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379/0')
-    redis_client = RedisClient(redis_url)
-    
-    # Subscribe to channels
-    pubsub = redis_client.subscribe([SIGNAL_TRIGGERED_CHANNEL])
-    
-    logger.info("Listening for Redis messages on execution channels...")
-    
-    while is_running:
-        try:
-            message = pubsub.get_message(timeout=1.0)
-            if message and message['type'] == 'message':
-                channel = message['channel'].decode('utf-8')
-                data = json.loads(message['data'].decode('utf-8'))
-                
-                if channel == SIGNAL_TRIGGERED_CHANNEL:
-                    handle_signal_triggered(data, redis_client)
+    def __init__(self):
+        """Initialize the order executor."""
+        self.redis = get_redis_client()
+        self.pending_orders = {}  # Track orders in progress
+        self.filled_orders = {}   # Track orders that have been filled
+        
+    def execute_market_order(
+        self,
+        symbol: str,
+        quantity: int,
+        side: str,
+        order_properties: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        Execute a market order.
+        
+        Args:
+            symbol: Symbol to trade
+            quantity: Number of shares/contracts
+            side: Trade direction ('buy' or 'sell')
+            order_properties: Additional order properties
             
-            time.sleep(0.01)  # Short sleep to prevent CPU hogging
+        Returns:
+            Order details if successful, None otherwise
+        """
+        try:
+            # Validate parameters
+            if not symbol or quantity <= 0 or side not in ['buy', 'sell']:
+                logger.error(f"Invalid order parameters: {symbol}, {quantity}, {side}")
+                return None
+                
+            # Log the order attempt
+            logger.info(f"Executing market {side} order for {quantity} {symbol}")
+            
+            # Execute the order
+            order = submit_market_order(symbol, quantity, side)
+            
+            if not order:
+                logger.error(f"Failed to submit market order for {symbol}")
+                return None
+                
+            # Store order properties if provided
+            if order_properties and order.get('id'):
+                order_id = order['id']
+                self.pending_orders[order_id] = {
+                    'order': order,
+                    'properties': order_properties,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                # Publish order event to Redis
+                if self.redis:
+                    try:
+                        event = {
+                            'event': 'order_created',
+                            'order_id': order_id,
+                            'symbol': symbol,
+                            'side': side,
+                            'quantity': quantity,
+                            'order_type': 'market',
+                            'properties': order_properties
+                        }
+                        self.redis.publish('events:orders', json.dumps(event))
+                    except Exception as e:
+                        logger.warning(f"Error publishing order event to Redis: {e}")
+                
+            return order
         except Exception as e:
-            logger.error(f"Error in subscription thread: {str(e)}", exc_info=True)
-            time.sleep(1)  # Longer sleep on error
-    
-    logger.info("Subscription thread stopped")
-
-
-def handle_signal_triggered(data: Dict[str, Any], redis_client: RedisClient):
-    """Handle a triggered signal by finding and executing an appropriate option trade."""
-    try:
-        symbol = data.get('symbol')
-        category = data.get('category')
-        signal_id = data.get('id')
+            logger.error(f"Error executing market order: {e}", exc_info=True)
+            return None
+            
+    def execute_limit_order(
+        self,
+        symbol: str,
+        quantity: int,
+        side: str,
+        limit_price: float,
+        time_in_force: str = 'day',
+        order_properties: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        Execute a limit order.
         
-        if not symbol or not category or not signal_id:
-            logger.error(f"Invalid signal data: {data}")
-            return
+        Args:
+            symbol: Symbol to trade
+            quantity: Number of shares/contracts
+            side: Trade direction ('buy' or 'sell')
+            limit_price: Maximum price for buy, minimum for sell
+            time_in_force: Order duration ('day', 'gtc', 'ioc', 'fok')
+            order_properties: Additional order properties
+            
+        Returns:
+            Order details if successful, None otherwise
+        """
+        try:
+            # Validate parameters
+            if not symbol or quantity <= 0 or side not in ['buy', 'sell'] or limit_price <= 0:
+                logger.error(f"Invalid order parameters: {symbol}, {quantity}, {side}, {limit_price}")
+                return None
+                
+            # Log the order attempt
+            logger.info(f"Executing limit {side} order for {quantity} {symbol} @ {limit_price}")
+            
+            # Generate client order ID (optional)
+            client_order_id = f"algotrader_{int(time.time())}"
+            
+            # Execute the order
+            order = submit_limit_order(
+                symbol, quantity, side, limit_price, time_in_force, client_order_id
+            )
+            
+            if not order:
+                logger.error(f"Failed to submit limit order for {symbol}")
+                return None
+                
+            # Store order properties if provided
+            if order_properties and order.get('id'):
+                order_id = order['id']
+                self.pending_orders[order_id] = {
+                    'order': order,
+                    'properties': order_properties,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                # Publish order event to Redis
+                if self.redis:
+                    try:
+                        event = {
+                            'event': 'order_created',
+                            'order_id': order_id,
+                            'symbol': symbol,
+                            'side': side,
+                            'quantity': quantity,
+                            'order_type': 'limit',
+                            'limit_price': limit_price,
+                            'time_in_force': time_in_force,
+                            'properties': order_properties
+                        }
+                        self.redis.publish('events:orders', json.dumps(event))
+                    except Exception as e:
+                        logger.warning(f"Error publishing order event to Redis: {e}")
+                
+            return order
+        except Exception as e:
+            logger.error(f"Error executing limit order: {e}", exc_info=True)
+            return None
+            
+    def execute_bracket_order(
+        self,
+        symbol: str,
+        quantity: int,
+        side: str,
+        entry_price: Optional[float] = None,  # If None, use market order
+        take_profit_price: Optional[float] = None,
+        stop_loss_price: Optional[float] = None,
+        order_properties: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        Execute a bracket order (entry with take profit and stop loss).
         
-        # Determine trade direction
-        direction = "bullish" if category in ["breakout", "bounce"] else "bearish"
+        This is a higher-level function that uses the basic order functions
+        to implement a common trading pattern.
         
-        logger.info(f"Signal triggered: {symbol} {category} ({direction})")
-        
-        # Get option recommendation
-        import requests
-        response = requests.get(
-            f"http://localhost:5000/api/options/recommend/{symbol}",
-            params={"direction": direction, "signal_id": signal_id}
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"Failed to get option recommendation: {response.text}")
-            return
-        
-        recommendation = response.json()
-        if recommendation.get('status') != 'success':
-            logger.error(f"Option recommendation error: {recommendation.get('message')}")
-            return
-        
-        option = recommendation.get('recommendation')
-        if not option:
-            logger.error(f"No option recommendation found for {symbol} {direction}")
-            return
-        
-        # Calculate position size based on risk parameters
-        # For simplicity, we'll use a fixed position size of 1 contract
-        quantity = 1
-        
-        # Create the order
-        option_symbol = option.get('symbol')
-        
-        # Execute the trade
-        execute_option_trade(option_symbol, direction, quantity, signal_id, redis_client)
-        
-    except Exception as e:
-        logger.error(f"Error handling signal trigger: {str(e)}", exc_info=True)
-
-
-def execute_option_trade(
-    option_symbol: str,
-    direction: str,
-    quantity: int,
-    signal_id: str,
-    redis_client: RedisClient
-):
-    """Execute an option trade on Alpaca."""
-    try:
-        # Initialize trading client
-        trading_client = initialize_trading_client()
-        
-        if not trading_client:
-            logger.error("Trading client not initialized")
-            return
-        
-        # Determine order side
-        side = OrderSide.BUY if direction == "bullish" else OrderSide.SELL
-        
-        # Generate client order ID
-        client_order_id = generate_client_order_id("aplus")
-        
-        # Create market order
-        order_request = MarketOrderRequest(
-            symbol=option_symbol,
-            qty=quantity,
-            side=side,
-            time_in_force=TimeInForce.DAY,
-            client_order_id=client_order_id
-        )
-        
-        logger.info(f"Placing {side} order for {quantity} {option_symbol}")
-        
-        # Place the order
-        order = trading_client.submit_order(order_request)
-        
-        # Create order data
-        order_data = {
-            "order_id": order.id,
-            "client_order_id": client_order_id,
-            "symbol": option_symbol,
-            "quantity": quantity,
-            "side": side.value,
-            "type": "market",
-            "status": order.status,
-            "created_at": datetime.now().isoformat(),
-            "signal_id": signal_id
-        }
-        
-        # Publish order placed event
-        redis_client.publish(ORDER_PLACED_CHANNEL, order_data)
-        
-        # Store order in Redis
-        redis_client.set(f"order:{order.id}", order_data)
-        
-        logger.info(f"Order placed: {order.id}")
-        
-        return order_data
-        
-    except Exception as e:
-        logger.error(f"Error executing option trade: {str(e)}", exc_info=True)
-        return None
-
-
-@execution_routes.route('/orders', methods=['GET'])
-def get_orders():
-    """Get all orders."""
-    try:
-        # Initialize trading client
-        trading_client = initialize_trading_client()
-        
-        if not trading_client:
-            return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
-        
-        # Get query parameters
-        status_param = request.args.get('status')
-        limit = int(request.args.get('limit', 50))
-        
-        # Create order filter based on parameters
-        order_filter = None
-        if status_param:
-            # Map string status to QueryOrderStatus enum
-            if status_param == 'open':
-                status = QueryOrderStatus.OPEN
-            elif status_param == 'closed':
-                status = QueryOrderStatus.CLOSED
+        Args:
+            symbol: Symbol to trade
+            quantity: Number of shares/contracts
+            side: Trade direction ('buy' or 'sell')
+            entry_price: Entry price (optional, market order if None)
+            take_profit_price: Take profit price (optional)
+            stop_loss_price: Stop loss price (optional)
+            order_properties: Additional order properties
+            
+        Returns:
+            Dictionary with entry order details if successful, None otherwise
+        """
+        try:
+            # Validate parameters
+            if not symbol or quantity <= 0 or side not in ['buy', 'sell']:
+                logger.error(f"Invalid bracket order parameters: {symbol}, {quantity}, {side}")
+                return None
+                
+            # Check prices for consistency
+            if side == 'buy':
+                if take_profit_price and take_profit_price <= entry_price:
+                    logger.warning(f"Take profit price ({take_profit_price}) should be higher than entry price ({entry_price}) for buy orders")
+                if stop_loss_price and stop_loss_price >= entry_price:
+                    logger.warning(f"Stop loss price ({stop_loss_price}) should be lower than entry price ({entry_price}) for buy orders")
+            else:  # sell
+                if take_profit_price and take_profit_price >= entry_price:
+                    logger.warning(f"Take profit price ({take_profit_price}) should be lower than entry price ({entry_price}) for sell orders")
+                if stop_loss_price and stop_loss_price <= entry_price:
+                    logger.warning(f"Stop loss price ({stop_loss_price}) should be higher than entry price ({entry_price}) for sell orders")
+                    
+            # Start by placing the entry order
+            entry_order = None
+            if entry_price:
+                entry_order = self.execute_limit_order(
+                    symbol, quantity, side, entry_price, 'day', order_properties
+                )
             else:
-                status = QueryOrderStatus.ALL
+                entry_order = self.execute_market_order(
+                    symbol, quantity, side, order_properties
+                )
                 
-            # Create the request filter
-            order_filter = GetOrdersRequest(
-                status=status,
-                limit=limit
-            )
-        else:
-            # Default filter with limit only
-            order_filter = GetOrdersRequest(
-                status=QueryOrderStatus.OPEN,  # Default to open orders
-                limit=limit
-            )
-        
-        # Get orders from Alpaca with proper API parameters
-        try:
-            orders = trading_client.get_orders(filter=order_filter)
+            if not entry_order:
+                logger.error(f"Failed to submit entry order for {symbol}")
+                return None
+                
+            # For now, we'll manually track the bracket components
+            # In a production system, we'd use Alpaca's bracket order API
+            entry_order_id = entry_order.get('id')
+            if entry_order_id:
+                # Store bracket order details
+                bracket_details = {
+                    'entry_order_id': entry_order_id,
+                    'symbol': symbol,
+                    'quantity': quantity,
+                    'side': side,
+                    'entry_price': entry_price,
+                    'take_profit_price': take_profit_price,
+                    'stop_loss_price': stop_loss_price,
+                    'take_profit_order_id': None,
+                    'stop_loss_order_id': None,
+                    'properties': order_properties,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                # Publish bracket order event to Redis
+                if self.redis:
+                    try:
+                        event = {
+                            'event': 'bracket_order_created',
+                            'bracket_details': bracket_details
+                        }
+                        self.redis.publish('events:orders', json.dumps(event))
+                    except Exception as e:
+                        logger.warning(f"Error publishing bracket order event to Redis: {e}")
+                
+            return entry_order
         except Exception as e:
-            logger.error(f"Error retrieving orders: {str(e)}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            logger.error(f"Error executing bracket order: {e}", exc_info=True)
+            return None
+            
+    def execute_option_order(
+        self,
+        option_symbol: str,
+        quantity: int,
+        side: str,
+        price_type: str = 'market',  # 'market' or 'limit'
+        limit_price: Optional[float] = None,
+        order_properties: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        Execute an option order.
         
-        # Format response
-        formatted_orders = []
-        for order in orders:
-            formatted_orders.append({
-                "id": order.id,
-                "client_order_id": order.client_order_id,
-                "symbol": order.symbol,
-                "quantity": order.qty,
-                "side": order.side.value,
-                "type": order.type.value,
-                "status": order.status,
-                "filled_quantity": order.filled_qty,
-                "filled_price": order.filled_avg_price,
-                "created_at": order.created_at.isoformat() if order.created_at else None,
-                "updated_at": order.updated_at.isoformat() if order.updated_at else None
-            })
-        
-        return jsonify({
-            "status": "success",
-            "count": len(formatted_orders),
-            "orders": formatted_orders
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting orders: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/orders/<order_id>', methods=['GET'])
-def get_order(order_id):
-    """Get a specific order by ID."""
-    try:
-        # Initialize trading client
-        trading_client = initialize_trading_client()
-        
-        if not trading_client:
-            return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
-        
-        # Get order from Alpaca
-        order = trading_client.get_order_by_id(order_id)
-        
-        # Format response
-        formatted_order = {
-            "id": order.id,
-            "client_order_id": order.client_order_id,
-            "symbol": order.symbol,
-            "quantity": order.qty,
-            "side": order.side.value,
-            "type": order.type.value,
-            "status": order.status,
-            "filled_quantity": order.filled_qty,
-            "filled_price": order.filled_avg_price,
-            "created_at": order.created_at.isoformat() if order.created_at else None,
-            "updated_at": order.updated_at.isoformat() if order.updated_at else None
-        }
-        
-        return jsonify({
-            "status": "success",
-            "order": formatted_order
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting order {order_id}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/positions', methods=['GET'])
-def get_positions():
-    """Get all positions."""
-    try:
-        # Initialize trading client
-        trading_client = initialize_trading_client()
-        
-        if not trading_client:
-            return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
-        
-        # Get positions from Alpaca
-        positions = trading_client.get_all_positions()
-        
-        # Format response
-        formatted_positions = []
-        for position in positions:
-            formatted_positions.append({
-                "symbol": position.symbol,
-                "quantity": position.qty,
-                "side": "long" if float(position.qty) > 0 else "short",
-                "avg_entry_price": position.avg_entry_price,
-                "market_value": position.market_value,
-                "cost_basis": position.cost_basis,
-                "unrealized_pl": position.unrealized_pl,
-                "unrealized_plpc": position.unrealized_plpc,
-                "current_price": position.current_price,
-                "lastday_price": position.lastday_price,
-                "change_today": position.change_today
-            })
-        
-        return jsonify({
-            "status": "success",
-            "count": len(formatted_positions),
-            "positions": formatted_positions
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting positions: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/positions/<symbol>', methods=['GET'])
-def get_position(symbol):
-    """Get a specific position by symbol."""
-    try:
-        # Initialize trading client
-        trading_client = initialize_trading_client()
-        
-        if not trading_client:
-            return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
-        
-        # Get position from Alpaca using the symbol
+        Args:
+            option_symbol: Option symbol (OCC format)
+            quantity: Number of contracts
+            side: Trade direction ('buy' or 'sell')
+            price_type: 'market' or 'limit'
+            limit_price: Price for limit orders
+            order_properties: Additional order properties
+            
+        Returns:
+            Order details if successful, None otherwise
+        """
         try:
-            position = trading_client.get_open_position(symbol_or_asset_id=symbol)
+            # Validate parameters
+            if not option_symbol or quantity <= 0 or side not in ['buy', 'sell']:
+                logger.error(f"Invalid option order parameters: {option_symbol}, {quantity}, {side}")
+                return None
+                
+            if price_type == 'limit' and (not limit_price or limit_price <= 0):
+                logger.error(f"Invalid limit price for option order: {limit_price}")
+                return None
+                
+            # Log the order attempt
+            if price_type == 'market':
+                logger.info(f"Executing market {side} order for {quantity} {option_symbol} options")
+                return self.execute_market_order(option_symbol, quantity, side, order_properties)
+            else:
+                logger.info(f"Executing limit {side} order for {quantity} {option_symbol} options @ {limit_price}")
+                return self.execute_limit_order(
+                    option_symbol, quantity, side, limit_price, 'day', order_properties
+                )
+        except Exception as e:
+            logger.error(f"Error executing option order: {e}", exc_info=True)
+            return None
+    
+    def cancel_pending_order(self, order_id: str) -> bool:
+        """
+        Cancel a pending order.
+        
+        Args:
+            order_id: Order ID to cancel
             
-            # Format response
-            formatted_position = {
-                "symbol": position.symbol,
-                "quantity": position.qty,
-                "side": "long" if float(position.qty) > 0 else "short",
-                "avg_entry_price": position.avg_entry_price,
-                "market_value": position.market_value,
-                "cost_basis": position.cost_basis,
-                "unrealized_pl": position.unrealized_pl,
-                "unrealized_plpc": position.unrealized_plpc,
-                "current_price": position.current_price,
-                "lastday_price": position.lastday_price,
-                "change_today": position.change_today
-            }
-        except Exception as position_error:
-            logger.warning(f"No position found for symbol {symbol}: {str(position_error)}")
-            return jsonify({
-                "status": "error", 
-                "message": f"No position found for {symbol}"
-            }), 404
-        
-        return jsonify({
-            "status": "success",
-            "position": formatted_position
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting position for {symbol}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/trade', methods=['POST'])
-def manual_trade():
-    """Place a manual trade."""
-    try:
-        # Get Redis client
-        redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379/0')
-        redis_client = RedisClient(redis_url)
-        
-        # Get request data
-        data = request.json
-        
-        if not data:
-            return jsonify({"status": "error", "message": "No data provided"}), 400
-        
-        symbol = data.get('symbol')
-        direction = data.get('direction', 'bullish')
-        quantity = int(data.get('quantity', 1))
-        order_type = data.get('order_type', 'market').lower()
-        
-        if not symbol:
-            return jsonify({"status": "error", "message": "Symbol is required"}), 400
-        
-        if direction not in ['bullish', 'bearish']:
-            return jsonify({"status": "error", "message": "Direction must be 'bullish' or 'bearish'"}), 400
-        
-        if order_type not in ['market', 'limit', 'stop']:
-            return jsonify({"status": "error", "message": "Order type must be 'market', 'limit', or 'stop'"}), 400
-        
-        # If this is a direct option symbol
-        if '_' in symbol and ('C' in symbol or 'P' in symbol):
-            option_symbol = symbol
-        else:
-            # Get option recommendation
-            import requests
-            response = requests.get(
-                f"http://localhost:5000/api/options/recommend/{symbol}",
-                params={"direction": direction}
-            )
-            
-            if response.status_code != 200:
-                return jsonify({
-                    "status": "error", 
-                    "message": f"Failed to get option recommendation: {response.text}"
-                }), 500
-            
-            recommendation = response.json()
-            if recommendation.get('status') != 'success':
-                return jsonify({
-                    "status": "error", 
-                    "message": f"Option recommendation error: {recommendation.get('message')}"
-                }), 500
-            
-            option = recommendation.get('recommendation')
-            if not option:
-                return jsonify({
-                    "status": "error", 
-                    "message": f"No option recommendation found for {symbol} {direction}"
-                }), 404
-            
-            option_symbol = option.get('symbol')
-        
-        # Create client_order_id
-        client_id = data.get('client_id', generate_client_order_id("manual"))
-        
-        # Execute the trade
-        trade_result = execute_option_trade(option_symbol, direction, quantity, client_id, redis_client)
-        
-        if not trade_result:
-            return jsonify({"status": "error", "message": "Failed to execute trade"}), 500
-        
-        return jsonify({
-            "status": "success",
-            "message": f"Trade executed: {direction} {quantity} {option_symbol}",
-            "order": trade_result
-        })
-        
-    except Exception as e:
-        logger.error(f"Error executing manual trade: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/close/<symbol>', methods=['POST'])
-def close_position(symbol):
-    """Close a specific position."""
-    try:
-        # Initialize trading client
-        trading_client = initialize_trading_client()
-        
-        if not trading_client:
-            return jsonify({"status": "error", "message": "Trading client not initialized"}), 500
-        
-        # Get request data for optional percentage or quantity to close
-        data = request.json or {}
-        close_options = None
-        
-        # Check if we need to create close options
-        if data.get('percentage') or data.get('qty'):
-            close_options = ClosePositionRequest(
-                percentage=data.get('percentage'),
-                qty=data.get('qty')
-            )
-        
-        # Close the position using the updated API parameters
+        Returns:
+            True if canceled successfully, False otherwise
+        """
         try:
-            response = trading_client.close_position(
-                symbol_or_asset_id=symbol,
-                close_options=close_options
-            )
+            result = cancel_order(order_id)
             
-            # Format response
-            result = {
-                "symbol": symbol,
-                "status": "closed",
-                "order_id": response.id if hasattr(response, 'id') else None,
-                "timestamp": datetime.now().isoformat()
-            }
+            if result:
+                # Remove from pending orders
+                if order_id in self.pending_orders:
+                    del self.pending_orders[order_id]
+                    
+                # Publish order canceled event to Redis
+                if self.redis:
+                    try:
+                        event = {
+                            'event': 'order_canceled',
+                            'order_id': order_id
+                        }
+                        self.redis.publish('events:orders', json.dumps(event))
+                    except Exception as e:
+                        logger.warning(f"Error publishing order canceled event to Redis: {e}")
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error canceling order {order_id}: {e}")
+            return False
             
-            return jsonify({
-                "status": "success",
-                "message": f"Position {symbol} closed",
-                "result": result
-            })
-        except Exception as close_error:
-            logger.warning(f"Error closing position for {symbol}: {str(close_error)}")
-            return jsonify({
-                "status": "error", 
-                "message": f"Error closing position: {str(close_error)}"
-            }), 400
+    def get_position_risk(self, account_value: float, position_cost: float) -> float:
+        """
+        Calculate position risk as a percentage of account value.
         
-    except Exception as e:
-        logger.error(f"Error closing position {symbol}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/start', methods=['POST'])
-def start_executor():
-    """Start the execution service."""
-    try:
-        start_subscription_thread()
+        Args:
+            account_value: Total account value
+            position_cost: Cost of the position
+            
+        Returns:
+            Risk percentage (0-100)
+        """
+        if account_value <= 0:
+            return 100.0  # Maximum risk if account value is invalid
+            
+        return (position_cost / account_value) * 100.0
         
-        return jsonify({
-            "status": "success",
-            "message": "Execution service started"
-        })
+    def check_position_risk(
+        self,
+        symbol: str,
+        quantity: int,
+        price: float,
+        max_risk_percent: float = 5.0
+    ) -> bool:
+        """
+        Check if a position's risk is within acceptable limits.
         
-    except Exception as e:
-        logger.error(f"Error starting execution service: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        Args:
+            symbol: Symbol to trade
+            quantity: Number of shares/contracts
+            price: Price per share/contract
+            max_risk_percent: Maximum risk as percentage of account value
+            
+        Returns:
+            True if risk is acceptable, False otherwise
+        """
+        try:
+            # Get account information
+            account = get_account_info()
+            
+            if not account:
+                logger.warning("Could not get account information")
+                return False
+                
+            # Get account value
+            account_value = float(account.get('equity', 0))
+            
+            if account_value <= 0:
+                logger.warning(f"Invalid account value: {account_value}")
+                return False
+                
+            # Calculate position cost
+            # For options, each contract is for 100 shares
+            multiplier = 100 if 'C' in symbol or 'P' in symbol else 1
+            position_cost = quantity * price * multiplier
+            
+            # Calculate risk
+            risk_percent = self.get_position_risk(account_value, position_cost)
+            
+            # Check if risk is acceptable
+            if risk_percent > max_risk_percent:
+                logger.warning(f"Position risk ({risk_percent:.2f}%) exceeds maximum ({max_risk_percent}%)")
+                return False
+                
+            logger.info(f"Position risk ({risk_percent:.2f}%) is within acceptable limits")
+            return True
+        except Exception as e:
+            logger.error(f"Error checking position risk: {e}")
+            return False
+            
+    def update_order_status(self):
+        """
+        Update the status of pending orders.
+        
+        This method should be called periodically to update the status
+        of pending orders and process filled orders.
+        """
+        try:
+            # Get all orders
+            orders = get_orders('all')
+            
+            if not orders:
+                return
+                
+            # Process each order
+            for order in orders:
+                order_id = order.get('id')
+                if not order_id:
+                    continue
+                    
+                status = order.get('status')
+                
+                # Check if this order is being tracked
+                if order_id in self.pending_orders:
+                    # Update the order
+                    self.pending_orders[order_id]['order'] = order
+                    
+                    # Check if filled
+                    if status == 'filled':
+                        # Move to filled orders
+                        self.filled_orders[order_id] = self.pending_orders[order_id]
+                        del self.pending_orders[order_id]
+                        
+                        # Publish order filled event to Redis
+                        if self.redis:
+                            try:
+                                event = {
+                                    'event': 'order_filled',
+                                    'order_id': order_id,
+                                    'order': order,
+                                    'properties': self.filled_orders[order_id].get('properties')
+                                }
+                                self.redis.publish('events:orders', json.dumps(event))
+                            except Exception as e:
+                                logger.warning(f"Error publishing order filled event to Redis: {e}")
+                                
+                    # Check if failed/canceled
+                    elif status in ['canceled', 'expired', 'rejected', 'suspended']:
+                        # Remove from pending orders
+                        del self.pending_orders[order_id]
+                        
+                        # Publish order failed event to Redis
+                        if self.redis:
+                            try:
+                                event = {
+                                    'event': 'order_failed',
+                                    'order_id': order_id,
+                                    'status': status,
+                                    'order': order
+                                }
+                                self.redis.publish('events:orders', json.dumps(event))
+                            except Exception as e:
+                                logger.warning(f"Error publishing order failed event to Redis: {e}")
+        except Exception as e:
+            logger.error(f"Error updating order status: {e}")
 
+# Global instance
+order_executor = OrderExecutor()
 
-@execution_routes.route('/stop', methods=['POST'])
-def stop_executor():
-    """Stop the execution service."""
-    global is_running
+def get_order_executor() -> OrderExecutor:
+    """
+    Get the global order executor instance.
     
-    try:
-        is_running = False
-        
-        return jsonify({
-            "status": "success",
-            "message": "Execution service stopping"
-        })
-        
-    except Exception as e:
-        logger.error(f"Error stopping execution service: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@execution_routes.route('/status', methods=['GET'])
-def executor_status():
-    """Get the status of the execution service."""
-    global is_running, subscription_thread
-    
-    thread_alive = subscription_thread is not None and subscription_thread.is_alive()
-    
-    return jsonify({
-        "status": "success",
-        "executor": {
-            "running": is_running and thread_alive,
-        }
-    })
+    Returns:
+        OrderExecutor instance
+    """
+    return order_executor
