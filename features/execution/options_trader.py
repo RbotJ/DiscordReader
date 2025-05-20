@@ -1,508 +1,318 @@
 """
 Options Trader Module
 
-This module provides functionality for executing options trades with Alpaca,
-including selecting appropriate contracts, managing positions, and implementing
-tiered exit strategies.
+This module handles the execution of options trades based on signals,
+including placing orders, managing positions, and handling stop-loss/take-profit.
 """
 import logging
-import math
-import os
-from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Union, Tuple
+import time
+import threading
+from typing import Dict, List, Optional, Tuple, Union
 
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import (
-    MarketOrderRequest, LimitOrderRequest, ClosePositionRequest
+from features.alpaca.client import (
+    get_trading_client, 
+    get_account_info, 
+    get_positions,
+    submit_market_order,
+    submit_limit_order,
+    submit_bracket_order
 )
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
-from alpaca.trading.models import Order, Position
+from features.alpaca.options_enums import OptionSide
+from features.options.selector import select_best_option_contract
 
-from common.constants import OptionType, TradeDirection, SignalState
-from common.redis_utils import get_redis_client, publish_event
-from features.alpaca.options import get_options_fetcher, OptionsChainFetcher
-
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Initialize API credentials from environment variables
-API_KEY = os.environ.get("ALPACA_API_KEY")
-API_SECRET = os.environ.get("ALPACA_API_SECRET")
+# Global state
+_trader_running = False
+_trader_thread = None
+_active_signals = {}  # Tracks active signals by symbol
 
-# Global clients (singleton pattern)
-_trading_client = None
-_options_fetcher = None
-
-
-def get_trading_client() -> Optional[TradingClient]:
+def execute_signal_trade(
+    symbol: str,
+    signal_type: str,
+    price_target: float,
+    risk_amount: float = 500.0
+) -> Optional[Dict]:
     """
-    Get a singleton TradingClient instance.
-    
-    Returns:
-        TradingClient instance or None if unavailable
-    """
-    global _trading_client
-    
-    if _trading_client is None:
-        if not API_KEY or not API_SECRET:
-            logger.error("Alpaca API credentials not set in environment")
-            return None
-            
-        try:
-            _trading_client = TradingClient(API_KEY, API_SECRET, paper=True)
-        except Exception as e:
-            logger.error(f"Error initializing trading client: {e}")
-            return None
-            
-    return _trading_client
-
-
-def map_side(side_str: str) -> OrderSide:
-    """
-    Map side string to OrderSide enum.
+    Execute a trade based on a signal.
     
     Args:
-        side_str: Side string ('buy' or 'sell')
+        symbol: The underlying ticker symbol
+        signal_type: Type of signal (breakout, breakdown, rejection, bounce)
+        price_target: Target price for the signal
+        risk_amount: Maximum risk amount in dollars
         
     Returns:
-        OrderSide enum
+        Order information or None if trade could not be executed
     """
-    return OrderSide[side_str.upper()]
-
-
-def map_tif(tif_str: str) -> TimeInForce:
-    """
-    Map time-in-force string to TimeInForce enum.
-    
-    Args:
-        tif_str: Time-in-force string
-        
-    Returns:
-        TimeInForce enum
-    """
-    return TimeInForce[tif_str.upper()]
-
-
-def order_to_dict(order: Order) -> Dict:
-    """
-    Convert Order object to dictionary.
-    
-    Args:
-        order: Order object
-        
-    Returns:
-        Dictionary representation
-    """
-    return {
-        'id': order.id,
-        'client_order_id': order.client_order_id,
-        'symbol': order.symbol,
-        'side': order.side.value if hasattr(order.side, 'value') else str(order.side),
-        'qty': float(order.qty) if order.qty else None,
-        'filled_qty': float(order.filled_qty) if order.filled_qty else None,
-        'type': order.order_type.value if hasattr(order.order_type, 'value') else str(order.order_type),
-        'status': order.status.value if hasattr(order.status, 'value') else str(order.status),
-        'created_at': str(order.created_at) if hasattr(order, 'created_at') else None,
-        'filled_at': str(order.filled_at) if hasattr(order, 'filled_at') else None,
-        'filled_price': float(order.filled_avg_price) if hasattr(order, 'filled_avg_price') and order.filled_avg_price else None,
-    }
-
-
-def position_to_dict(position: Position) -> Dict:
-    """
-    Convert Position object to dictionary.
-    
-    Args:
-        position: Position object
-        
-    Returns:
-        Dictionary representation
-    """
-    return {
-        'symbol': position.symbol,
-        'qty': float(position.qty),
-        'market_value': float(position.market_value) if position.market_value else None,
-        'avg_entry_price': float(position.avg_entry_price) if position.avg_entry_price else None,
-        'side': position.side,
-        'unrealized_pl': float(position.unrealized_pl) if position.unrealized_pl else None,
-        'unrealized_plpc': float(position.unrealized_plpc) if position.unrealized_plpc else None,
-        'current_price': float(position.current_price) if position.current_price else None,
-        'asset_id': position.asset_id,
-        'asset_class': position.asset_class,
-    }
-
-
-class OptionsTrader:
-    """
-    Class to manage options trading strategies and execution.
-    """
-    def __init__(
-        self, 
-        api_key: str = API_KEY, 
-        api_secret: str = API_SECRET, 
-        paper: bool = True
-    ):
-        """
-        Initialize the options trader.
-        
-        Args:
-            api_key: Alpaca API key (default: from environment)
-            api_secret: Alpaca API secret (default: from environment)
-            paper: Whether to use paper trading (default: True)
-        """
-        if not api_key or not api_secret:
-            raise ValueError("Alpaca API credentials required")
-            
-        # Use singleton clients
-        self.trading_client = get_trading_client()
-        self.options_fetcher = _options_fetcher or get_options_fetcher()
-        self.redis = get_redis_client()
-        
-        if not self.trading_client:
-            raise ValueError("Failed to initialize trading client")
-            
-        if not self.options_fetcher:
-            raise ValueError("Failed to initialize options fetcher")
-        
-        # Default risk parameters
-        self.max_position_size = 1  # Default to 1 contract per trade
-        self.max_drawdown_risk = 500  # Maximum risk per trade in dollars
-        
-    def execute_signal_trade(self, signal: Dict) -> Optional[Dict]:
-        """
-        Execute a trade based on a trading signal.
-        
-        Args:
-            signal: Trading signal dictionary
-            
-        Returns:
-            Order information or None if execution failed
-        """
-        try:
-            ticker = signal.get('ticker')
-            if not ticker:
-                logger.error("Signal missing ticker symbol")
-                return None
-                
-            direction = signal.get('direction', '').lower()
-            if direction not in ('long', 'short'):
-                logger.error(f"Invalid trade direction: {direction}")
-                return None
-                
-            # Determine option type based on direction
-            option_type = OptionType.CALL if direction == 'long' else OptionType.PUT
-            
-            # Find suitable option contract
-            contract = self._select_contract(ticker, option_type, signal)
-            if not contract:
-                logger.error(f"Could not find suitable {option_type.value} option for {ticker}")
-                return None
-                
-            # Calculate position size
-            qty = self._calculate_position_size(contract, signal)
-            if qty <= 0:
-                logger.error(f"Invalid position size: {qty}")
-                return None
-                
-            # Execute the trade
-            order = self._submit_option_order(contract, qty, OrderSide.BUY)
-            if not order:
-                logger.error("Failed to submit option order")
-                return None
-                
-            # Set up exit orders if needed
-            self._setup_exit_strategy(contract, signal, order)
-            
-            return order
-            
-        except Exception as e:
-            logger.error(f"Error executing signal trade: {e}")
-            return None
-            
-    def _select_contract(
-        self, 
-        ticker: str, 
-        option_type: OptionType, 
-        signal: Dict
-    ) -> Optional[Dict]:
-        """
-        Select the appropriate options contract based on the trading signal.
-        
-        Args:
-            ticker: Underlying stock symbol
-            option_type: CALL or PUT
-            signal: Trading signal with trigger and target information
-            
-        Returns:
-            Selected option contract or None if not found
-        """
-        # Check if the fetcher is available
-        if not self.options_fetcher:
-            logger.error("Options fetcher not available")
-            return None
-            
-        # Try to find same-day expiration contracts
-        expiration = self.options_fetcher.get_same_day_expiration(ticker)
-        if not expiration:
-            logger.error(f"No suitable expiration found for {ticker}")
-            return None
-            
-        # Target delta for ATM options
-        target_delta = 0.50
-            
-        # Find contract with delta closest to target
-        contract = self.options_fetcher.find_atm_options(
-            symbol=ticker,
-            option_type=option_type,
-            target_delta=target_delta,
-            expiration=expiration
+    try:
+        # Select the appropriate options contract
+        contract = select_best_option_contract(
+            symbol=symbol,
+            signal_type=signal_type,
+            price_target=price_target,
+            risk_amount=risk_amount
         )
         
-        return contract
-        
-    def _calculate_position_size(self, contract: Dict, signal: Dict) -> int:
-        """
-        Calculate the appropriate position size based on risk parameters.
-        
-        Args:
-            contract: Option contract information
-            signal: Trading signal with risk parameters
+        if not contract:
+            logger.warning(f"No suitable contract found for {symbol} {signal_type} signal")
+            return None
             
-        Returns:
-            Number of contracts to trade
-        """
-        # Get contract price (use midpoint of bid/ask)
-        bid = float(contract.get('bid', 0) or 0)
-        ask = float(contract.get('ask', 0) or 0)
+        # Determine order side (always buy for now, as we select calls or puts based on signal)
+        order_side = "buy"
         
-        if ask <= 0:
-            logger.error(f"Invalid ask price: {ask}")
-            return 0
+        # Calculate stop and target prices
+        current_price = contract.get('mid', contract.get('ask'))
+        if not current_price:
+            logger.warning(f"No price available for contract {contract['symbol']}")
+            return None
             
-        # Use midpoint if bid is available, otherwise use ask
-        contract_price = (bid + ask) / 2 if bid > 0 else ask
+        # Standard 10% take profit, 10% stop loss
+        take_profit_price = current_price * 1.10
+        stop_loss_price = current_price * 0.90
         
-        # Calculate max risk per contract (assume 100% loss)
-        risk_per_contract = contract_price * 100  # Options contracts are for 100 shares
-        
-        # Calculate position size based on max drawdown risk
-        max_size_by_risk = math.floor(self.max_drawdown_risk / risk_per_contract)
-        
-        # Apply maximum position size constraint
-        position_size = min(max_size_by_risk, self.max_position_size)
-        
-        # Ensure at least 1 contract
-        return max(1, position_size)
-        
-    def _submit_option_order(
-        self, 
-        contract: Dict, 
-        qty: int, 
-        side: OrderSide
-    ) -> Optional[Dict]:
-        """
-        Submit an options order.
-        
-        Args:
-            contract: Option contract to trade
-            qty: Number of contracts
-            side: BUY or SELL
-            
-        Returns:
-            Order information or None if execution failed
-        """
+        # Place a bracket order
         try:
-            symbol = contract.get('symbol')
-            if not symbol:
-                logger.error("Contract missing symbol")
+            order_result = submit_bracket_order(
+                symbol=contract['symbol'],
+                qty=contract['quantity'],
+                side=order_side,
+                time_in_force='day',
+                take_profit_price=take_profit_price,
+                stop_loss_price=stop_loss_price
+            )
+            
+            if order_result:
+                logger.info(f"Successfully placed bracket order for {contract['symbol']}")
+                
+                # Track the active signal
+                _active_signals[symbol] = {
+                    'signal_type': signal_type,
+                    'contract': contract,
+                    'order_id': order_result.get('id'),
+                    'entry_price': current_price,
+                    'take_profit': take_profit_price,
+                    'stop_loss': stop_loss_price,
+                    'status': 'open',
+                    'timestamp': time.time()
+                }
+                
+                return order_result
+            else:
+                logger.error(f"Failed to place bracket order for {contract['symbol']}")
                 return None
                 
-            # Create market order request using Pydantic model
-            order_request = MarketOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=side,
-                time_in_force=TimeInForce.DAY
-            )
-            
-            # Submit the order
-            order = self.trading_client.submit_order(order_data=order_request)
-            
-            # Format the response using standard helper
-            formatted_order = order_to_dict(order)
-            formatted_order['option_symbol'] = symbol  # Add option-specific field
-            
-            logger.info(f"Submitted {side.value} order for {qty} {symbol}: {formatted_order['id']}")
-            return formatted_order
-            
         except Exception as e:
-            logger.error(f"Error submitting option order: {e}")
-            return None
+            logger.error(f"Error placing bracket order for {contract['symbol']}: {e}")
             
-    def _setup_exit_strategy(
-        self, 
-        contract: Dict, 
-        signal: Dict, 
-        entry_order: Dict
-    ) -> bool:
-        """
-        Set up tiered exit strategy with target orders.
-        
-        Args:
-            contract: Option contract information
-            signal: Trading signal with target information
-            entry_order: Entry order information
-            
-        Returns:
-            Success status
-        """
-        # Get targets from signal
-        targets = signal.get('targets', [])
-        if not targets:
-            logger.warning("No targets specified in signal, skipping exit strategy")
-            return False
-            
-        try:
-            # Track exit orders
-            exit_orders = []
-            entry_qty = int(entry_order.get('qty', 0))
-            
-            # Process each target in a transaction
-            remaining_qty = entry_qty
-            for target in targets:
-                # Get target price and percentage allocation
-                price_target = target.get('price')
-                percentage = target.get('percentage', 0)
+            # Try with just a market order if bracket order fails
+            try:
+                order_result = submit_market_order(
+                    symbol=contract['symbol'],
+                    qty=contract['quantity'],
+                    side=order_side,
+                    time_in_force='day'
+                )
                 
-                if not price_target or percentage <= 0:
-                    continue
+                if order_result:
+                    logger.info(f"Successfully placed market order for {contract['symbol']}")
                     
-                # Calculate quantity for this target
-                target_qty = max(1, round(entry_qty * percentage))
-                
-                # Adjust for remaining quantity
-                if target_qty > remaining_qty:
-                    target_qty = remaining_qty
+                    # Track the active signal
+                    _active_signals[symbol] = {
+                        'signal_type': signal_type,
+                        'contract': contract,
+                        'order_id': order_result.get('id'),
+                        'entry_price': current_price,
+                        'take_profit': take_profit_price,
+                        'stop_loss': stop_loss_price,
+                        'status': 'open',
+                        'timestamp': time.time()
+                    }
                     
-                remaining_qty -= target_qty
+                    return order_result
+                else:
+                    logger.error(f"Failed to place market order for {contract['symbol']}")
+                    return None
+            except Exception as e2:
+                logger.error(f"Error placing market order for {contract['symbol']}: {e2}")
+                return None
                 
-                if target_qty <= 0:
-                    continue
-                    
-                # We'll implement limit orders for these targets later
-                # For now, just log the plan
-                logger.info(f"Exit plan: Sell {target_qty} contracts at price target {price_target}")
-                
-                # TODO: Create and track limit orders for exits
-                
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error setting up exit strategy: {e}")
-            return False
-            
-    def cancel_order(self, order_id: str) -> bool:
-        """
-        Cancel an existing order.
-        
-        Args:
-            order_id: Order ID to cancel
-            
-        Returns:
-            Success status
-        """
-        try:
-            self.trading_client.cancel_order(order_id=order_id)
-            logger.info(f"Cancelled order {order_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Error cancelling order {order_id}: {e}")
-            return False
-            
-    def close_position(self, symbol: str, percentage: float = 1.0) -> Optional[Dict]:
-        """
-        Close an existing position.
-        
-        Args:
-            symbol: Symbol of the position to close
-            percentage: Percentage of position to close (default: 100%)
-            
-        Returns:
-            Order information or None if execution failed
-        """
-        try:
-            # Use the proper ClosePositionRequest
-            close_request = ClosePositionRequest(
-                percentage=percentage
-            )
-            
-            # Submit the close position request
-            order = self.trading_client.close_position(
-                symbol_or_asset_id=symbol,
-                close_options=close_request
-            )
-            
-            logger.info(f"Closed position for {symbol}: {order.id}")
-            
-            # Format the response using standard helper
-            return order_to_dict(order)
-            
-        except Exception as e:
-            logger.error(f"Error closing position for {symbol}: {e}")
-            return None
+    except Exception as e:
+        logger.error(f"Error executing signal trade for {symbol}: {e}")
+        return None
 
-
-def get_options_trader() -> Optional[OptionsTrader]:
+def manage_position(symbol: str, current_price: float) -> Optional[Dict]:
     """
-    Get an options trader instance.
+    Manage an open position based on current price.
+    Checks for take-profit or stop-loss conditions.
+    
+    Args:
+        symbol: The underlying ticker symbol
+        current_price: Current price of the position
+        
+    Returns:
+        Position status information
+    """
+    if symbol not in _active_signals:
+        return None
+        
+    position_info = _active_signals[symbol]
+    if position_info['status'] != 'open':
+        return position_info
+        
+    # Check if we've hit take-profit or stop-loss
+    if current_price >= position_info['take_profit']:
+        # Take profit
+        logger.info(f"Take profit triggered for {symbol} at {current_price}")
+        
+        # Update status
+        position_info['status'] = 'closed_profit'
+        position_info['exit_price'] = current_price
+        position_info['profit_pct'] = (current_price - position_info['entry_price']) / position_info['entry_price'] * 100
+        
+        return position_info
+        
+    elif current_price <= position_info['stop_loss']:
+        # Stop loss
+        logger.info(f"Stop loss triggered for {symbol} at {current_price}")
+        
+        # Update status
+        position_info['status'] = 'closed_loss'
+        position_info['exit_price'] = current_price
+        position_info['profit_pct'] = (current_price - position_info['entry_price']) / position_info['entry_price'] * 100
+        
+        return position_info
+        
+    return position_info
+
+def get_active_positions() -> Dict:
+    """
+    Get information on all active positions.
     
     Returns:
-        OptionsTrader instance or None if not available
+        Dictionary of active positions by symbol
     """
-    if not API_KEY or not API_SECRET:
-        logger.error("Alpaca API credentials not set in environment")
-        return None
-        
-    try:
-        return OptionsTrader(API_KEY, API_SECRET)
-    except Exception as e:
-        logger.error(f"Error creating options trader: {e}")
-        return None
+    return {k: v for k, v in _active_signals.items() if v['status'] == 'open'}
 
+def get_closed_positions() -> Dict:
+    """
+    Get information on all closed positions.
+    
+    Returns:
+        Dictionary of closed positions by symbol
+    """
+    return {k: v for k, v in _active_signals.items() if v['status'] != 'open'}
 
 def init_options_trader() -> bool:
     """
-    Initialize the options trader component.
+    Initialize the options trader.
     
     Returns:
         Success status
     """
-    global _trading_client, _options_fetcher
-    
     try:
-        # Initialize the singleton clients
-        _trading_client = get_trading_client()
-        _options_fetcher = get_options_fetcher()
-        
-        if not _trading_client or not _options_fetcher:
-            logger.error("Failed to initialize options trader clients")
+        # Check if we can connect to Alpaca
+        client = get_trading_client()
+        if not client:
+            logger.warning("Trading client not initialized")
             return False
             
-        # Create a test trader instance to verify
-        trader = OptionsTrader()
+        # Start position monitor thread
+        global _trader_thread, _trader_running
+        
+        if _trader_thread and _trader_thread.is_alive():
+            logger.info("Options trader already running")
+            return True
+            
+        _trader_running = True
+        _trader_thread = threading.Thread(
+            target=_position_monitor_thread,
+            daemon=True,
+            name="OptionsTraderThread"
+        )
+        _trader_thread.start()
         
         logger.info("Options trader initialized successfully")
         return True
+        
     except Exception as e:
         logger.error(f"Error initializing options trader: {e}")
         return False
-        
-def trader_running() -> bool:
+
+def shutdown_options_trader() -> bool:
     """
-    Check if the options trader is currently running.
+    Shutdown the options trader.
     
     Returns:
-        bool: True if the trader is initialized and running, False otherwise
+        Success status
     """
-    global _trading_client, _options_fetcher
+    global _trader_running, _trader_thread
     
-    return _trading_client is not None and _options_fetcher is not None
+    try:
+        if not _trader_thread or not _trader_thread.is_alive():
+            logger.info("Options trader not running")
+            return True
+            
+        _trader_running = False
+        _trader_thread.join(timeout=5.0)
+        
+        if _trader_thread.is_alive():
+            logger.warning("Options trader thread did not stop gracefully")
+            return False
+        else:
+            logger.info("Options trader shut down successfully")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error shutting down options trader: {e}")
+        return False
+
+def _position_monitor_thread() -> None:
+    """
+    Thread function to monitor positions.
+    """
+    global _trader_running
+    
+    logger.info("Position monitor thread started")
+    
+    try:
+        while _trader_running:
+            try:
+                # Get all open positions from Alpaca
+                positions = get_positions()
+                
+                # Check for exits (missed take-profits or stop-losses)
+                for symbol, position_info in list(_active_signals.items()):
+                    if position_info['status'] != 'open':
+                        continue
+                        
+                    # Check if position is still in Alpaca
+                    contract_symbol = position_info['contract']['symbol']
+                    position_exists = any(p.get('symbol') == contract_symbol for p in positions)
+                    
+                    if not position_exists:
+                        # Position was closed
+                        logger.info(f"Position for {symbol} was closed")
+                        
+                        # Try to get latest price
+                        current_price = None
+                        # Set status based on time (if recent, assume profit)
+                        position_info['status'] = 'closed_unknown'
+                        position_info['exit_price'] = current_price
+                        
+                # Refresh position prices
+                # (In a production system, we would subscribe to real-time quotes)
+                
+                # Sleep for a bit to avoid API rate limits
+                time.sleep(30)
+                
+            except Exception as e:
+                logger.error(f"Error in position monitor thread: {e}")
+                time.sleep(30)
+                
+    except Exception as e:
+        logger.error(f"Fatal error in position monitor thread: {e}")
+    finally:
+        _trader_running = False
+        logger.info("Position monitor thread stopped")

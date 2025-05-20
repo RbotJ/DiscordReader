@@ -1,347 +1,272 @@
 """
 Discord Client Module
 
-This module provides functionality for interacting with Discord,
-including sending and reading messages from specific channels.
+This module provides functionality to connect to Discord and fetch messages
+from the trading setups channel using discord.py.
 """
-import os
-import logging
 import asyncio
-from typing import Optional, List, Callable, Any
-from functools import wraps
+import logging
+import os
+from typing import Dict, List, Optional, Union
 from datetime import datetime, timedelta
+
 import discord
 from discord.ext import tasks
 
+from features.discord.message_parser import parse_message
+
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Get configuration from environment variables
-DISCORD_APP_TOKEN = os.environ.get('DISCORD_BOT_TOKEN_APLUS') or os.environ.get('DISCORD_BOT_TOKEN')
-CHANNEL_BOT_DIALOGUE = os.environ.get('DISCORD_CHANNEL_BOT_DIALOGUE')
-CHANNEL_APLUS_SETUPS = os.environ.get('DISCORD_CHANNEL_APLUS_SETUPS')
-CHANNEL_TEST = os.environ.get('DISCORD_CHANNEL_TEST_HERE_ONE')
+# Global state
+_client = None
+_channel = None
+_is_connected = False
+_last_message_time = None
+_message_handlers = []
 
-# Convert channel IDs to integers
-try:
-    CHANNEL_BOT_DIALOGUE_ID = int(CHANNEL_BOT_DIALOGUE) if CHANNEL_BOT_DIALOGUE else None
-    CHANNEL_APLUS_SETUPS_ID = int(CHANNEL_APLUS_SETUPS) if CHANNEL_APLUS_SETUPS else None
-    CHANNEL_TEST_ID = int(CHANNEL_TEST) if CHANNEL_TEST else None
-except (ValueError, TypeError) as e:
-    logger.error(f"Error converting Discord channel IDs: {e}")
-    CHANNEL_BOT_DIALOGUE_ID = None
-    CHANNEL_APLUS_SETUPS_ID = None
-    CHANNEL_TEST_ID = None
-
-# Initialize client as None
-discord_client = None
-client_ready = False
-message_handlers = []
-setup_message_callbacks = []
-def register_message_handler(handler: Callable[[discord.Message], Any]) -> None:
-    """
-    Register a function to handle new messages.
-    
-    Args:
-        handler: Function that takes a Discord message and processes it
-    """
-    message_handlers.append(handler)
-
-def register_setup_callback(callback: Callable[[str, datetime], Any]) -> None:
-    """
-    Register a callback for when a new trading setup is detected.
-    
-    Args:
-        callback: Function that takes message content and timestamp
-    """
-    setup_message_callbacks.append(callback)
-
-class APlusTradingClient(discord.Client):
-    """A+ Trading Discord client to monitor and send messages."""
+class TradingDiscordClient(discord.Client):
+    """Discord client for fetching trading setup messages."""
     
     def __init__(self, *args, **kwargs):
         intents = discord.Intents.default()
-        intents.message_content = True  # Enable message content intent
+        intents.message_content = True
         super().__init__(intents=intents, *args, **kwargs)
-        self.last_checked_time = datetime.utcnow() - timedelta(hours=24)  # Start by checking last 24h
+        self.channel_id = None
+        self.last_message_id = None
+        self.is_ready = False
         
     async def on_ready(self):
-        """Called when the client has successfully connected to Discord."""
-        global client_ready
-        client_ready = True
-        logger.info(f'Discord bot logged in as {self.user}')
-        self.check_for_setups.start()
+        """Called when the client is ready."""
+        logger.info(f'Connected to Discord as {self.user}')
+        self.is_ready = True
         
-        # Send a message to the bot dialogue channel
-        if CHANNEL_BOT_DIALOGUE_ID:
-            channel = self.get_channel(CHANNEL_BOT_DIALOGUE_ID)
-            if channel:
-                await channel.send('A+ Trading Bot is now online and monitoring for trading setups.')
-            else:
-                logger.warning(f"Could not find bot dialogue channel with ID {CHANNEL_BOT_DIALOGUE_ID}")
+        # Start background task to check for new messages
+        self.check_for_messages.start()
         
-    async def on_message(self, message):
-        """Called when a new message is received."""
-        # Don't respond to our own messages
-        if message.author == self.user:
-            return
-            
-        # Process message through all handlers
-        for handler in message_handlers:
-            try:
-                handler(message)
-            except Exception as e:
-                logger.error(f"Error in message handler: {e}")
-    
-    @tasks.loop(minutes=5)
-    async def check_for_setups(self):
-        """Check for new trading setup messages periodically."""
-        if not CHANNEL_APLUS_SETUPS_ID:
-            return
-            
+    @tasks.loop(minutes=1)
+    async def check_for_messages(self):
+        """Check for new messages periodically."""
         try:
-            channel = self.get_channel(CHANNEL_APLUS_SETUPS_ID)
-            if not channel:
-                logger.warning(f"Could not find A+ setups channel with ID {CHANNEL_APLUS_SETUPS_ID}")
+            if not self.channel_id:
+                logger.warning("Channel ID not set, cannot check for messages")
                 return
                 
-            # Get messages after the last checked time
-            current_time = datetime.utcnow()
-            async for message in channel.history(after=self.last_checked_time, limit=20):
-                # Check if message has content and is not from our bot
-                if message.content and message.author != self.user:
-                    # Check if message looks like a trading setup
-                    if "A+ Trade Setups" in message.content:
-                        # Call all setup callbacks
-                        logger.info(f"Found new trading setup message: {message.id}")
-                        for callback in setup_message_callbacks:
-                            try:
-                                # Pass message content and timestamp to callback
-                                callback(message.content, message.created_at)
-                            except Exception as e:
-                                logger.error(f"Error in setup message callback: {e}")
+            channel = self.get_channel(int(self.channel_id))
+            if not channel:
+                logger.warning(f"Could not find channel with ID {self.channel_id}")
+                return
+                
+            # Fetch recent messages
+            messages = []
+            async for message in channel.history(limit=10):
+                messages.append(message)
+                
+            if not messages:
+                logger.info("No recent messages found")
+                return
+                
+            # Process newest messages first
+            messages.reverse()
             
-            # Update the last checked time
-            self.last_checked_time = current_time
-            
+            for message in messages:
+                # Skip if we've already seen this message
+                if self.last_message_id and message.id <= self.last_message_id:
+                    continue
+                    
+                # Update last message ID
+                self.last_message_id = message.id
+                
+                # Process message
+                logger.info(f"New message from {message.author}: {message.content[:50]}...")
+                
+                # Parse the message
+                parsed_data = parse_message(message.content)
+                
+                # Add message metadata
+                parsed_data['message_id'] = str(message.id)
+                parsed_data['author'] = str(message.author)
+                parsed_data['timestamp'] = message.created_at.isoformat()
+                
+                # Call message handlers
+                for handler in _message_handlers:
+                    try:
+                        handler(parsed_data)
+                    except Exception as e:
+                        logger.error(f"Error in message handler: {e}")
+                
         except Exception as e:
-            logger.error(f"Error checking for trading setups: {e}")
-    
-    @check_for_setups.before_loop
-    async def before_check_for_setups(self):
-        """Wait until the bot is ready before starting the task loop."""
+            logger.error(f"Error checking for messages: {e}")
+            
+    @check_for_messages.before_loop
+    async def before_check_for_messages(self):
+        """Wait until the bot is ready before starting the task."""
         await self.wait_until_ready()
 
-def initialize_discord_client():
-    """Initialize the Discord client if credentials are available."""
-    global discord_client
+def is_discord_available() -> bool:
+    """
+    Check if Discord connection is available.
     
-    if not DISCORD_APP_TOKEN:
-        logger.warning("Discord bot token not found in environment variables")
+    Returns:
+        True if Discord token is configured and client is connected
+    """
+    token = os.environ.get('DISCORD_BOT_TOKEN')
+    channel_id = os.environ.get('DISCORD_CHANNEL_ID')
+    
+    if not token or not channel_id:
+        logger.warning("Discord token or channel ID not set")
         return False
         
-    if not (CHANNEL_BOT_DIALOGUE_ID and CHANNEL_APLUS_SETUPS_ID):
-        logger.warning("Discord channel IDs not properly configured")
-        return False
+    return _is_connected
+
+def init_discord_client() -> bool:
+    """
+    Initialize Discord client.
+    
+    Returns:
+        Success status
+    """
+    global _client, _is_connected
     
     try:
-        discord_client = APlusTradingClient()
+        # Check for Discord token
+        token = os.environ.get('DISCORD_BOT_TOKEN')
+        channel_id = os.environ.get('DISCORD_CHANNEL_ID')
         
-        # Run the bot in a separate thread to avoid blocking
-        def _run_bot():
-            try:
-                discord_client.run(DISCORD_APP_TOKEN)
-            except Exception as e:
-                logger.error(f"Error in Discord bot thread: {e}")
-                
-        import threading
-        thread = threading.Thread(target=_run_bot, daemon=True)
-        thread.start()
-        
-        logger.info("Discord client initialized and running")
+        if not token or not channel_id:
+            logger.warning("Discord token or channel ID not set")
+            return False
+            
+        # Create client if not already created
+        if not _client:
+            _client = TradingDiscordClient()
+            _client.channel_id = channel_id
+            
+            # Start the client in a background task
+            asyncio.create_task(_run_discord_client(token))
+            
+            # Wait a bit for connection
+            asyncio.sleep(2)
+            
         return True
         
     except Exception as e:
         logger.error(f"Error initializing Discord client: {e}")
         return False
 
-def shutdown_discord_client():
-    """Gracefully shut down the Discord client."""
-    global discord_client, client_ready
-    if discord_client and client_ready:
-        try:
-            asyncio.run_coroutine_threadsafe(
-                discord_client.close(),
-                discord_client.loop
-            )
-            client_ready = False
-            discord_client = None
-            logger.info("Discord client shut down successfully")
-        except Exception as e:
-            logger.error(f"Error shutting down Discord client: {e}")
-
-def send_message(channel_id: int, message: str) -> bool:
+async def _run_discord_client(token: str) -> None:
     """
-    Send a message to a Discord channel.
+    Run the Discord client.
     
     Args:
-        channel_id: Discord channel ID
-        message: Message content to send
-        
-    Returns:
-        bool: Success or failure
+        token: Discord bot token
     """
-    if not client_ready or not discord_client:
-        logger.warning("Discord client not ready")
-        return False
-
-    chan = discord_client.get_channel(channel_id)
-    if chan is None:
-        try:
-            future = asyncio.run_coroutine_threadsafe(
-                discord_client.fetch_channel(channel_id),
-                discord_client.loop
-            )
-            chan = future.result(timeout=10)
-        except Exception as e:
-            logger.error(f"Couldn't fetch channel {channel_id}: {e}")
-            return False
-
+    global _is_connected
+    
     try:
-        # Schedule the coroutine in the bot's event loop
-        future = asyncio.run_coroutine_threadsafe(
-            chan.send(message),
-            discord_client.loop
-        )
-        future.result(timeout=10)
-        logger.info(f"Message sent to channel {channel_id}")
+        logger.info("Starting Discord client")
+        _is_connected = True
+        await _client.start(token)
+    except Exception as e:
+        logger.error(f"Error running Discord client: {e}")
+        _is_connected = False
+    finally:
+        _is_connected = False
+
+def shutdown_discord_client() -> bool:
+    """
+    Shutdown Discord client.
+    
+    Returns:
+        Success status
+    """
+    global _client, _is_connected
+    
+    try:
+        if _client:
+            asyncio.create_task(_client.close())
+            _client = None
+            _is_connected = False
         return True
     except Exception as e:
-        logger.error(f"Failed to send message: {e}")
+        logger.error(f"Error shutting down Discord client: {e}")
         return False
 
-def send_bot_message(message: str) -> bool:
+def register_message_handler(handler_func) -> bool:
     """
-    Send a message to the bot dialogue channel.
+    Register a function to be called when a new message is received.
     
     Args:
-        message: Message content to send
+        handler_func: Function that takes a parsed message dict as input
         
     Returns:
-        bool: Success status (or None if Discord unavailable)
+        Success status
     """
-    if not CHANNEL_BOT_DIALOGUE_ID:
-        logger.warning("Bot dialogue channel ID not configured")
+    global _message_handlers
+    
+    try:
+        _message_handlers.append(handler_func)
+        return True
+    except Exception as e:
+        logger.error(f"Error registering message handler: {e}")
         return False
-    
-    return send_message(CHANNEL_BOT_DIALOGUE_ID, message)
 
-def send_status_update(message: str) -> bool:
+def unregister_message_handler(handler_func) -> bool:
     """
-    Send a status update to the bot dialogue channel.
+    Unregister a message handler.
     
     Args:
-        message: Status update message
+        handler_func: Function to unregister
         
     Returns:
-        bool: Success status (or None if Discord unavailable)
+        Success status
     """
-    formatted_message = f"**Status Update**: {message}"
-    return send_bot_message(formatted_message)
-
-def send_trade_alert(symbol: str, alert_type: str, details: str) -> bool:
-    """
-    Send a trade alert to the bot dialogue channel.
+    global _message_handlers
     
-    Args:
-        symbol: Stock symbol
-        alert_type: Type of alert (entry, exit, etc.)
-        details: Alert details
-        
-    Returns:
-        bool: Success status (or None if Discord unavailable)
-    """
-    formatted_message = f"**Trade Alert [{symbol}]**: {alert_type}\n{details}"
-    return send_bot_message(formatted_message)
-
-def send_error_notification(error_type: str, details: str) -> bool:
-    """
-    Send an error notification to the bot dialogue channel.
-    
-    Args:
-        error_type: Type of error
-        details: Error details
-        
-    Returns:
-        bool: Success status (or None if Discord unavailable)
-    """
-    formatted_message = f"**Error [{error_type}]**: {details}"
-    return send_bot_message(formatted_message)
-
-def send_test_message(message: str) -> bool:
-    """
-    Send a message to the test channel.
-    
-    Args:
-        message: Message to send
-    
-    Returns:
-        bool: Success status (or None if Discord unavailable)
-    """
-    if not CHANNEL_TEST_ID:
-        logger.warning("Test channel ID not configured")
+    try:
+        if handler_func in _message_handlers:
+            _message_handlers.remove(handler_func)
+        return True
+    except Exception as e:
+        logger.error(f"Error unregistering message handler: {e}")
         return False
-    
-    return send_message(CHANNEL_TEST_ID, message)
 
-def is_client_ready() -> bool:
-    """Check if the Discord client is ready."""
-    return client_ready
-
-def get_channel_messages(after: Optional[datetime] = None) -> List[dict]:
+async def fetch_recent_messages(limit: int = 10) -> List[Dict]:
     """
-    Get recent messages from the A+ setups channel.
+    Fetch recent messages from the Discord channel.
     
     Args:
-        after: Only fetch messages after this timestamp
-    
+        limit: Maximum number of messages to fetch
+        
     Returns:
-        List of message dictionaries with 'content' and 'timestamp' keys
+        List of parsed message dictionaries
     """
-    if not client_ready or not discord_client:
+    global _client
+    
+    if not _client or not _client.is_ready:
         logger.warning("Discord client not ready")
         return []
-
-    if not CHANNEL_APLUS_SETUPS_ID:
-        logger.warning("A+ setups channel ID not configured")
-        return []
-
-    async def _fetch_setups() -> List[dict]:
-        chan = discord_client.get_channel(CHANNEL_APLUS_SETUPS_ID)
-        if chan is None:
-            try:
-                chan = await discord_client.fetch_channel(CHANNEL_APLUS_SETUPS_ID)
-            except Exception as e:
-                logger.error(f"Couldn't fetch channel {CHANNEL_APLUS_SETUPS_ID}: {e}")
-                return []
+        
+    try:
+        channel = _client.get_channel(int(_client.channel_id))
+        if not channel:
+            logger.warning(f"Could not find channel with ID {_client.channel_id}")
+            return []
             
         messages = []
-        async for msg in chan.history(limit=20, after=after):
-            # Extract msg.content or fall back to first embed.description
-            text = msg.content or next((e.description for e in msg.embeds if e.description), "")
-            messages.append({
-                "id": str(msg.id),
-                "content": text or "(no text/attachments)",
-                "timestamp": msg.created_at,
-                "author": str(msg.author),
-            })
+        async for message in channel.history(limit=limit):
+            # Parse message
+            parsed_data = parse_message(message.content)
+            
+            # Add message metadata
+            parsed_data['message_id'] = str(message.id)
+            parsed_data['author'] = str(message.author)
+            parsed_data['timestamp'] = message.created_at.isoformat()
+            
+            messages.append(parsed_data)
+            
         return messages
-
-    try:
-        future = asyncio.run_coroutine_threadsafe(
-            _fetch_setups(),
-            discord_client.loop
-        )
-        return future.result(timeout=15)
+        
     except Exception as e:
-        logger.error(f"Error fetching messages: {e}")
+        logger.error(f"Error fetching recent messages: {e}")
         return []
