@@ -1,494 +1,249 @@
 """
-Real-time Market Data Feed Module
+Market Data Feed Module
 
-This module provides functionality for subscribing to and consuming real-time
-market data, including quotes, trades, and bars/candles.
+This module provides real-time market data feeds for stocks and options.
 """
-import os
 import logging
-import json
-import asyncio
-import threading
-from typing import Dict, List, Set, Optional, Union, Any, Callable
-from datetime import datetime
-from queue import Queue
+import time
+from typing import Dict, List, Optional, Set, Callable
+from threading import Lock
 
-from alpaca.data.live import StockDataStream
-
-# Define model classes directly since the imports are giving trouble
-class QuoteData:
-    def __init__(self, symbol=None, bid_price=None, ask_price=None, bid_size=None, ask_size=None, timestamp=None):
-        self.symbol = symbol
-        self.bid_price = bid_price
-        self.ask_price = ask_price
-        self.bid_size = bid_size
-        self.ask_size = ask_size
-        self.timestamp = timestamp
-
-class TradeData:
-    def __init__(self, symbol=None, price=None, size=None, timestamp=None, id=None, exchange=None):
-        self.symbol = symbol
-        self.price = price
-        self.size = size
-        self.timestamp = timestamp
-        self.id = id
-        self.exchange = exchange
-        
-class BarData:
-    def __init__(self, symbol=None, open=None, high=None, low=None, close=None, volume=None, timestamp=None, timeframe=None):
-        self.symbol = symbol
-        self.open = open
-        self.high = high
-        self.low = low
-        self.close = close
-        self.volume = volume
-        self.timestamp = timestamp
-        self.timeframe = timeframe
-
-from features.market.history import get_latest_price
+from features.alpaca.client import get_stock_data_client, get_latest_bars, get_latest_quotes
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-# Get API credentials from environment variables
-ALPACA_API_KEY = os.environ.get('ALPACA_API_KEY')
-ALPACA_API_SECRET = os.environ.get('ALPACA_API_SECRET')
+# Global state
+_subscribed_tickers = set()
+_ticker_data = {}  # Stores latest data for each ticker
+_price_callbacks = {}  # Callbacks to be called when price updates
+_lock = Lock()  # For thread safety
 
-class MarketDataFeed:
+def subscribe_to_ticker(ticker: str) -> bool:
     """
-    Service for streaming real-time market data.
-    """
+    Subscribe to real-time data for a ticker.
     
-    def __init__(self):
-        """Initialize the market data feed."""
-        self.stream = None
-        self.initialized = False
-        self.connected = False
-        self.running = False
-        self.subscribed_symbols = set()
-        self.quote_callbacks = []
-        self.trade_callbacks = []
-        self.bar_callbacks = []
+    Args:
+        ticker: Ticker symbol to subscribe to
         
-        # Data caches
-        self.quotes = {}  # Latest quotes by symbol
-        self.trades = {}  # Latest trades by symbol
-        self.bars = {}    # Latest bars by symbol
-        
-        # Initialize client
-        self.initialized = self._initialize_stream()
-        if self.initialized:
-            logger.info("Market data stream initialized successfully")
-        else:
-            logger.warning("Failed to initialize market data stream")
-            
-        # Start the feed
-        self.start()
-        
-    def _initialize_stream(self) -> bool:
-        """
-        Initialize the Alpaca data stream.
-        
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        if not ALPACA_API_KEY or not ALPACA_API_SECRET:
-            logger.warning("Alpaca API credentials not found in environment variables")
-            return False
-            
-        try:
-            # Create the data stream client
-            self.stream = StockDataStream(ALPACA_API_KEY, ALPACA_API_SECRET)
-            
-            # Set up callbacks
-            self.stream.quote_handlers.append(self._handle_quote)
-            self.stream.trade_handlers.append(self._handle_trade)
-            self.stream.bar_handlers.append(self._handle_bar)
-            
-            return True
-        except Exception as e:
-            logger.error(f"Error initializing market data stream: {e}")
-            return False
-            
-    def start(self):
-        """Start the market data feed."""
-        if not self.initialized or not self.stream:
-            logger.warning("Market data stream not initialized")
-            return False
-            
-        if self.running:
-            logger.info("Market data feed already running")
-            return True
-            
-        try:
-            # Start connection thread
-            self.running = True
-            self.feed_thread = threading.Thread(target=self._run_feed)
-            self.feed_thread.daemon = True
-            self.feed_thread.start()
-            logger.info("Market data feed started")
-            return True
-        except Exception as e:
-            logger.error(f"Error starting market data feed: {e}")
-            self.running = False
-            return False
-            
-    def _run_feed(self):
-        """Run the market data feed in a thread."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Connect to the stream
-            loop.run_until_complete(self._connect())
-            
-            # Run the event loop
-            loop.run_forever()
-        except Exception as e:
-            logger.error(f"Error in market data feed thread: {e}")
-        finally:
-            self.running = False
-            loop.close()
-            
-    async def _connect(self):
-        """Connect to the data stream."""
-        if not self.initialized or not self.stream:
-            logger.warning("Market data stream not initialized")
-            return
-            
-        try:
-            # Connect to the stream
-            await self.stream.connect()
-            self.connected = True
-            logger.info("Connected to market data stream")
-            
-            # Resubscribe to any previously subscribed symbols
-            if self.subscribed_symbols:
-                symbols = list(self.subscribed_symbols)
-                await self.stream.subscribe_quotes(symbols)
-                await self.stream.subscribe_trades(symbols)
-                await self.stream.subscribe_bars(symbols)
-                logger.info(f"Resubscribed to {len(symbols)} symbols")
-        except Exception as e:
-            logger.error(f"Error connecting to market data stream: {e}")
-            self.connected = False
-            
-    def _handle_quote(self, quote: Union[QuoteData, Dict]):
-        """
-        Handle quote update from the stream.
-        
-        Args:
-            quote: Quote update
-        """
-        try:
-            # Convert to dict if needed
-            if not isinstance(quote, dict):
-                # Extract symbol
-                symbol = quote.symbol
-                
-                # Format quote data
-                quote_dict = {
-                    'symbol': symbol,
-                    'bid_price': float(quote.bid_price) if quote.bid_price else None,
-                    'bid_size': int(quote.bid_size) if quote.bid_size else 0,
-                    'ask_price': float(quote.ask_price) if quote.ask_price else None,
-                    'ask_size': int(quote.ask_size) if quote.ask_size else 0,
-                    'timestamp': quote.timestamp.isoformat() if quote.timestamp else datetime.now().isoformat()
-                }
-                
-                # Calculate mid price
-                if quote_dict['bid_price'] and quote_dict['ask_price']:
-                    quote_dict['mid_price'] = (quote_dict['bid_price'] + quote_dict['ask_price']) / 2
-                else:
-                    quote_dict['mid_price'] = None
-            else:
-                # Already a dict
-                symbol = quote.get('symbol')
-                quote_dict = quote
-                
-            # Skip if no symbol
-            if not symbol:
-                return
-                
-            # Cache the quote
-            self.quotes[symbol] = quote_dict
-            
-            # Notify callbacks
-            for callback in self.quote_callbacks:
-                try:
-                    callback(quote_dict)
-                except Exception as e:
-                    logger.error(f"Error in quote callback: {e}")
-        except Exception as e:
-            logger.error(f"Error handling quote: {e}")
-            
-    def _handle_trade(self, trade: Union[TradeData, Dict]):
-        """
-        Handle trade update from the stream.
-        
-        Args:
-            trade: Trade update
-        """
-        try:
-            # Convert to dict if needed
-            if not isinstance(trade, dict):
-                # Extract symbol
-                symbol = trade.symbol
-                
-                # Format trade data
-                trade_dict = {
-                    'symbol': symbol,
-                    'price': float(trade.price) if trade.price else None,
-                    'size': int(trade.size) if trade.size else 0,
-                    'timestamp': trade.timestamp.isoformat() if trade.timestamp else datetime.now().isoformat(),
-                    'trade_id': trade.id,
-                    'exchange': trade.exchange
-                }
-            else:
-                # Already a dict
-                symbol = trade.get('symbol')
-                trade_dict = trade
-                
-            # Skip if no symbol
-            if not symbol:
-                return
-                
-            # Cache the trade
-            self.trades[symbol] = trade_dict
-            
-            # Notify callbacks
-            for callback in self.trade_callbacks:
-                try:
-                    callback(trade_dict)
-                except Exception as e:
-                    logger.error(f"Error in trade callback: {e}")
-        except Exception as e:
-            logger.error(f"Error handling trade: {e}")
-            
-    def _handle_bar(self, bar: Union[BarData, Dict]):
-        """
-        Handle bar/candle update from the stream.
-        
-        Args:
-            bar: Bar/candle update
-        """
-        try:
-            # Convert to dict if needed
-            if not isinstance(bar, dict):
-                # Extract symbol
-                symbol = bar.symbol
-                
-                # Format bar data
-                bar_dict = {
-                    'symbol': symbol,
-                    'open': float(bar.open) if bar.open else None,
-                    'high': float(bar.high) if bar.high else None,
-                    'low': float(bar.low) if bar.low else None,
-                    'close': float(bar.close) if bar.close else None,
-                    'volume': int(bar.volume) if bar.volume else 0,
-                    'timestamp': bar.timestamp.isoformat() if bar.timestamp else datetime.now().isoformat(),
-                    'timeframe': bar.timeframe
-                }
-            else:
-                # Already a dict
-                symbol = bar.get('symbol')
-                bar_dict = bar
-                
-            # Skip if no symbol
-            if not symbol:
-                return
-                
-            # Cache the bar
-            self.bars[symbol] = bar_dict
-            
-            # Notify callbacks
-            for callback in self.bar_callbacks:
-                try:
-                    callback(bar_dict)
-                except Exception as e:
-                    logger.error(f"Error in bar callback: {e}")
-        except Exception as e:
-            logger.error(f"Error handling bar: {e}")
-            
-    async def subscribe(self, symbols: List[str]) -> bool:
-        """
-        Subscribe to real-time data for symbols.
-        
-        Args:
-            symbols: List of symbols to subscribe to
-            
-        Returns:
-            bool: True if subscription successful, False otherwise
-        """
-        if not self.initialized or not self.stream:
-            logger.warning("Market data stream not initialized")
-            return False
-            
-        if not self.connected:
-            logger.warning("Not connected to market data stream")
-            return False
-            
-        try:
-            # Add to subscribed symbols
-            new_symbols = [s for s in symbols if s not in self.subscribed_symbols]
-            for symbol in new_symbols:
-                self.subscribed_symbols.add(symbol)
-                
-            if not new_symbols:
-                logger.info("No new symbols to subscribe to")
+    Returns:
+        Success status
+    """
+    global _subscribed_tickers
+    
+    try:
+        with _lock:
+            if ticker in _subscribed_tickers:
+                logger.info(f"Already subscribed to {ticker}")
                 return True
                 
-            # Subscribe to quotes, trades, and bars
-            await self.stream.subscribe_quotes(new_symbols)
-            await self.stream.subscribe_trades(new_symbols)
-            await self.stream.subscribe_bars(new_symbols)
+            # Add to subscribed tickers
+            _subscribed_tickers.add(ticker)
+            logger.info(f"Subscribed to {ticker}")
             
-            logger.info(f"Subscribed to {len(new_symbols)} symbols")
+            # Initialize data
+            _ticker_data[ticker] = {
+                'latest_price': None,
+                'latest_bid': None,
+                'latest_ask': None,
+                'latest_volume': None,
+                'last_updated': time.time()
+            }
+            
+            # Get initial data
+            update_ticker_data(ticker)
+            
             return True
-        except Exception as e:
-            logger.error(f"Error subscribing to symbols: {e}")
-            return False
-            
-    async def unsubscribe(self, symbols: List[str]) -> bool:
-        """
-        Unsubscribe from real-time data for symbols.
-        
-        Args:
-            symbols: List of symbols to unsubscribe from
-            
-        Returns:
-            bool: True if unsubscription successful, False otherwise
-        """
-        if not self.initialized or not self.stream:
-            logger.warning("Market data stream not initialized")
-            return False
-            
-        if not self.connected:
-            logger.warning("Not connected to market data stream")
-            return False
-            
-        try:
-            # Remove from subscribed symbols
-            for symbol in symbols:
-                if symbol in self.subscribed_symbols:
-                    self.subscribed_symbols.remove(symbol)
-                    
-            # Unsubscribe from quotes, trades, and bars
-            await self.stream.unsubscribe_quotes(symbols)
-            await self.stream.unsubscribe_trades(symbols)
-            await self.stream.unsubscribe_bars(symbols)
-            
-            logger.info(f"Unsubscribed from {len(symbols)} symbols")
-            return True
-        except Exception as e:
-            logger.error(f"Error unsubscribing from symbols: {e}")
-            return False
-            
-    def get_last_quote(self, symbol: str) -> Optional[Dict]:
-        """
-        Get the last quote for a symbol.
-        
-        Args:
-            symbol: Symbol to get quote for
-            
-        Returns:
-            Quote dictionary or None if not available
-        """
-        return self.quotes.get(symbol)
-        
-    def get_last_trade(self, symbol: str) -> Optional[Dict]:
-        """
-        Get the last trade for a symbol.
-        
-        Args:
-            symbol: Symbol to get trade for
-            
-        Returns:
-            Trade dictionary or None if not available
-        """
-        return self.trades.get(symbol)
-        
-    def get_last_bar(self, symbol: str) -> Optional[Dict]:
-        """
-        Get the last bar/candle for a symbol.
-        
-        Args:
-            symbol: Symbol to get bar for
-            
-        Returns:
-            Bar dictionary or None if not available
-        """
-        return self.bars.get(symbol)
-        
-    def register_quote_callback(self, callback: Callable[[Dict], None]):
-        """
-        Register a callback for quote updates.
-        
-        Args:
-            callback: Function to call with quote updates
-        """
-        self.quote_callbacks.append(callback)
-        
-    def register_trade_callback(self, callback: Callable[[Dict], None]):
-        """
-        Register a callback for trade updates.
-        
-        Args:
-            callback: Function to call with trade updates
-        """
-        self.trade_callbacks.append(callback)
-        
-    def register_bar_callback(self, callback: Callable[[Dict], None]):
-        """
-        Register a callback for bar/candle updates.
-        
-        Args:
-            callback: Function to call with bar updates
-        """
-        self.bar_callbacks.append(callback)
-        
-    def get_current_price(self, symbol: str) -> Optional[float]:
-        """
-        Get the current price for a symbol.
-        
-        This method tries to get the price from various sources in this order:
-        1. Last trade price
-        2. Last quote mid price
-        3. Last bar close price
-        4. Historical data
-        
-        Args:
-            symbol: Symbol to get price for
-            
-        Returns:
-            Current price or None if not available
-        """
-        # Try last trade
-        trade = self.get_last_trade(symbol)
-        if trade and trade.get('price'):
-            return trade['price']
-            
-        # Try last quote
-        quote = self.get_last_quote(symbol)
-        if quote and quote.get('mid_price'):
-            return quote['mid_price']
-            
-        # Try last bar
-        bar = self.get_last_bar(symbol)
-        if bar and bar.get('close'):
-            return bar['close']
-            
-        # Try historical data as a last resort
-        return get_latest_price(symbol)
+    except Exception as e:
+        logger.error(f"Error subscribing to ticker {ticker}: {e}")
+        return False
 
-# Global instance
-_market_feed = MarketDataFeed()
-
-def get_market_feed() -> MarketDataFeed:
+def unsubscribe_from_ticker(ticker: str) -> bool:
     """
-    Get the global market data feed instance.
+    Unsubscribe from a ticker.
+    
+    Args:
+        ticker: Ticker symbol to unsubscribe from
+        
+    Returns:
+        Success status
+    """
+    global _subscribed_tickers
+    
+    try:
+        with _lock:
+            if ticker not in _subscribed_tickers:
+                logger.info(f"Not subscribed to {ticker}")
+                return True
+                
+            # Remove from subscribed tickers
+            _subscribed_tickers.remove(ticker)
+            
+            # Remove data
+            if ticker in _ticker_data:
+                del _ticker_data[ticker]
+                
+            # Remove callbacks
+            if ticker in _price_callbacks:
+                del _price_callbacks[ticker]
+                
+            logger.info(f"Unsubscribed from {ticker}")
+            return True
+    except Exception as e:
+        logger.error(f"Error unsubscribing from ticker {ticker}: {e}")
+        return False
+
+def get_subscribed_tickers() -> Set[str]:
+    """
+    Get all subscribed tickers.
     
     Returns:
-        MarketDataFeed instance
+        Set of subscribed ticker symbols
     """
-    return _market_feed
+    return _subscribed_tickers.copy()
+
+def update_ticker_data(ticker: str) -> bool:
+    """
+    Update data for a ticker.
+    
+    Args:
+        ticker: Ticker symbol to update
+        
+    Returns:
+        Success status
+    """
+    try:
+        # Get latest bar
+        bars = get_latest_bars([ticker])
+        
+        # Get latest quote
+        quotes = get_latest_quotes([ticker])
+        
+        with _lock:
+            if ticker not in _ticker_data:
+                _ticker_data[ticker] = {}
+                
+            # Update price from bar
+            if ticker in bars:
+                bar = bars[ticker]
+                _ticker_data[ticker]['latest_price'] = bar.get('close')
+                _ticker_data[ticker]['latest_volume'] = bar.get('volume')
+                
+            # Update bid/ask from quote
+            if ticker in quotes:
+                quote = quotes[ticker]
+                _ticker_data[ticker]['latest_bid'] = quote.get('bid_price')
+                _ticker_data[ticker]['latest_ask'] = quote.get('ask_price')
+                
+            _ticker_data[ticker]['last_updated'] = time.time()
+            
+            # Call price callbacks
+            if ticker in _price_callbacks and _ticker_data[ticker].get('latest_price'):
+                for callback in _price_callbacks[ticker]:
+                    try:
+                        callback(ticker, _ticker_data[ticker]['latest_price'])
+                    except Exception as e:
+                        logger.error(f"Error in price callback for {ticker}: {e}")
+                        
+            return True
+    except Exception as e:
+        logger.error(f"Error updating ticker data for {ticker}: {e}")
+        return False
+
+def get_latest_price(ticker: str) -> Optional[float]:
+    """
+    Get latest price for a ticker.
+    
+    Args:
+        ticker: Ticker symbol
+        
+    Returns:
+        Latest price or None if not available
+    """
+    if ticker not in _ticker_data:
+        # Subscribe if not already
+        subscribe_to_ticker(ticker)
+        
+        # Update data
+        update_ticker_data(ticker)
+        
+    if ticker in _ticker_data:
+        # Check if data is stale (older than 60 seconds)
+        if _ticker_data[ticker].get('last_updated', 0) < time.time() - 60:
+            update_ticker_data(ticker)
+            
+        return _ticker_data[ticker].get('latest_price')
+        
+    return None
+
+def get_ticker_data(ticker: str) -> Dict:
+    """
+    Get all data for a ticker.
+    
+    Args:
+        ticker: Ticker symbol
+        
+    Returns:
+        Dictionary containing ticker data
+    """
+    if ticker not in _ticker_data:
+        # Subscribe if not already
+        subscribe_to_ticker(ticker)
+        
+        # Update data
+        update_ticker_data(ticker)
+        
+    if ticker in _ticker_data:
+        return _ticker_data[ticker].copy()
+        
+    return {}
+
+def register_price_callback(ticker: str, callback: Callable[[str, float], None]) -> bool:
+    """
+    Register a callback to be called when price updates.
+    
+    Args:
+        ticker: Ticker symbol
+        callback: Function to call when price updates, takes ticker and price as arguments
+        
+    Returns:
+        Success status
+    """
+    global _price_callbacks
+    
+    try:
+        with _lock:
+            if ticker not in _price_callbacks:
+                _price_callbacks[ticker] = []
+                
+            _price_callbacks[ticker].append(callback)
+            
+            # Subscribe if not already
+            if ticker not in _subscribed_tickers:
+                subscribe_to_ticker(ticker)
+                
+            return True
+    except Exception as e:
+        logger.error(f"Error registering price callback for {ticker}: {e}")
+        return False
+
+def initialize_feed() -> bool:
+    """
+    Initialize the market data feed.
+    
+    Returns:
+        Success status
+    """
+    try:
+        logger.info("Initializing market data feed...")
+        
+        # Check if stock data client is available
+        client = get_stock_data_client()
+        if not client:
+            logger.warning("Stock data client not available")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing market data feed: {e}")
+        return False
