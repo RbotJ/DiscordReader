@@ -92,6 +92,28 @@ def register_socketio_events():
                     'price': 0,  # Will be filled with real data later
                     'timestamp': datetime.now().isoformat()
                 })
+    
+    @socketio.on('subscribe_setups')
+    def handle_subscribe_setups():
+        """
+        Handle setup subscription requests.
+        Allows clients to receive real-time notifications for new trading setups.
+        """
+        logging.info("Client subscribed to trading setup notifications")
+        
+        # Emit confirmation back to the client
+        emit('subscription_response', {'status': 'success', 'type': 'setups'})
+        
+        # Get most recent setup to send as initial data
+        try:
+            from features.setups.multi_ticker_controller import get_recent_setups
+            recent_setups = get_recent_setups(limit=1)
+            
+            if recent_setups and len(recent_setups) > 0:
+                # Send the most recent setup as initial data
+                emit('new_setup', recent_setups[0])
+        except Exception as e:
+            logging.error(f"Error sending initial setup data: {e}")
 
 def register_feature_routes(app):
     """Register feature-specific routes from the features directory."""

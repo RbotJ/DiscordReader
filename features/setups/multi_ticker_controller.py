@@ -2,6 +2,7 @@
 Multi-Ticker Controller Module
 
 This module provides controller functions for handling multi-ticker setup messages.
+It also handles real-time notifications for new setups.
 """
 import logging
 from datetime import datetime, date
@@ -28,6 +29,17 @@ from common.models import (
     ComparisonType,
     BiasDirection
 )
+
+# Import Socket.IO for real-time updates
+from flask_socketio import emit
+try:
+    from main import socketio
+except ImportError:
+    # Mock socketio object for testing
+    class MockSocketIO:
+        def emit(self, *args, **kwargs):
+            pass
+    socketio = MockSocketIO()
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -160,6 +172,23 @@ def save_to_database(setup_message: TradeSetupMessage) -> Optional[int]:
         
         # Log success
         logger.info(f"Saved setup message with ID {message_id} containing {len(db_message.ticker_setups)} ticker setups")
+        
+        # Prepare data for real-time notification
+        notification_data = {
+            'id': message_id,
+            'date': db_message.date.isoformat() if db_message.date else None,
+            'source': db_message.source,
+            'created_at': db_message.created_at.isoformat() if db_message.created_at else None,
+            'ticker_count': len(db_message.ticker_setups),
+            'ticker_symbols': [ts.symbol for ts in db_message.ticker_setups]
+        }
+        
+        # Emit real-time notification to all connected clients
+        try:
+            socketio.emit('new_setup', notification_data, namespace='/')
+            logger.info(f"Emitted real-time notification for setup ID {message_id}")
+        except Exception as e:
+            logger.warning(f"Failed to emit real-time notification: {str(e)}")
         
         return message_id
         
