@@ -1,0 +1,5 @@
+run = ["sh", "./run_trade_monitor.sh"]
+language = "python"
+
+[env]
+PYTHONPATH = "${PYTHONPATH}:./"
