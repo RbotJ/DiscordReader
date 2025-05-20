@@ -550,10 +550,10 @@ def register_api_routes(app, db):
         """
         try:
             # Import the Discord client function
-            from features.discord.message_fetcher import fetch_latest_messages
+            from features.discord.client import get_channel_messages
             
             # Get messages directly from Discord
-            messages = await fetch_latest_messages()
+            messages = get_channel_messages()
             
             # Return as JSON
             return jsonify({
