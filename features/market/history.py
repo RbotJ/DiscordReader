@@ -1,20 +1,18 @@
 """
 Historical Market Data Module
 
-This module provides access to historical market data for stocks and options
-using the Alpaca API. It handles data fetching, caching, and transformation.
+This module provides functionality for retrieving historical market data,
+including bars/candles for various timeframes and symbol information.
 """
 import os
 import logging
 from typing import Dict, List, Optional, Union, Any
-from datetime import datetime, timedelta, date
-import pandas as pd
+from datetime import datetime, timedelta, timezone
 
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import Adjustment
-from alpaca.common.exceptions import APIError
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -23,37 +21,24 @@ logger = logging.getLogger(__name__)
 ALPACA_API_KEY = os.environ.get('ALPACA_API_KEY')
 ALPACA_API_SECRET = os.environ.get('ALPACA_API_SECRET')
 
-# Dictionary to map timeframe strings to TimeFrame objects
-TIMEFRAMES = {
-    '1m': TimeFrame(1, TimeFrameUnit.Minute),
-    '5m': TimeFrame(5, TimeFrameUnit.Minute),
-    '15m': TimeFrame(15, TimeFrameUnit.Minute),
-    '30m': TimeFrame(30, TimeFrameUnit.Minute),
-    '1h': TimeFrame(1, TimeFrameUnit.Hour),
-    '1d': TimeFrame(1, TimeFrameUnit.Day),
-    # Legacy format support
-    '1Min': TimeFrame(1, TimeFrameUnit.Minute),
-    '5Min': TimeFrame(5, TimeFrameUnit.Minute),
-    '15Min': TimeFrame(15, TimeFrameUnit.Minute),
-    '30Min': TimeFrame(30, TimeFrameUnit.Minute),
-    '1Hour': TimeFrame(1, TimeFrameUnit.Hour),
-    '1Day': TimeFrame(1, TimeFrameUnit.Day),
-}
-
-class MarketHistoryProvider:
+class HistoricalDataProvider:
     """
-    Provider for historical market data using Alpaca API.
+    Service for retrieving historical market data.
     """
     
     def __init__(self):
-        """Initialize the market history provider."""
+        """Initialize the historical data provider."""
         self.client = None
         self.initialized = False
-        self.data_cache = {}  # Simple in-memory cache
+        self.cache = {}  # Simple cache for historical data
+        self.cache_ttl = 60  # Cache TTL in seconds
+        self.initialized = self._initialize_client()
         
-        # Initialize client
-        self._initialize_client()
-        
+        if self.initialized:
+            logger.info("Historical data client initialized successfully")
+        else:
+            logger.warning("Failed to initialize historical data client")
+            
     def _initialize_client(self) -> bool:
         """
         Initialize the Alpaca historical data client.
@@ -67,108 +52,108 @@ class MarketHistoryProvider:
             
         try:
             self.client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
-            self.initialized = True
-            logger.info("Historical data client initialized successfully")
             return True
         except Exception as e:
             logger.error(f"Error initializing historical data client: {e}")
             return False
             
-    def get_bars(
+    def _parse_timeframe(self, timeframe_str: str) -> TimeFrame:
+        """
+        Parse a timeframe string into a TimeFrame object.
+        
+        Args:
+            timeframe_str: Timeframe string (e.g., '1m', '5m', '1h', '1d')
+            
+        Returns:
+            TimeFrame object
+        """
+        # Parse the number and unit
+        if timeframe_str.endswith('m'):
+            multiplier = int(timeframe_str[:-1])
+            return TimeFrame.Minute(multiplier)
+        elif timeframe_str.endswith('h'):
+            multiplier = int(timeframe_str[:-1])
+            return TimeFrame.Hour(multiplier)
+        elif timeframe_str.endswith('d'):
+            multiplier = int(timeframe_str[:-1])
+            return TimeFrame.Day(multiplier)
+        else:
+            # Default to 1 minute
+            logger.warning(f"Unknown timeframe: {timeframe_str}, using 1m")
+            return TimeFrame.Minute(1)
+            
+    def _format_candle(self, symbol: str, bar: Any) -> Dict:
+        """
+        Format a bar/candle object into a dictionary.
+        
+        Args:
+            symbol: Symbol for the bar/candle
+            bar: Bar/candle object from Alpaca
+            
+        Returns:
+            Formatted candle dictionary
+        """
+        return {
+            'symbol': symbol,
+            'timestamp': bar.timestamp.isoformat(),
+            'open': float(bar.open),
+            'high': float(bar.high),
+            'low': float(bar.low),
+            'close': float(bar.close),
+            'volume': int(bar.volume)
+        }
+        
+    def get_candles(
         self,
         symbol: str,
         timeframe: str = '5m',
-        start: Optional[Union[datetime, date, str]] = None,
-        end: Optional[Union[datetime, date, str]] = None,
-        limit: int = 100,
-        adjustment: str = 'all'
-    ) -> Optional[pd.DataFrame]:
+        start: Optional[Union[str, datetime]] = None,
+        end: Optional[Union[str, datetime]] = None,
+        limit: int = 100
+    ) -> List[Dict]:
         """
-        Get historical bars for a symbol.
+        Get historical candle data for a symbol.
         
         Args:
-            symbol: Ticker symbol
-            timeframe: Bar timeframe (e.g., '1m', '5m', '1d')
+            symbol: Symbol to get data for
+            timeframe: Candle timeframe (e.g., '1m', '5m', '1h', '1d')
             start: Start date/time (optional)
             end: End date/time (optional)
-            limit: Maximum number of bars to return
-            adjustment: Price adjustment ('raw', 'split', 'dividend', 'all')
+            limit: Maximum number of candles to return
             
         Returns:
-            DataFrame with bar data or None on error
+            List of candle dictionaries
         """
         if not self.initialized or not self.client:
             logger.warning("Historical data client not initialized")
-            return None
-            
-        # Process timeframe
-        tf = TIMEFRAMES.get(timeframe)
-        if not tf:
-            logger.warning(f"Invalid timeframe: {timeframe}, using 5m")
-            tf = TIMEFRAMES['5m']
-            
-        # Process start and end dates
-        now = datetime.now()
-        
-        if end is None:
-            end = now
-        elif isinstance(end, str):
-            try:
-                # Try to parse as datetime
-                end = datetime.fromisoformat(end.replace('Z', '+00:00'))
-            except ValueError:
-                # Try to parse as date
-                try:
-                    end = datetime.strptime(end, '%Y-%m-%d')
-                except ValueError:
-                    logger.warning(f"Invalid end date: {end}, using current time")
-                    end = now
-        elif isinstance(end, date) and not isinstance(end, datetime):
-            # Convert date to datetime
-            end = datetime.combine(end, datetime.min.time())
-            
-        if start is None:
-            # Default to appropriate lookback based on timeframe
-            if timeframe in ['1m', '1Min']:
-                start = end - timedelta(days=1)  # 1 day for 1-minute bars
-            elif timeframe in ['5m', '5Min']:
-                start = end - timedelta(days=5)  # 5 days for 5-minute bars
-            elif timeframe in ['15m', '15Min', '30m', '30Min']:
-                start = end - timedelta(days=10)  # 10 days for 15/30-minute bars
-            elif timeframe in ['1h', '1Hour']:
-                start = end - timedelta(days=30)  # 30 days for hourly bars
-            else:
-                start = end - timedelta(days=365)  # 1 year for daily bars
-        elif isinstance(start, str):
-            try:
-                # Try to parse as datetime
-                start = datetime.fromisoformat(start.replace('Z', '+00:00'))
-            except ValueError:
-                # Try to parse as date
-                try:
-                    start = datetime.strptime(start, '%Y-%m-%d')
-                except ValueError:
-                    logger.warning(f"Invalid start date: {start}, using default lookback")
-                    start = end - timedelta(days=30)
-        elif isinstance(start, date) and not isinstance(start, datetime):
-            # Convert date to datetime
-            start = datetime.combine(start, datetime.min.time())
-            
-        # Check cache
-        cache_key = f"{symbol}_{timeframe}_{start.isoformat()}_{end.isoformat()}"
-        if cache_key in self.data_cache:
-            return self.data_cache[cache_key]
-            
-        # Process adjustment
-        adj = Adjustment.ALL
-        if adjustment.lower() == 'raw':
-            adj = Adjustment.RAW
-        elif adjustment.lower() == 'split':
-            adj = Adjustment.SPLIT
-        elif adjustment.lower() == 'dividend':
-            adj = Adjustment.DIVIDEND
+            return []
             
         try:
+            # Parse timeframe
+            tf = self._parse_timeframe(timeframe)
+            
+            # Set default start/end times if not provided
+            if end is None:
+                end = datetime.now(timezone.utc)
+            elif isinstance(end, str):
+                end = datetime.fromisoformat(end.replace('Z', '+00:00'))
+                
+            if start is None:
+                # Calculate start time based on timeframe and limit
+                if timeframe.endswith('m'):
+                    multiplier = int(timeframe[:-1])
+                    start = end - timedelta(minutes=multiplier * limit)
+                elif timeframe.endswith('h'):
+                    multiplier = int(timeframe[:-1])
+                    start = end - timedelta(hours=multiplier * limit)
+                elif timeframe.endswith('d'):
+                    multiplier = int(timeframe[:-1])
+                    start = end - timedelta(days=multiplier * limit)
+                else:
+                    start = end - timedelta(minutes=limit)
+            elif isinstance(start, str):
+                start = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                
             # Create request
             request = StockBarsRequest(
                 symbol_or_symbols=symbol,
@@ -176,145 +161,155 @@ class MarketHistoryProvider:
                 start=start,
                 end=end,
                 limit=limit,
-                adjustment=adj
+                adjustment=Adjustment.ALL
             )
             
             # Get bars
-            response = self.client.get_stock_bars(request)
+            bars = self.client.get_stock_bars(request)
             
-            # Check if we got a response for our symbol
-            if not response or symbol not in response:
+            # Check if symbol is in response
+            if not bars or symbol not in bars:
                 logger.warning(f"No data returned for {symbol}")
-                return None
+                return []
                 
-            # Convert to DataFrame
-            df = response[symbol].df
+            # Format candles
+            candles = [self._format_candle(symbol, bar) for bar in bars[symbol]]
             
-            # Cache the result
-            self.data_cache[cache_key] = df
+            # Sort by timestamp (newest last)
+            candles.sort(key=lambda x: x['timestamp'])
             
-            return df
-        except APIError as e:
-            logger.error(f"API error getting bars for {symbol}: {e}")
-            return None
+            return candles
         except Exception as e:
-            logger.error(f"Error getting bars for {symbol}: {e}", exc_info=True)
-            return None
+            logger.error(f"Error getting candles for {symbol}: {e}")
+            return []
             
-    def get_candles(
-        self,
-        symbol: str,
-        timeframe: str = '5m',
-        start: Optional[Union[datetime, date, str]] = None,
-        end: Optional[Union[datetime, date, str]] = None,
-        limit: int = 100
-    ) -> Optional[List[Dict]]:
+    def get_latest_price(self, symbol: str) -> Optional[float]:
         """
-        Get historical candles for a symbol in a format suitable for charting.
+        Get the latest price for a symbol.
         
         Args:
-            symbol: Ticker symbol
-            timeframe: Candle timeframe (e.g., '1m', '5m', '1d')
-            start: Start date/time (optional)
+            symbol: Symbol to get price for
+            
+        Returns:
+            Latest price or None if not available
+        """
+        # Get the latest candle
+        candles = self.get_candles(symbol, '1m', limit=1)
+        
+        if candles and len(candles) > 0:
+            return candles[-1]['close']
+            
+        return None
+        
+    def get_daily_candles(
+        self,
+        symbol: str,
+        days: int = 30,
+        end: Optional[Union[str, datetime]] = None
+    ) -> List[Dict]:
+        """
+        Get daily candle data for a symbol.
+        
+        Args:
+            symbol: Symbol to get data for
+            days: Number of days of history
             end: End date/time (optional)
-            limit: Maximum number of candles to return
             
         Returns:
-            List of candle dictionaries or None on error
+            List of daily candle dictionaries
         """
-        # Get bars as DataFrame
-        df = self.get_bars(symbol, timeframe, start, end, limit)
-        if df is None or df.empty:
-            return None
-            
-        # Convert to list of dictionaries
-        candles = []
-        for timestamp, row in df.iterrows():
-            candle = {
-                'timestamp': timestamp.isoformat(),
-                'open': float(row['open']),
-                'high': float(row['high']),
-                'low': float(row['low']),
-                'close': float(row['close']),
-                'volume': int(row['volume'])
-            }
-            candles.append(candle)
-            
-        return candles
+        return self.get_candles(symbol, '1d', limit=days, end=end)
         
-    def get_daily_bars(
+    def get_minute_candles(
         self,
         symbol: str,
-        start: Optional[Union[date, str]] = None,
-        end: Optional[Union[date, str]] = None,
-        limit: int = 252  # ~1 year of trading days
-    ) -> Optional[pd.DataFrame]:
+        minutes: int = 60,
+        end: Optional[Union[str, datetime]] = None
+    ) -> List[Dict]:
         """
-        Get daily bars for a symbol.
+        Get minute candle data for a symbol.
         
         Args:
-            symbol: Ticker symbol
-            start: Start date (optional)
-            end: End date (optional)
-            limit: Maximum number of bars to return
+            symbol: Symbol to get data for
+            minutes: Number of minutes of history
+            end: End date/time (optional)
             
         Returns:
-            DataFrame with daily bar data or None on error
+            List of minute candle dictionaries
         """
-        return self.get_bars(symbol, '1d', start, end, limit)
+        return self.get_candles(symbol, '1m', limit=minutes, end=end)
         
-    def get_intraday_bars(
+    def get_multiple_symbols(
         self,
-        symbol: str,
+        symbols: List[str],
         timeframe: str = '5m',
-        days: int = 5,
-        end: Optional[Union[datetime, date, str]] = None,
-        limit: int = 1000
-    ) -> Optional[pd.DataFrame]:
+        limit: int = 20
+    ) -> Dict[str, List[Dict]]:
         """
-        Get intraday bars for a symbol for the specified number of days.
+        Get candle data for multiple symbols.
         
         Args:
-            symbol: Ticker symbol
-            timeframe: Bar timeframe (e.g., '1m', '5m', '1h')
-            days: Number of days to look back
-            end: End date/time (optional, defaults to now)
-            limit: Maximum number of bars to return
+            symbols: Symbols to get data for
+            timeframe: Candle timeframe
+            limit: Maximum number of candles per symbol
             
         Returns:
-            DataFrame with intraday bar data or None on error
+            Dictionary mapping symbols to candle lists
         """
-        # Calculate start date based on days
-        if end is None:
-            end = datetime.now()
-        elif isinstance(end, str):
-            try:
-                end = datetime.fromisoformat(end.replace('Z', '+00:00'))
-            except ValueError:
-                try:
-                    end = datetime.strptime(end, '%Y-%m-%d')
-                except ValueError:
-                    end = datetime.now()
-        elif isinstance(end, date) and not isinstance(end, datetime):
-            end = datetime.combine(end, datetime.min.time())
+        result = {}
+        for symbol in symbols:
+            result[symbol] = self.get_candles(symbol, timeframe, limit=limit)
             
-        start = end - timedelta(days=days)
-        
-        return self.get_bars(symbol, timeframe, start, end, limit)
-        
-    def clear_cache(self):
-        """Clear the data cache."""
-        self.data_cache = {}
-        logger.info("Historical data cache cleared")
+        return result
 
 # Global instance
-history_provider = MarketHistoryProvider()
+_historical_data_provider = HistoricalDataProvider()
 
-def get_history_provider() -> MarketHistoryProvider:
+def get_history_provider() -> HistoricalDataProvider:
     """
-    Get the global market history provider instance.
+    Get the global historical data provider instance.
     
     Returns:
-        MarketHistoryProvider instance
+        HistoricalDataProvider instance
     """
-    return history_provider
+    return _historical_data_provider
+
+def get_candles(
+    symbol: str,
+    timeframe: str = '5m',
+    start: Optional[Union[str, datetime]] = None,
+    end: Optional[Union[str, datetime]] = None,
+    limit: int = 100
+) -> List[Dict]:
+    """
+    Get historical candle data for a symbol.
+    
+    This is a convenience function that uses the global provider instance.
+    
+    Args:
+        symbol: Symbol to get data for
+        timeframe: Candle timeframe (e.g., '1m', '5m', '1h', '1d')
+        start: Start date/time (optional)
+        end: End date/time (optional)
+        limit: Maximum number of candles to return
+        
+    Returns:
+        List of candle dictionaries
+    """
+    provider = get_history_provider()
+    return provider.get_candles(symbol, timeframe, start, end, limit)
+
+def get_latest_price(symbol: str) -> Optional[float]:
+    """
+    Get the latest price for a symbol.
+    
+    This is a convenience function that uses the global provider instance.
+    
+    Args:
+        symbol: Symbol to get price for
+        
+    Returns:
+        Latest price or None if not available
+    """
+    provider = get_history_provider()
+    return provider.get_latest_price(symbol)
