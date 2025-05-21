@@ -1,8 +1,8 @@
 """
-PostgreSQL-based Event System
+PostgreSQL-based Event and Cache System
 
-This module provides a database-backed event system that replaces Redis pub/sub
-for feature-to-feature communication in the trading application.
+This module provides a database-backed event system and caching mechanism that replaces
+Redis pub/sub and Redis caching for feature-to-feature communication in the trading application.
 """
 import json
 import logging
@@ -485,9 +485,8 @@ def get_latest_event_id(channel: Union[str, List[str]] = None) -> int:
             pass
         return 0
 
-# Price cache functions
+# Database cache functions to replace Redis
 def cache_data(key: str, data: Dict[str, Any], expiry_seconds: int = 900) -> bool:
-    from datetime import timedelta
     """
     Store data in the database cache system.
     
@@ -499,24 +498,54 @@ def cache_data(key: str, data: Dict[str, Any], expiry_seconds: int = 900) -> boo
     Returns:
         bool: True if successful, False otherwise
     """
+    # Create a new session for this operation
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for caching data")
+        return False
+    
     try:
+        from common.db_models import CacheEntryModel
+        
         # Calculate expiry time
         expiry_time = datetime.utcnow() + timedelta(seconds=expiry_seconds)
         
-        # Create event with cache data
-        event_data = {
-            'event_type': 'cache_data',
-            'data': data,
-            'expiry_time': expiry_time.isoformat()
-        }
+        # Check if cache entry already exists
+        cache_entry = session.query(CacheEntryModel).filter_by(key=key).first()
         
-        # Use the cache: prefix for all cache entries
-        cache_channel = f"cache:{key}"
+        if cache_entry:
+            # Update existing entry
+            cache_entry.value = json.dumps(data)
+            cache_entry.expires_at = expiry_time
+            cache_entry.updated_at = datetime.utcnow()
+        else:
+            # Create new cache entry
+            cache_entry = CacheEntryModel(
+                key=key,
+                value=json.dumps(data),
+                expires_at=expiry_time,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            session.add(cache_entry)
         
-        return publish_event(cache_channel, event_data)
+        # Commit changes
+        session.commit()
+        session.close()
+        return True
+        
     except Exception as e:
-        logger.error(f"Error caching data for key {key}: {e}")
+        logger.error(f"Error caching data with key {key}: {e}")
+        try:
+            session.rollback()
+        except:
+            pass
+        try:
+            session.close()
+        except:
+            pass
         return False
+
 
 def get_from_cache(key: str) -> Optional[Dict[str, Any]]:
     """

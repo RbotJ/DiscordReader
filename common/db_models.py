@@ -203,3 +203,20 @@ class NotificationModel(db.Model):
     meta_data = Column(JSON, nullable=True)  # renamed from metadata which is reserved in SQLAlchemy
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CacheEntryModel(db.Model):
+    """Cache entry for database-based caching system (replacement for Redis)."""
+    __tablename__ = 'cache_entries'
+    
+    id = Column(Integer, primary_key=True)
+    key = Column(String(255), nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Index on expires_at for cleanup of expired entries
+    __table_args__ = (
+        db.Index('idx_cache_entries_expires_at', 'expires_at'),
+    )
