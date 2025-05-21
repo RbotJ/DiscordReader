@@ -14,8 +14,8 @@ import discord
 from discord.ext import tasks
 
 from features.discord.message_parser import parse_message
-from common.events import EventChannels, publish_event
-from common.db import db
+from common.events import subscribe_to_events, publish_event, EventChannels
+from common.event_compat import event_client
 
 # Configure logger
 logger = logging.getLogger(__name__)

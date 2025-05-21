@@ -10,8 +10,9 @@ from datetime import datetime
 
 from features.options.pricing import get_options_pricing
 from features.options.selector import get_options_selector
-from common.events import EventChannels
-from common.event_compat import event_client, subscribe_to_events, publish_event
+from common.events import publish_event, EventChannels
+from common.event_compat import event_client
+from common.db import db
 
 # Configure logger
 logger = logging.getLogger(__name__)

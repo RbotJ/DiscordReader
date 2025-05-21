@@ -32,18 +32,18 @@ trading_client = None
 def initialize_trading_client() -> bool:
     """Initialize Alpaca trading client."""
     global trading_client
-    
+
     api_key = os.environ.get("ALPACA_API_KEY", app.config.get("ALPACA_API_KEY", ""))
     api_secret = os.environ.get("ALPACA_API_SECRET", app.config.get("ALPACA_API_SECRET", ""))
-    
+
     if not api_key or not api_secret:
         logger.error("Alpaca API credentials not set")
         return False
-    
+
     try:
         # Initialize Trading client for paper trading
         trading_client = TradingClient(api_key, api_secret, paper=True)
-        
+
         # Check connection by getting account info
         account = trading_client.get_account()
         if account:
@@ -52,7 +52,7 @@ def initialize_trading_client() -> bool:
         else:
             logger.error("Failed to get account info")
             return False
-    
+
     except Exception as e:
         logger.error(f"Failed to initialize trading client: {e}")
         return False
@@ -63,10 +63,10 @@ def get_account_info() -> Dict[str, Any]:
     if not trading_client:
         if not initialize_trading_client():
             return {}
-    
+
     try:
         account = trading_client.get_account()
-        
+
         return {
             "id": account.id,
             "status": account.status,
@@ -93,7 +93,7 @@ def get_account_info() -> Dict[str, Any]:
             "shorting_enabled": account.shorting_enabled,
             "pattern_day_trader": account.pattern_day_trader
         }
-    
+
     except Exception as e:
         logger.error(f"Failed to get account info: {e}")
         return {}
@@ -112,15 +112,15 @@ def place_market_order(
     if not trading_client:
         if not initialize_trading_client():
             return None
-    
+
     try:
         # Create client order ID if not provided
         if not client_order_id:
             client_order_id = f"market-{uuid.uuid4().hex[:8]}"
-        
+
         # Map side string to OrderSide enum
         order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
-        
+
         # Map time_in_force string to TimeInForce enum
         order_tif = TimeInForce.DAY
         if time_in_force.lower() == "gtc":
@@ -129,7 +129,7 @@ def place_market_order(
             order_tif = TimeInForce.IOC
         elif time_in_force.lower() == "fok":
             order_tif = TimeInForce.FOK
-        
+
         # Create order request
         order_data = MarketOrderRequest(
             symbol=symbol,
@@ -139,10 +139,10 @@ def place_market_order(
             client_order_id=client_order_id,
             extended_hours=extended_hours
         )
-        
+
         # Submit order
         order = trading_client.submit_order(order_data)
-        
+
         # Store order in database
         with app.app_context():
             new_order = OrderModel()
@@ -154,13 +154,13 @@ def place_market_order(
             new_order.type = "market"
             new_order.time_in_force = time_in_force.lower()
             new_order.status = order.status.value
-            
+
             if signal_id:
                 new_order.signal_id = signal_id
-            
+
             db.session.add(new_order)
             db.session.commit()
-            
+
             # Create notification
             notification = NotificationModel()
             notification.type = "trade"
@@ -175,13 +175,13 @@ def place_market_order(
                 "signal_id": signal_id
             }
             notification.read = False
-            
+
             db.session.add(notification)
             db.session.commit()
-        
+
         logger.info(f"Market order placed: {order.id} for {qty} {symbol} {side}")
         return order.id
-    
+
     except Exception as e:
         logger.error(f"Failed to place market order: {e}")
         return None
@@ -201,15 +201,15 @@ def place_limit_order(
     if not trading_client:
         if not initialize_trading_client():
             return None
-    
+
     try:
         # Create client order ID if not provided
         if not client_order_id:
             client_order_id = f"limit-{uuid.uuid4().hex[:8]}"
-        
+
         # Map side string to OrderSide enum
         order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
-        
+
         # Map time_in_force string to TimeInForce enum
         order_tif = TimeInForce.DAY
         if time_in_force.lower() == "gtc":
@@ -218,7 +218,7 @@ def place_limit_order(
             order_tif = TimeInForce.IOC
         elif time_in_force.lower() == "fok":
             order_tif = TimeInForce.FOK
-        
+
         # Create order request
         order_data = LimitOrderRequest(
             symbol=symbol,
@@ -230,10 +230,10 @@ def place_limit_order(
             client_order_id=client_order_id,
             extended_hours=extended_hours
         )
-        
+
         # Submit order
         order = trading_client.submit_order(order_data)
-        
+
         # Store order in database
         with app.app_context():
             new_order = OrderModel()
@@ -246,13 +246,13 @@ def place_limit_order(
             new_order.time_in_force = time_in_force.lower()
             new_order.status = order.status.value
             new_order.limit_price = limit_price
-            
+
             if signal_id:
                 new_order.signal_id = signal_id
-            
+
             db.session.add(new_order)
             db.session.commit()
-            
+
             # Create notification
             notification = NotificationModel()
             notification.type = "trade"
@@ -268,13 +268,13 @@ def place_limit_order(
                 "signal_id": signal_id
             }
             notification.read = False
-            
+
             db.session.add(notification)
             db.session.commit()
-        
+
         logger.info(f"Limit order placed: {order.id} for {qty} {symbol} {side} at {limit_price}")
         return order.id
-    
+
     except Exception as e:
         logger.error(f"Failed to place limit order: {e}")
         return None
@@ -293,15 +293,15 @@ def place_stop_order(
     if not trading_client:
         if not initialize_trading_client():
             return None
-    
+
     try:
         # Create client order ID if not provided
         if not client_order_id:
             client_order_id = f"stop-{uuid.uuid4().hex[:8]}"
-        
+
         # Map side string to OrderSide enum
         order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
-        
+
         # Map time_in_force string to TimeInForce enum
         order_tif = TimeInForce.DAY
         if time_in_force.lower() == "gtc":
@@ -310,7 +310,7 @@ def place_stop_order(
             order_tif = TimeInForce.IOC
         elif time_in_force.lower() == "fok":
             order_tif = TimeInForce.FOK
-        
+
         # Create order request
         order_data = StopOrderRequest(
             symbol=symbol,
@@ -321,10 +321,10 @@ def place_stop_order(
             time_in_force=order_tif,
             client_order_id=client_order_id
         )
-        
+
         # Submit order
         order = trading_client.submit_order(order_data)
-        
+
         # Store order in database
         with app.app_context():
             new_order = OrderModel()
@@ -337,13 +337,13 @@ def place_stop_order(
             new_order.time_in_force = time_in_force.lower()
             new_order.status = order.status.value
             new_order.stop_price = stop_price
-            
+
             if signal_id:
                 new_order.signal_id = signal_id
-            
+
             db.session.add(new_order)
             db.session.commit()
-            
+
             # Create notification
             notification = NotificationModel()
             notification.type = "trade"
@@ -359,13 +359,13 @@ def place_stop_order(
                 "signal_id": signal_id
             }
             notification.read = False
-            
+
             db.session.add(notification)
             db.session.commit()
-        
+
         logger.info(f"Stop order placed: {order.id} for {qty} {symbol} {side} at {stop_price}")
         return order.id
-    
+
     except Exception as e:
         logger.error(f"Failed to place stop order: {e}")
         return None
@@ -376,10 +376,10 @@ def get_order_status(order_id: str) -> Dict[str, Any]:
     if not trading_client:
         if not initialize_trading_client():
             return {}
-    
+
     try:
         order = trading_client.get_order(order_id)
-        
+
         result = {
             "id": order.id,
             "client_order_id": order.client_order_id,
@@ -402,21 +402,21 @@ def get_order_status(order_id: str) -> Dict[str, Any]:
             "limit_price": order.limit_price,
             "stop_price": order.stop_price
         }
-        
+
         # Update order in database
         with app.app_context():
             order_model = db.session.query(OrderModel).filter_by(alpaca_order_id=order_id).first()
-            
+
             if order_model:
                 order_model.status = order.status.value
                 order_model.filled_qty = order.filled_qty
                 order_model.filled_avg_price = order.filled_avg_price
                 order_model.updated_at = datetime.utcnow()
-                
+
                 db.session.commit()
-        
+
         return result
-    
+
     except Exception as e:
         logger.error(f"Failed to get order status for {order_id}: {e}")
         return {}
@@ -427,20 +427,20 @@ def cancel_order(order_id: str) -> bool:
     if not trading_client:
         if not initialize_trading_client():
             return False
-    
+
     try:
         trading_client.cancel_order_by_id(order_id)
-        
+
         # Update order in database
         with app.app_context():
             order_model = db.session.query(OrderModel).filter_by(alpaca_order_id=order_id).first()
-            
+
             if order_model:
                 order_model.status = "canceled"
                 order_model.updated_at = datetime.utcnow()
-                
+
                 db.session.commit()
-                
+
                 # Create notification
                 notification = NotificationModel()
                 notification.type = "trade"
@@ -454,13 +454,13 @@ def cancel_order(order_id: str) -> bool:
                     "type": order_model.type
                 }
                 notification.read = False
-                
+
                 db.session.add(notification)
                 db.session.commit()
-        
+
         logger.info(f"Order {order_id} canceled")
         return True
-    
+
     except Exception as e:
         logger.error(f"Failed to cancel order {order_id}: {e}")
         return False
@@ -472,15 +472,15 @@ def get_positions() -> List[Dict[str, Any]]:
         if not initialize_trading_client():
             logger.error("Failed to initialize trading client")
             return []
-    
+
     try:
         positions = trading_client.get_all_positions()
         if not positions:
             logger.info("No open positions found")
             return []
-        
+
         result = []
-        
+
         for position in positions:
             pos_dict = {
                 "symbol": position.symbol,
@@ -497,16 +497,16 @@ def get_positions() -> List[Dict[str, Any]]:
                 "asset_class": position.asset_class,
                 "asset_marginable": position.asset_marginable
             }
-            
+
             result.append(pos_dict)
-            
+
             # Update position in database
             with app.app_context():
                 position_model = db.session.query(PositionModel).filter_by(
                     symbol=position.symbol,
                     closed_at=None
                 ).first()
-                
+
                 if position_model:
                     # Update existing position
                     position_model.quantity = float(position.qty)
@@ -534,20 +534,20 @@ def get_positions() -> List[Dict[str, Any]]:
                     new_position.current_price = float(position.current_price)
                     new_position.lastday_price = float(position.lastday_price)
                     new_position.change_today = float(position.change_today)
-                    
+
                     db.session.add(new_position)
-                
+
                 db.session.commit()
-        
+
         # Check for closed positions
         with app.app_context():
             open_positions = db.session.query(PositionModel).filter_by(closed_at=None).all()
-            
+
             for pos in open_positions:
                 # If position not in current positions from Alpaca, mark as closed
                 if pos.symbol not in [p["symbol"] for p in result]:
                     pos.closed_at = datetime.utcnow()
-                    
+
                     # Create notification
                     notification = NotificationModel()
                     notification.type = "trade"
@@ -562,13 +562,13 @@ def get_positions() -> List[Dict[str, Any]]:
                         "unrealized_pl": pos.unrealized_pl
                     }
                     notification.read = False
-                    
+
                     db.session.add(notification)
-            
+
             db.session.commit()
-        
+
         return result
-    
+
     except Exception as e:
         logger.error(f"Failed to get positions: {e}")
         return []
@@ -582,19 +582,19 @@ def execute_signal_trade(signal_id: int) -> Dict[str, Any]:
                 "success": False,
                 "message": "Failed to initialize trading client"
             }
-    
+
     try:
         with app.app_context():
             # Get the signal
             signal = db.session.query(SignalModel).filter_by(id=signal_id).first()
-            
+
             if not signal:
                 logger.warning(f"Signal {signal_id} not found")
                 return {
                     "success": False,
                     "message": f"Signal {signal_id} not found"
                 }
-            
+
             # Get ticker setup
             ticker_setup = signal.ticker_setup
             if not ticker_setup:
@@ -603,45 +603,45 @@ def execute_signal_trade(signal_id: int) -> Dict[str, Any]:
                     "success": False,
                     "message": f"Ticker setup for signal {signal_id} not found"
                 }
-            
+
             symbol = ticker_setup.symbol
-            
+
             # Determine trade direction based on signal category
             side = "buy" if signal.category in ["breakout", "bounce"] else "sell"
-            
+
             # Default quantity
             qty = 10  # Default, should be calculated based on account size, risk, etc.
-            
+
             # Get account info
             account = get_account_info()
-            
+
             if account:
                 # Calculate quantity based on a percentage of buying power
                 # 2% of buying power per trade
                 risk_percent = 0.02
                 buying_power = account.get("buying_power", 0)
-                
+
                 # Get current price from position if available
                 positions = get_positions()
                 current_price = None
-                
+
                 for pos in positions:
                     if pos["symbol"] == symbol:
                         current_price = float(pos["current_price"])
                         break
-                
+
                 # If no position, use a default price or fetch from market data
                 if not current_price:
                     current_price = 100  # Default placeholder, should fetch real price
-                
+
                 # Calculate quantity
                 if current_price > 0:
                     max_trade_amount = buying_power * risk_percent
                     qty = int(max_trade_amount / current_price)
-                    
+
                     # Ensure minimum quantity
                     qty = max(1, qty)
-            
+
             # Adjust for short positions
             if side == "sell":
                 # Check if we have the position to sell
@@ -651,14 +651,14 @@ def execute_signal_trade(signal_id: int) -> Dict[str, Any]:
                         has_position = True
                         qty = min(qty, int(float(pos["qty"])))
                         break
-                
+
                 if not has_position:
                     logger.warning(f"No position to sell for signal {signal_id}")
                     return {
                         "success": False,
                         "message": f"No position to sell for signal {signal_id}"
                     }
-            
+
             # Place market order
             order_id = place_market_order(
                 symbol=symbol,
@@ -667,7 +667,7 @@ def execute_signal_trade(signal_id: int) -> Dict[str, Any]:
                 time_in_force="day",
                 signal_id=signal_id
             )
-            
+
             if order_id:
                 return {
                     "success": True,
@@ -682,7 +682,7 @@ def execute_signal_trade(signal_id: int) -> Dict[str, Any]:
                     "success": False,
                     "message": "Failed to place order"
                 }
-    
+
     except Exception as e:
         logger.error(f"Failed to execute signal trade for signal {signal_id}: {e}")
         return {
@@ -696,10 +696,10 @@ def get_orders(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, 
     if not trading_client:
         if not initialize_trading_client():
             return []
-    
+
     try:
         orders = []
-        
+
         if status:
             # Convert status string to enum
             status_map = {
@@ -708,16 +708,16 @@ def get_orders(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, 
                 "all": "all"
             }
             status_arg = status_map.get(status.lower(), "all")
-            
+
             # Get orders from Alpaca
             orders = trading_client.get_orders(status=status_arg, limit=limit)
         else:
             # Get all orders
             orders = trading_client.get_orders(limit=limit)
-        
+
         # Convert to dictionary format
         result = []
-        
+
         for order in orders:
             order_dict = {
                 "id": order.id,
@@ -741,13 +741,13 @@ def get_orders(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, 
                 "limit_price": order.limit_price,
                 "stop_price": order.stop_price
             }
-            
+
             result.append(order_dict)
-            
+
             # Update order in database
             with app.app_context():
                 order_model = db.session.query(OrderModel).filter_by(alpaca_order_id=order.id).first()
-                
+
                 if order_model:
                     # Update existing order
                     order_model.status = order.status.value
@@ -769,13 +769,13 @@ def get_orders(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, 
                     new_order.filled_avg_price = order.filled_avg_price
                     new_order.limit_price = order.limit_price
                     new_order.stop_price = order.stop_price
-                    
+
                     db.session.add(new_order)
-                
+
                 db.session.commit()
-        
+
         return result
-    
+
     except Exception as e:
         logger.error(f"Failed to get orders: {e}")
         return []
@@ -802,7 +802,7 @@ def orders_api():
     """Get orders, with optional filtering by status."""
     status = request.args.get('status')
     limit = request.args.get('limit', 50, type=int)
-    
+
     orders = get_orders(status, limit)
     return jsonify(orders)
 
@@ -810,19 +810,19 @@ def orders_api():
 def order_status_api(order_id):
     """Get the status of an order."""
     order = get_order_status(order_id)
-    
+
     if not order:
         return jsonify({
             "error": f"Order {order_id} not found"
         }), 404
-    
+
     return jsonify(order)
 
 @execution_routes.route('/api/execution/order/<order_id>', methods=['DELETE'])
 def cancel_order_api(order_id):
     """Cancel an open order."""
     success = cancel_order(order_id)
-    
+
     if success:
         return jsonify({
             "success": True,
@@ -841,17 +841,17 @@ def execute_trade_api():
         return jsonify({
             "error": "Request must be JSON"
         }), 400
-    
+
     data = request.get_json()
     signal_id = data.get('signal_id')
-    
+
     if not signal_id:
         return jsonify({
             "error": "Signal ID is required"
         }), 400
-    
+
     result = execute_signal_trade(signal_id)
-    
+
     if result.get("success"):
         return jsonify(result)
     else:
@@ -864,18 +864,18 @@ def place_order_api():
         return jsonify({
             "error": "Request must be JSON"
         }), 400
-    
+
     data = request.get_json()
-    
+
     # Validate required fields
     required_fields = ['symbol', 'qty', 'side', 'type']
     missing_fields = [field for field in required_fields if field not in data]
-    
+
     if missing_fields:
         return jsonify({
             "error": f"Missing required fields: {', '.join(missing_fields)}"
         }), 400
-    
+
     # Extract fields
     symbol = data.get('symbol').upper()
     qty = int(data.get('qty'))
@@ -884,22 +884,22 @@ def place_order_api():
     time_in_force = data.get('time_in_force', 'day').lower()
     extended_hours = data.get('extended_hours', False)
     signal_id = data.get('signal_id')
-    
+
     # Check side
     if side not in ['buy', 'sell']:
         return jsonify({
             "error": "Side must be 'buy' or 'sell'"
         }), 400
-    
+
     # Check type
     if order_type not in ['market', 'limit', 'stop']:
         return jsonify({
             "error": "Type must be 'market', 'limit', or 'stop'"
         }), 400
-    
+
     # Place order based on type
     order_id = None
-    
+
     if order_type == 'market':
         order_id = place_market_order(
             symbol=symbol,
@@ -911,12 +911,12 @@ def place_order_api():
         )
     elif order_type == 'limit':
         limit_price = data.get('limit_price')
-        
+
         if not limit_price:
             return jsonify({
                 "error": "Limit price is required for limit orders"
             }), 400
-        
+
         order_id = place_limit_order(
             symbol=symbol,
             qty=qty,
@@ -928,12 +928,12 @@ def place_order_api():
         )
     elif order_type == 'stop':
         stop_price = data.get('stop_price')
-        
+
         if not stop_price:
             return jsonify({
                 "error": "Stop price is required for stop orders"
             }), 400
-        
+
         order_id = place_stop_order(
             symbol=symbol,
             qty=qty,
@@ -942,7 +942,7 @@ def place_order_api():
             time_in_force=time_in_force,
             signal_id=signal_id
         )
-    
+
     if order_id:
         return jsonify({
             "success": True,
