@@ -14,6 +14,9 @@ from typing import Dict, List, Set, Any, Optional
 from common.events import EventChannels
 from common.event_compat import event_client, subscribe_to_events, publish_event
 from features.market.historical_data import get_historical_data
+from common.db import db
+from common.db_models import CandleModel
+from common.events import publish_event, EventChannels
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -452,4 +455,3 @@ def detector_running() -> bool:
     global _thread_running, _detector_thread
 
     return _thread_running and _detector_thread is not None and _detector_thread.is_alive()
-```
