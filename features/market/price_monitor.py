@@ -2,7 +2,7 @@
 Price Monitor Module
 
 This module provides real-time price monitoring for tracked symbols
-and publishes price updates to Redis channels.
+and publishes price updates using PostgreSQL-based event system.
 """
 import logging
 import threading
@@ -10,22 +10,19 @@ import time
 from datetime import datetime
 from typing import Dict, List, Set, Any, Optional
 
-from common.redis_utils import RedisClient
+from common.events import publish_event, EventChannels, update_price_cache, get_price_from_cache
 from features.alpaca.client import get_latest_quote, alpaca_market_client
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Redis client for publishing price updates
-redis_client = RedisClient()
 
 # Thread control variables
 _monitor_thread = None
 _thread_running = False
 _monitored_symbols: Set[str] = set()
 
-# Price cache to avoid unnecessary updates
-_price_cache: Dict[str, Dict[str, Any]] = {}
+# In-memory cache for quick access during processing
+_local_price_cache: Dict[str, Dict[str, Any]] = {}
 
 def init_price_monitor() -> bool:
     """
