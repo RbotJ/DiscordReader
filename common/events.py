@@ -62,10 +62,8 @@ class EventEntry(Base):
     id = Column(Integer, primary_key=True)
     channel = Column(String(100), nullable=False, index=True)
     event_type = Column(String(100), nullable=False, index=True)
-    event_data = Column(Text, nullable=True)  # Using event_data instead of data
-    processed = Column(Boolean, default=False, index=True)
+    payload = Column(Text, nullable=True)  # Using payload instead of event_data
     created_at = Column(DateTime, default=datetime.utcnow)
-    processed_at = Column(DateTime, nullable=True)
 
 # Global connection and thread state
 _db_engine = None
@@ -144,7 +142,9 @@ def publish_event(channel: str, data: Dict[str, Any]) -> bool:
     """
     global _message_counters
     
-    if not _db_session:
+    # Create a fresh session for each publish operation
+    session = get_session()
+    if not session:
         logger.error("Event system not initialized")
         return False
     
@@ -156,7 +156,7 @@ def publish_event(channel: str, data: Dict[str, Any]) -> bool:
         event = EventEntry(
             channel=channel,
             event_type=event_type,
-            data=json.dumps(data),
+            payload=json.dumps(data),
             created_at=datetime.utcnow()
         )
         
@@ -400,8 +400,8 @@ def poll_events(channel: Union[str, List[str]], last_id: int = 0, count: int = 1
         for event in events:
             try:
                 # Convert JSON data to dictionary
-                if event.data:
-                    data = json.loads(event.data)
+                if event.payload:
+                    data = json.loads(event.payload)
                     
                     # Add event metadata
                     data['_event_id'] = event.id
@@ -409,7 +409,7 @@ def poll_events(channel: Union[str, List[str]], last_id: int = 0, count: int = 1
                     
                     result.append(data)
             except Exception as e:
-                logger.error(f"Error parsing event data for ID {event.id}: {e}")
+                logger.error(f"Error parsing event payload for ID {event.id}: {e}")
         
         # Close the session
         session.close()
