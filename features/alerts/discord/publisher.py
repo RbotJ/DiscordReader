@@ -16,6 +16,7 @@ from discord.ext import commands
 from common.events import subscribe_to_events, publish_event, EventChannels
 from common.db_models import NotificationModel
 from common.db import db
+from common.event_compat import event_client
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -461,11 +462,11 @@ def register_alert_commands(bot: commands.Bot):
     async def test_alert(self, alert_type: str, test_data: Optional[Dict] = None) -> bool:
         """
         Send a test alert to verify the system
-        
+
         Args:
             alert_type: Type of alert to test
             test_data: Optional test data, uses defaults if None
-            
+
         Returns:
             bool: True if alert was sent successfully
         """
@@ -475,5 +476,5 @@ def register_alert_commands(bot: commands.Bot):
                 'price': 100.00,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
         return await self.publish_alert(alert_type, test_data)
