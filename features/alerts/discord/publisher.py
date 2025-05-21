@@ -2,7 +2,7 @@
 Discord Alert Publisher
 
 This module handles publishing alerts to Discord channels based on
-trading signals and events from the Redis event system.
+trading signals and events from the PostgreSQL event system.
 """
 
 import logging
@@ -13,12 +13,13 @@ from typing import Dict, Any, Optional, List, Union
 import discord
 from discord.ext import commands
 
-from common.redis_utils import RedisClient, EventChannels, subscribe_to_channel
+from common.events import subscribe_to_events, publish_event, EventChannels
+from common.db_models import NotificationModel
+from common.db import db
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Standard alert types
 class AlertTypes:
     """Standard alert types for the application"""
     BREAKOUT = "breakout_alert"
@@ -31,7 +32,7 @@ class AlertTypes:
     BIAS_FLIP = "bias_flip_alert"
     PRICE_TARGET = "price_target_alert"
     ERROR = "error_alert"
-    
+
     @classmethod
     def all_types(cls) -> List[str]:
         """Get all alert types as a list"""
@@ -43,110 +44,98 @@ class AlertTypes:
 
 class AlertPublisher:
     """Handles publishing alerts to Discord channels"""
-    
+
     def __init__(self, bot: commands.Bot):
-        """
-        Initialize the alert publisher
-        
-        Args:
-            bot: The Discord bot
-        """
+        """Initialize the alert publisher"""
         self.bot = bot
-        self.redis_client = RedisClient()
         self._running = False
-        
-        # Map Redis event channels to alert types
+
+        # Map event channels to alert types
         self.channel_mapping = {
             EventChannels.SIGNAL_TRIGGERED: AlertTypes.SIGNAL_TRIGGERED,
             EventChannels.TRADE_EXECUTED: AlertTypes.TRADE_EXECUTED,
             EventChannels.POSITION_UPDATED: AlertTypes.POSITION_UPDATE,
-            EventChannels.POSITION_CLOSED: AlertTypes.POSITION_UPDATE,
-            EventChannels.ERROR: AlertTypes.ERROR
+            'error': AlertTypes.ERROR
         }
-        
-        # Ensure the channel manager is available
+
         if not hasattr(bot, 'channel_manager'):
-            logger.error("Channel manager not available. Make sure channel_manager.py is loaded first.")
-    
+            logger.error("Channel manager not available")
+
     def start(self):
         """Start the alert publisher"""
         if self._running:
             logger.warning("Alert publisher is already running")
             return False
-        
-        # Subscribe to all relevant Redis channels
+
+        # Subscribe to events
         for channel in self.channel_mapping.keys():
-            logger.info(f"Subscribing to Redis channel: {channel}")
-            subscribe_to_channel(channel, self._handle_event)
-        
+            logger.info(f"Subscribing to event channel: {channel}")
+            subscribe_to_events(channel, self._handle_event)
+
         self._running = True
         logger.info("Alert publisher started")
         return True
-    
+
     def stop(self):
         """Stop the alert publisher"""
         if not self._running:
             logger.warning("Alert publisher is not running")
             return False
-        
+
         self._running = False
         logger.info("Alert publisher stopped")
         return True
-    
-    def _handle_event(self, data: Dict[str, Any]):
-        """
-        Handle a Redis event
-        
-        Args:
-            data: Event data from Redis
-        """
+
+    async def _handle_event(self, self, data: Dict[str, Any]):
+        """Handle an event from PostgreSQL"""
         try:
-            # Get channel name from message data
-            channel = data.get('_channel', '')  # Redis includes source channel in message
-            
-            # Map to alert type
-            alert_type = self.channel_mapping.get(channel)
+            event_type = data.get('event_type', '')
+            alert_type = self.channel_mapping.get(event_type)
+
             if not alert_type:
-                logger.warning(f"No alert type mapping for channel: {channel}")
+                logger.warning(f"No alert type mapping for event: {event_type}")
                 return
-            
+
+            # Create and store notification
+            notification = NotificationModel(
+                type=alert_type,
+                title=self._get_alert_title(alert_type, data),
+                message=json.dumps(data),
+                meta_data=data
+            )
+
+            try:
+                db.session.add(notification)
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Error storing notification: {e}")
+                db.session.rollback()
+                return
+
             # Create and publish alert
             alert_data = self._create_alert_data(alert_type, data)
-            asyncio.create_task(self.publish_alert(alert_type, alert_data))
-            
+            await self.publish_alert(alert_type, alert_data)
+
         except Exception as e:
-            logger.error(f"Error handling Redis event: {e}")
-    
+            logger.error(f"Error handling event: {e}")
+
     def _create_alert_data(self, alert_type: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create alert data from event data
-        
-        Args:
-            alert_type: The type of alert
-            event_data: Event data from Redis
-            
-        Returns:
-            Dict[str, Any]: Alert data
-        """
-        # Start with common data
+        """Create alert data from event data"""
         alert_data = {
             "type": alert_type,
             "timestamp": datetime.now().isoformat(),
             "source_event": event_data
         }
-        
-        # Add alert-specific data based on type
+
         if alert_type == AlertTypes.SIGNAL_TRIGGERED:
-            # Extract relevant data from signal triggered event
             alert_data.update({
                 "symbol": event_data.get('symbol', 'Unknown'),
                 "signal_id": event_data.get('signal_id'),
                 "category": event_data.get('category', 'Unknown'),
                 "trigger_price": event_data.get('trigger_price')
             })
-        
+
         elif alert_type == AlertTypes.TRADE_EXECUTED:
-            # Extract relevant data from trade executed event
             alert_data.update({
                 "symbol": event_data.get('symbol', 'Unknown'),
                 "side": event_data.get('side', 'Unknown'),
@@ -154,9 +143,8 @@ class AlertPublisher:
                 "price": event_data.get('price'),
                 "order_id": event_data.get('order_id')
             })
-        
+
         elif alert_type == AlertTypes.POSITION_UPDATE:
-            # Extract relevant data from position update event
             alert_data.update({
                 "symbol": event_data.get('symbol', 'Unknown'),
                 "quantity": event_data.get('quantity'),
@@ -165,25 +153,24 @@ class AlertPublisher:
                 "unrealized_pl": event_data.get('unrealized_pl'),
                 "unrealized_plpc": event_data.get('unrealized_plpc')
             })
-        
+
         elif alert_type == AlertTypes.ERROR:
-            # Extract relevant data from error event
             alert_data.update({
                 "error_message": event_data.get('message', 'Unknown error'),
                 "error_code": event_data.get('code'),
                 "component": event_data.get('component', 'Unknown')
             })
-        
+
         return alert_data
-    
+
     async def publish_alert(self, alert_type: str, alert_data: Dict[str, Any]) -> bool:
         """
         Publish an alert to the appropriate Discord channel
-        
+
         Args:
             alert_type: The type of alert
             alert_data: Alert data
-            
+
         Returns:
             bool: True if published successfully, False otherwise
         """
@@ -192,32 +179,32 @@ class AlertPublisher:
             if not hasattr(self.bot, 'channel_manager'):
                 logger.error("Channel manager not available")
                 return False
-            
+
             channel = self.bot.channel_manager.get_alert_channel(alert_type)
             if not channel:
                 logger.warning(f"No channel set for alert type: {alert_type}")
                 return False
-            
+
             # Format the alert message
             embed = self._format_alert_embed(alert_type, alert_data)
-            
+
             # Send the message
             await channel.send(embed=embed)
             logger.info(f"Published {alert_type} alert to #{channel.name}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error publishing alert: {e}")
             return False
-    
+
     def _format_alert_embed(self, alert_type: str, alert_data: Dict[str, Any]) -> discord.Embed:
         """
         Format an alert as a Discord embed
-        
+
         Args:
             alert_type: The type of alert
             alert_data: Alert data
-            
+
         Returns:
             discord.Embed: Formatted embed
         """
@@ -234,48 +221,48 @@ class AlertPublisher:
             AlertTypes.PRICE_TARGET: discord.Color.green(),
             AlertTypes.ERROR: discord.Color.dark_red()
         }
-        
+
         # Default color if not found
         color = colors.get(alert_type, discord.Color.default())
-        
+
         # Create basic embed
         embed = discord.Embed(
             title=self._get_alert_title(alert_type, alert_data),
             color=color,
             timestamp=datetime.now()
         )
-        
+
         # Add alert-specific fields
         if alert_type == AlertTypes.SIGNAL_TRIGGERED:
             symbol = alert_data.get('symbol', 'Unknown')
             category = alert_data.get('category', 'Unknown')
             price = alert_data.get('trigger_price', 'Unknown')
-            
+
             embed.add_field(name="Symbol", value=symbol, inline=True)
             embed.add_field(name="Signal", value=category.title(), inline=True)
             embed.add_field(name="Price", value=f"${price}" if price != 'Unknown' else price, inline=True)
-            
+
             # Add thumbnail if it's a major stock
             if symbol in ['SPY', 'QQQ', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']:
                 embed.set_thumbnail(url=f"https://logo.clearbit.com/{symbol}.com")
-        
+
         elif alert_type == AlertTypes.TRADE_EXECUTED:
             symbol = alert_data.get('symbol', 'Unknown')
             side = alert_data.get('side', 'Unknown').upper()
             quantity = alert_data.get('quantity', 'Unknown')
             price = alert_data.get('price', 'Unknown')
-            
+
             embed.add_field(name="Symbol", value=symbol, inline=True)
             embed.add_field(name="Side", value=side, inline=True)
             embed.add_field(name="Quantity", value=quantity, inline=True)
             embed.add_field(name="Price", value=f"${price}" if price != 'Unknown' else price, inline=True)
-            
+
             # Set color based on buy/sell
             if side == 'BUY':
                 embed.color = discord.Color.green()
             elif side == 'SELL':
                 embed.color = discord.Color.red()
-        
+
         elif alert_type == AlertTypes.POSITION_UPDATE:
             symbol = alert_data.get('symbol', 'Unknown')
             quantity = alert_data.get('quantity', 'Unknown')
@@ -283,48 +270,48 @@ class AlertPublisher:
             current_price = alert_data.get('current_price', 'Unknown')
             pl = alert_data.get('unrealized_pl', 'Unknown')
             plpc = alert_data.get('unrealized_plpc', 'Unknown')
-            
+
             embed.add_field(name="Symbol", value=symbol, inline=True)
             embed.add_field(name="Quantity", value=quantity, inline=True)
             embed.add_field(name="Entry Price", value=f"${entry_price}" if entry_price != 'Unknown' else entry_price, inline=True)
             embed.add_field(name="Current Price", value=f"${current_price}" if current_price != 'Unknown' else current_price, inline=True)
-            
+
             # Format P/L
             if pl != 'Unknown' and plpc != 'Unknown':
                 pl_sign = '+' if float(pl) >= 0 else ''
                 plpc_sign = '+' if float(plpc) >= 0 else ''
                 pl_formatted = f"{pl_sign}${pl:.2f} ({plpc_sign}{plpc:.2f}%)"
-                
+
                 # Set color based on P/L
                 if float(pl) > 0:
                     embed.color = discord.Color.green()
                 elif float(pl) < 0:
                     embed.color = discord.Color.red()
-                
+
                 embed.add_field(name="Unrealized P/L", value=pl_formatted, inline=True)
-        
+
         elif alert_type == AlertTypes.ERROR:
             component = alert_data.get('component', 'Unknown')
             message = alert_data.get('error_message', 'Unknown error')
             code = alert_data.get('error_code', 'N/A')
-            
+
             embed.add_field(name="Component", value=component, inline=True)
             embed.add_field(name="Error Code", value=code, inline=True)
             embed.add_field(name="Message", value=message, inline=False)
-        
+
         # Add footer with timestamp
         embed.set_footer(text=f"A+ Trading | {alert_type}")
-        
+
         return embed
-    
+
     def _get_alert_title(self, alert_type: str, alert_data: Dict[str, Any]) -> str:
         """
         Get the title for an alert embed
-        
+
         Args:
             alert_type: The type of alert
             alert_data: Alert data
-            
+
         Returns:
             str: Alert title
         """
@@ -332,13 +319,13 @@ class AlertPublisher:
             symbol = alert_data.get('symbol', 'Unknown')
             category = alert_data.get('category', 'Unknown').title()
             return f"🔔 Signal Triggered: {category} on {symbol}"
-            
+
         elif alert_type == AlertTypes.TRADE_EXECUTED:
             symbol = alert_data.get('symbol', 'Unknown')
             side = alert_data.get('side', 'Unknown').upper()
             emoji = "🟢" if side == "BUY" else "🔴" if side == "SELL" else "🔄"
             return f"{emoji} Trade Executed: {side} {symbol}"
-            
+
         elif alert_type == AlertTypes.POSITION_UPDATE:
             symbol = alert_data.get('symbol', 'Unknown')
             if 'unrealized_pl' in alert_data:
@@ -347,10 +334,10 @@ class AlertPublisher:
                 return f"{emoji} Position Update: {symbol}"
             else:
                 return f"🔄 Position Update: {symbol}"
-                
+
         elif alert_type == AlertTypes.ERROR:
             return f"⚠️ Error: {alert_data.get('component', 'System')}"
-            
+
         else:
             # Default title for other alert types
             readable_type = alert_type.replace('_', ' ').title()
@@ -359,42 +346,42 @@ class AlertPublisher:
 def setup(bot: commands.Bot):
     """
     Set up the alert publisher for the bot
-    
+
     Args:
         bot: The Discord bot
     """
     # Create alert publisher
     bot.alert_publisher = AlertPublisher(bot)
-    
+
     # Start on ready
     @bot.event
     async def on_ready():
         if hasattr(bot, 'alert_publisher'):
             bot.alert_publisher.start()
             logger.info("Alert publisher started")
-        
+
     # Register commands
     register_alert_commands(bot)
 
 def register_alert_commands(bot: commands.Bot):
     """
     Register alert-related commands
-    
+
     Args:
         bot: The Discord bot
     """
     # Only add if alert_group doesn't already exist
     if not any(cmd.name == "alert" for cmd in bot.tree.get_commands()):
         return
-    
+
     # The alert command group should be registered by channel_manager.py
     # We'll retrieve it to add additional commands
     alert_group = next((cmd for cmd in bot.tree.get_commands() if cmd.name == "alert"), None)
-    
+
     if not alert_group:
         logger.warning("Alert command group not found, can't register alert commands")
         return
-    
+
     @alert_group.command(name="test", description="Send a test alert to a channel")
     @app_commands.describe(
         alert_type="The type of alert to test",
@@ -405,7 +392,7 @@ def register_alert_commands(bot: commands.Bot):
         for alert_type in AlertTypes.all_types()
     ])
     async def test_alert(
-        interaction: discord.Interaction, 
+        interaction: discord.Interaction,
         alert_type: str,
         symbol: str = "SPY"
     ):
@@ -414,24 +401,24 @@ def register_alert_commands(bot: commands.Bot):
         if not interaction.user.guild_permissions.manage_guild and not any(role.name == "Admin" for role in interaction.user.roles):
             await interaction.response.send_message("❌ You need 'Manage Server' permission or 'Admin' role to use this command.", ephemeral=True)
             return
-        
+
         # Check if the alert type has a channel configured
         if not hasattr(bot, 'channel_manager'):
             await interaction.response.send_message("❌ Channel manager not available.", ephemeral=True)
             return
-            
+
         channel = bot.channel_manager.get_alert_channel(alert_type)
         if not channel:
             await interaction.response.send_message(f"❌ No channel configured for alert type '{alert_type}'. Use `/alert set_channel` first.", ephemeral=True)
             return
-        
+
         # Create test alert data
         test_data = {
             "type": alert_type,
             "symbol": symbol,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         # Add type-specific test data
         if alert_type == AlertTypes.SIGNAL_TRIGGERED:
             test_data.update({
@@ -460,11 +447,11 @@ def register_alert_commands(bot: commands.Bot):
                 "error_message": "This is a test error message",
                 "error_code": "TEST-001"
             })
-        
+
         # Send the test alert
         if hasattr(bot, 'alert_publisher'):
             success = await bot.alert_publisher.publish_alert(alert_type, test_data)
-            
+
             if success:
                 await interaction.response.send_message(f"✅ Test alert sent to #{channel.name}", ephemeral=True)
             else:
