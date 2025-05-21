@@ -31,15 +31,9 @@ else:
     logger.warning("DATABASE_URL not set. Using SQLite for development.")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///aplus_trading.db"
 
-# Configure Redis connection
-from common.redis_utils import RedisClient, ensure_redis_is_running
-# Try to start Redis server first
+# Initialize event system
+from common.redis_utils import ensure_redis_is_running, redis_client
 ensure_redis_is_running()
-redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
-# Initialize the global redis client
-import common.redis_utils
-redis_client = RedisClient(redis_url)
-common.redis_utils.redis_client = redis_client
 
 # Configure Alpaca API credentials
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
