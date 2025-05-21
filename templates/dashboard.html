@@ -108,7 +108,7 @@
         <div class="col-12">
           <div class="card">
             <div class="card-header">
-              <h5 class="mb-0">Today's Trading Setups</h5>
+              <h5 class="mb-0">Today's Trading Setups - <span id="setup-date">Loading...</span></h5>
             </div>
             <div class="card-body">
               <div id="tickersContainer">
@@ -382,13 +382,11 @@
       day: 'numeric'
     });
     
-    const header = document.createElement('div');
-    header.className = 'alert alert-primary mb-4';
-    header.innerHTML = `
-      <h5 class="mb-0">Today's Trading Setups</h5>
-      <p class="mb-0">Trade setups for ${formattedDate}</p>
-    `;
-    container.appendChild(header);
+    // Update the setup date in the header
+    const setupDateElement = document.getElementById('setup-date');
+    if (setupDateElement) {
+      setupDateElement.textContent = formattedDate;
+    }
     
     // Create a container for the ticker cards - each in its own row
     const cardsContainer = document.createElement('div');

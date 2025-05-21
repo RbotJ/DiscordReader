@@ -102,11 +102,22 @@ function renderCandlestickChart(ticker, candles, priceLevels) {
     const data = [];
     
     // Add candlestick trace
-    const times = candles.map(candle => new Date(candle.t));
-    const opens = candles.map(candle => candle.o);
-    const highs = candles.map(candle => candle.h);
-    const lows = candles.map(candle => candle.l);
-    const closes = candles.map(candle => candle.c);
+    // Filter out any candles with timestamps in the future (based on NYSE time)
+    const nyseNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    
+    // Filter candles to only include those with timestamps before the current NYSE time
+    const validCandles = candles.filter(candle => new Date(candle.t) <= nyseNow);
+    
+    // If we filtered out candles, log a message
+    if (validCandles.length < candles.length) {
+        console.log(`Filtered out ${candles.length - validCandles.length} future candles for ${ticker}`);
+    }
+    
+    const times = validCandles.map(candle => new Date(candle.t));
+    const opens = validCandles.map(candle => candle.o);
+    const highs = validCandles.map(candle => candle.h);
+    const lows = validCandles.map(candle => candle.l);
+    const closes = validCandles.map(candle => candle.c);
     
     data.push({
         x: times,
