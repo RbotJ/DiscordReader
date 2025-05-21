@@ -694,6 +694,73 @@ def clean_expired_cache() -> int:
         return 0
 
 
+# Event subscription and retrieval functions
+def subscribe_to_events(event_type: str) -> bool:
+    """
+    Subscribe to events of a specific type.
+    
+    This is a placeholder function for the PostgreSQL-based event system.
+    With PostgreSQL, we don't need to explicitly subscribe to events.
+    
+    Args:
+        event_type: The type of event to subscribe to
+        
+    Returns:
+        bool: True (always successful for PostgreSQL)
+    """
+    logger.info(f"Subscribing to events of type: {event_type}")
+    return True
+
+
+def get_latest_event(event_type: str) -> Optional[Dict[str, Any]]:
+    """
+    Get the latest event of a specific type from the database.
+    
+    Args:
+        event_type: The type of event to retrieve
+        
+    Returns:
+        Dict or None: The latest event or None if not found
+    """
+    # Create a new session for this operation
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for retrieving latest event")
+        return None
+    
+    try:
+        from common.db_models import EventModel
+        
+        # Get the latest event of this type
+        latest_event = session.query(EventModel).filter_by(
+            event_type=event_type
+        ).order_by(
+            EventModel.created_at.desc()
+        ).first()
+        
+        # No event found
+        if not latest_event:
+            session.close()
+            return None
+        
+        # Parse the event data
+        try:
+            event_data = json.loads(latest_event.data)
+            session.close()
+            return event_data
+        except:
+            session.close()
+            return {"data": latest_event.data}
+        
+    except Exception as e:
+        logger.error(f"Error retrieving latest event of type {event_type}: {e}")
+        try:
+            session.close()
+        except:
+            pass
+        return None
+
+
 # Price cache functions
 def update_price_cache(ticker: str, price: float, timestamp: Optional[datetime] = None) -> bool:
     """
@@ -740,16 +807,6 @@ def get_price_from_cache(ticker: str) -> Optional[Dict[str, Any]]:
     
     # Get the price data from cache
     return get_from_cache(cache_key)
-        timestamp: Optional timestamp, defaults to now
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    global _price_cache
-    
-    if not timestamp:
-        timestamp = datetime.utcnow()
-    
     _price_cache[ticker] = {
         'price': price,
         'timestamp': timestamp.isoformat() if isinstance(timestamp, datetime) else timestamp
