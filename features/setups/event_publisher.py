@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
     """
-    Publish a setup message created event to Redis.
+    Publish a setup message created event to the PostgreSQL event system.
     
     Args:
         setup_message: The trade setup message to publish
@@ -26,12 +26,6 @@ def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
         bool: True if published successfully, False otherwise
     """
     try:
-        # Get Redis client
-        redis_client = get_redis_client()
-        if not redis_client:
-            logger.warning("Redis client not available, using fallback")
-            return _publish_to_fallback(setup_message)
-        
         # Prepare event data
         event_data = {
             "event_type": "setup_created",
@@ -43,15 +37,20 @@ def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
             }
         }
         
-        # Publish to Redis
-        redis_client.publish(
-            SETUP_CREATED_CHANNEL,
-            json.dumps(event_data)
+        # Publish to PostgreSQL event system
+        success = publish_event(
+            EventType.DISCORD_SETUP_MESSAGE_RECEIVED, 
+            event_data,
+            SETUP_CREATED_CHANNEL
         )
+        
+        if not success:
+            logger.warning("Database event system not available, using fallback")
+            return _publish_to_fallback(setup_message)
         
         # Also publish individual signal events
         for ticker_setup in setup_message.setups:
-            _publish_signals_for_ticker(redis_client, ticker_setup)
+            _publish_signals_for_ticker(ticker_setup)
         
         return True
     
@@ -60,12 +59,11 @@ def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
         return _publish_to_fallback(setup_message)
 
 
-def _publish_signals_for_ticker(redis_client, ticker_setup: TickerSetup) -> None:
+def _publish_signals_for_ticker(ticker_setup: TickerSetup) -> None:
     """
     Publish signal events for a ticker setup.
     
     Args:
-        redis_client: The Redis client to use
         ticker_setup: The ticker setup to publish signals for
     """
     for signal in ticker_setup.signals:
@@ -90,16 +88,17 @@ def _publish_signals_for_ticker(redis_client, ticker_setup: TickerSetup) -> None
                 "price": ticker_setup.bias.price
             }
         
-        # Publish to Redis
-        redis_client.publish(
-            SIGNAL_CREATED_CHANNEL,
-            json.dumps(event_data)
+        # Publish to PostgreSQL event system
+        publish_event(
+            EventType.SIGNAL_TRIGGERED,
+            event_data,
+            SIGNAL_CREATED_CHANNEL
         )
 
 
 def _publish_to_fallback(setup_message: TradeSetupMessage) -> bool:
     """
-    Publish to fallback mechanism when Redis is not available.
+    Publish to fallback mechanism when database is not available.
     Logs the events that would have been published.
     
     Args:
