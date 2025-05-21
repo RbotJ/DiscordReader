@@ -64,8 +64,8 @@ def main():
     # Display today's tickers or "Awaiting Trade Theory"
     st.header("Today's Active Tickers")
     
+    # Create columns for ticker display
     if todays_tickers:
-        # Create columns for ticker display
         cols = st.columns(len(todays_tickers) if len(todays_tickers) <= 6 else 6)
         
         for i, ticker in enumerate(todays_tickers):
@@ -74,17 +74,6 @@ def main():
                 st.metric(label=f"${ticker}", value="Active")
         
         st.success(f"Found {message_count} authentic trading message(s) from today with {len(todays_tickers)} active ticker(s)")
-    else:
-        st.info("Awaiting Trade Theory - No authentic trading signals received today")
-        st.markdown("""
-        ### What to expect
-        
-        When new trade signals are received from Discord today:
-        
-        1. This dashboard will update with the active ticker symbols
-        2. Each ticker will display its current trading status
-        3. You'll be able to click on a ticker to see detailed price levels
-        """)
     
     # Additional information section
     with st.expander("Recent Message History"):
