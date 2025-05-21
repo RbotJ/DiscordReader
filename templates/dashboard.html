@@ -158,19 +158,36 @@
   
   // Fetch account information
   function fetchAccountInfo() {
-    fetch('/api/account')
-      .then(function(response) { return response.json(); })
+    fetch('/api/account/info')
+      .then(function(response) { 
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.json(); 
+      })
       .then(function(data) {
-        const accountValueEl = document.getElementById('account-value');
-        const buyingPowerEl = document.getElementById('buying-power');
-        const marketStatusEl = document.getElementById('market-status');
-        
-        if (accountValueEl) accountValueEl.textContent = '$' + parseFloat(data.equity || 0).toFixed(2);
-        if (buyingPowerEl) buyingPowerEl.textContent = '$' + parseFloat(data.buying_power || 0).toFixed(2);
-        if (marketStatusEl) {
-          marketStatusEl.textContent = data.market_open ? 'Open' : 'Closed';
-          // Update styling based on market status
-          marketStatusEl.className = data.market_open ? 'text-success' : 'text-danger';
+        if (data.status === 'success' && data.account) {
+          const accountValueEl = document.getElementById('account-value');
+          const buyingPowerEl = document.getElementById('buying-power');
+          const marketStatusEl = document.getElementById('market-status');
+          
+          if (accountValueEl) {
+            accountValueEl.textContent = '$' + parseFloat(data.account.portfolio_value || 0).toFixed(2);
+            accountValueEl.classList.remove('text-danger');
+          }
+          
+          if (buyingPowerEl) {
+            buyingPowerEl.textContent = '$' + parseFloat(data.account.buying_power || 0).toFixed(2);
+            buyingPowerEl.classList.remove('text-danger');
+          }
+          
+          if (marketStatusEl) {
+            const isOpen = data.account.market && data.account.market.is_open;
+            marketStatusEl.textContent = isOpen ? 'Open' : 'Closed';
+            marketStatusEl.className = isOpen ? 'text-success' : 'text-danger';
+          }
+        } else {
+          throw new Error('Invalid account data received');
         }
       })
       .catch(function(error) {
