@@ -89,6 +89,26 @@ class TestSignalExtraction(unittest.TestCase):
         signals = extract_signals(SIMPLE_MESSAGE, "SPY")
         self.assertEqual(len(signals), 4)  # Should have 4 signals (rejection, breakdown, breakout, bounce)
         
+    def test_extract_signals_aggressiveness(self):
+        """Test extracting signals with aggressiveness indicators."""
+        message = """SPY:
+        🔻 Aggressive Breakdown Below 590.20 (588.00, 585.50, 582.80)
+        🔼 Conservative Breakout Above 595.40 (597.20, 599.80)
+        """
+        signals = extract_signals(message, "SPY")
+        
+        self.assertEqual(len(signals), 2)
+        
+        # Find aggressive and conservative signals
+        aggressive = next(s for s in signals if s.aggressiveness == "aggressive")
+        conservative = next(s for s in signals if s.aggressiveness == "conservative")
+        
+        self.assertEqual(aggressive.category, SignalCategory.BREAKDOWN)
+        self.assertEqual(aggressive.trigger, 590.20)
+        
+        self.assertEqual(conservative.category, SignalCategory.BREAKOUT) 
+        self.assertEqual(conservative.trigger, 595.40)
+        
         # Check the extracted signals
         categories = [signal.category for signal in signals]
         self.assertIn(SignalCategory.REJECTION, categories)

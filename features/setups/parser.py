@@ -296,6 +296,17 @@ class SetupParser:
         
         return fallback_sections
     
+    def _detect_aggressiveness(self, line: str) -> str:
+        """
+        Detect aggressiveness level from signal line text.
+        Returns "aggressive", "conservative", or None.
+        """
+        if re.search(r'\b(?:aggressive|aggressively)\b', line, re.IGNORECASE):
+            return "aggressive"
+        elif re.search(r'\b(?:conservative|conservatively)\b', line, re.IGNORECASE):
+            return "conservative"
+        return None
+
     def extract_signals(self, ticker: str, text: str) -> List[SignalDTO]:
         """
         Extract trading signals from text for a specific ticker.
@@ -312,11 +323,21 @@ class SetupParser:
         # Process each signal category
         for category, patterns in self.signal_patterns.items():
             for pattern in patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
+                matches = re.finditer(pattern, text, re.IGNORECASE)
                 for match in matches:
                     try:
+                        # Get the full line containing the match
+                        line_start = text.rfind('\n', 0, match.start()) + 1
+                        line_end = text.find('\n', match.end())
+                        if line_end == -1:
+                            line_end = len(text)
+                        line = text[line_start:line_end]
+                        
                         # Convert the price level to float
-                        price_level = float(match)
+                        price_level = float(match.group(1))
+                        
+                        # Detect aggressiveness from line context
+                        aggressiveness = self._detect_aggressiveness(line)
                         
                         # Determine comparison type and category
                         comparison = ComparisonTypeDTO.ABOVE
@@ -349,7 +370,7 @@ class SetupParser:
                             comparison=comparison,
                             trigger=price_level,
                             targets=targets or {price_level},  # Default to the trigger price
-                            aggressiveness=AggressivenessDTO.NONE
+                            aggressiveness=aggressiveness or AggressivenessDTO.NONE
                         )
                         
                         signals.append(signal)
