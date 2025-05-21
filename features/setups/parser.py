@@ -41,10 +41,8 @@ def parse_setup_message(
     source: str = "unknown"
 ) -> Optional[TradeSetupDTO]:
     """
-    Parse a setup message with validation.
-    Returns None if the message cannot be parsed.
-    
-    This is a functional wrapper around the SetupParser class for backwards compatibility.
+    Parse a setup message with strict price level validation.
+    Returns None if no valid signals or bias with validated price levels are found.
     
     Args:
         message_text: Raw setup message text
@@ -52,7 +50,7 @@ def parse_setup_message(
         source: Source of the setup message
         
     Returns:
-        TradeSetupDTO: Parsed setup data
+        TradeSetupDTO: Parsed setup data with validated price levels
     """
     if not message_text or not message_text.strip():
         logger.warning("Empty message text")
@@ -71,48 +69,61 @@ def parse_setup_message(
         
         # Process the message
         ticker_sections = _parser.extract_ticker_sections(message_text)
-        ticker_setups = []
+        valid_ticker_setups = []
         
         for ticker, section_text in ticker_sections.items():
-            # Extract signals and bias for this ticker
+            # Extract signals and bias
             signals = _parser.extract_signals(ticker, section_text)
             bias = _parser.extract_bias(ticker, section_text)
             
-            # Create ticker setup
-            ticker_setup = TickerSetupDTO(
-                symbol=ticker,
-                text=section_text,
-                signals=signals,
-                bias=bias
-            )
+            # Validate signal price levels
+            valid_signals = []
+            for signal in signals:
+                trigger_valid = validate_price_levels([signal.trigger] if isinstance(signal.trigger, (int, float)) 
+                                                    else list(signal.trigger))
+                targets_valid = validate_price_levels(list(signal.targets))
+                
+                if trigger_valid and targets_valid:
+                    valid_signals.append(signal)
+                else:
+                    logger.warning(f"Invalid price levels in signal for {ticker}: trigger={signal.trigger}, targets={signal.targets}")
             
-            ticker_setups.append(ticker_setup)
-        
-        # Create and return setup message
-        # Ensure setup_date is not None
-        actual_date = setup_date if setup_date is not None else datetime.now().date()
-        
-        # Validate all price levels
-        for setup in ticker_setups:
-            setup.signals = [
-                s for s in setup.signals
-                if validate_price_levels([s.trigger]) and validate_price_levels(list(s.targets))
-            ]
+            # Validate bias price levels
+            valid_bias = bias
+            if bias:
+                bias_price_valid = validate_price_levels([bias.price])
+                flip_price_valid = True
+                
+                if bias.flip and bias.flip.price_level:
+                    flip_price_valid = validate_price_levels([bias.flip.price_level])
+                
+                if not (bias_price_valid and flip_price_valid):
+                    logger.warning(f"Invalid price levels in bias for {ticker}: price={bias.price}, " 
+                                 f"flip_price={bias.flip.price_level if bias.flip else None}")
+                    valid_bias = None
             
-            if setup.bias and setup.bias.price:
-                if not validate_price_levels([setup.bias.price]):
-                    setup.bias = None
+            # Only create setup if we have valid signals or bias
+            if valid_signals or valid_bias:
+                ticker_setup = TickerSetupDTO(
+                    symbol=ticker,
+                    text=section_text,
+                    signals=valid_signals,
+                    bias=valid_bias
+                )
+                valid_ticker_setups.append(ticker_setup)
+            else:
+                logger.warning(f"No valid signals or bias found for {ticker}")
         
-        # Only return if we have valid setups
-        if any(setup.signals or setup.bias for setup in ticker_setups):
+        # Return setup message only if we have valid setups
+        if valid_ticker_setups:
             return TradeSetupDTO(
-                date=actual_date,
+                date=setup_date,
                 raw_text=message_text,
                 source=source,
-                ticker_setups=ticker_setups
+                ticker_setups=valid_ticker_setups
             )
         
-        logger.warning("No valid price levels found in message")
+        logger.warning("No valid setups found in message - all price levels invalid")
         return None
     except Exception as e:
         logger.error(f"Error parsing setup message: {e}")
