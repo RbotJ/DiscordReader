@@ -10,7 +10,7 @@ import random
 import numpy as np
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 import os
 from alpaca.data.enums import Adjustment
 
@@ -71,7 +71,7 @@ def get_ticker_price_levels(ticker, db):
         return None
 
 # Generate synthetic candles based on ticker price levels
-def generate_synthetic_candles(ticker, price_data, timeframe, limit):
+def generate_synthetic_candles(ticker, price_data, timeframe, limit, custom_range=False, start_hour=4, end_hour=12):
     """
     Generate synthetic candle data based on ticker price levels.
     
@@ -80,6 +80,9 @@ def generate_synthetic_candles(ticker, price_data, timeframe, limit):
         price_data: Dictionary with price levels
         timeframe: Candle timeframe string
         limit: Number of candles to generate
+        custom_range: Whether to use custom time range
+        start_hour: Starting hour for the range (in Eastern Time)
+        end_hour: Ending hour for the range (in Eastern Time)
         
     Returns:
         List of candle dictionaries
@@ -380,57 +383,54 @@ def add_todays_tickers_route(app, db):
                         # Default to 5 minute candles
                         tf = "5Min"
                     
-                    # The simplest approach for Alpaca API v0.40.0
+                    # Fix for Alpaca API v0.40.0+ requirements for TimeFrame objects
                     try:
-                        # Create a request with a dictionary for more flexibility
-                        request_dict = {
-                            'symbol_or_symbols': [ticker],
-                            'start': start,
-                            'end': end,
-                            'limit': limit,
-                        }
-                        
-                        # Handle the timeframe string-to-object conversion
+                        # Create a proper TimeFrame enum class instance based on the timeframe string
                         if timeframe == '1Min':
-                            request_dict['timeframe'] = '1Min'
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame.Minute
                         elif timeframe == '5Min':
-                            request_dict['timeframe'] = '5Min'
-                        elif timeframe == '15Min': 
-                            request_dict['timeframe'] = '15Min'
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame(5, "Min")
+                        elif timeframe == '15Min':
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame(15, "Min")
                         elif timeframe == '30Min':
-                            request_dict['timeframe'] = '30Min'
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame(30, "Min")
                         elif timeframe == '1Hour':
-                            request_dict['timeframe'] = '1Hour'
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame.Hour
                         elif timeframe == '1Day':
-                            request_dict['timeframe'] = '1Day'
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame.Day
                         else:
                             # Default to 5 minute candles
-                            request_dict['timeframe'] = '5Min'
+                            from alpaca.data.timeframe import TimeFrame
+                            tf_obj = TimeFrame(5, "Min")
+
+                        # Set up the time range for 4am to 12pm Eastern Time
+                        eastern_tz = pytz.timezone('America/New_York')
+                        now = datetime.now(eastern_tz)
+                        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
                         
-                        # For Alpaca API v0.40.0, we need to create a properly formatted TimeFrame
-                        # Simpler approach: map string timeframes directly
-                        timeframe_map = {
-                            '1Min': '1Min',
-                            '5Min': '5Min',
-                            '15Min': '15Min',
-                            '30Min': '30Min',
-                            '1Hour': '1H',
-                            '1Day': '1D'
-                        }
+                        # Start time is 4am ET today
+                        start_time = today.replace(hour=4)
+                        # End time is 12pm ET today
+                        end_time = today.replace(hour=12)
                         
-                        # Use the mapped string value (or default to 5Min)
-                        timeframe_str = timeframe_map.get(timeframe, '5Min')
-                            
-                        # Update the request dictionary with the timeframe string
-                        request_dict['timeframe'] = timeframe_str
+                        # Convert to UTC for Alpaca API
+                        start_utc = start_time.astimezone(pytz.UTC)
+                        end_utc = end_time.astimezone(pytz.UTC)
                         
-                        # Create the request with the mapped timeframe string
+                        # Create the request with the proper TimeFrame object and time range
                         bars_request = StockBarsRequest(
                             symbol_or_symbols=[ticker],
-                            timeframe=timeframe_str,
-                            start=start,
-                            end=end,
-                            limit=limit
+                            timeframe=tf_obj,
+                            start=start_utc,
+                            end=end_utc,
+                            limit=limit,
+                            adjustment=Adjustment.ALL
                         )
                         
                         # Get the data
