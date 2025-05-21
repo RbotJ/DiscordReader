@@ -108,7 +108,10 @@
         <div class="col-12">
           <div class="card">
             <div class="card-header">
-              <h5 class="mb-0">Today's Trading Setups - <span id="setup-date">Loading...</span></h5>
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Trading Setups - <span id="setup-date">Loading...</span></h5>
+                <span id="setup-age-indicator" class="badge bg-secondary">Checking...</span>
+              </div>
             </div>
             <div class="card-body">
               <div id="tickersContainer">
@@ -386,6 +389,35 @@
     const setupDateElement = document.getElementById('setup-date');
     if (setupDateElement) {
       setupDateElement.textContent = formattedDate;
+    }
+    
+    // Check if the message date is today and update the age indicator
+    const setupAgeIndicator = document.getElementById('setup-age-indicator');
+    if (setupAgeIndicator) {
+      const messageDate = new Date(messageDate);
+      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      
+      // Check if the message is from today (same year, month, and day)
+      const isToday = messageDate.getFullYear() === today.getFullYear() &&
+                     messageDate.getMonth() === today.getMonth() &&
+                     messageDate.getDate() === today.getDate();
+      
+      if (isToday) {
+        setupAgeIndicator.textContent = 'Today';
+        setupAgeIndicator.className = 'badge bg-success';
+      } else {
+        // Calculate days difference
+        const diffTime = Math.abs(today - messageDate);
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+          setupAgeIndicator.textContent = 'Yesterday';
+          setupAgeIndicator.className = 'badge bg-warning';
+        } else {
+          setupAgeIndicator.textContent = `${diffDays} days ago`;
+          setupAgeIndicator.className = 'badge bg-danger';
+        }
+      }
     }
     
     // Create a container for the ticker cards - each in its own row
