@@ -407,8 +407,31 @@ def add_todays_tickers_route(app, db):
                             # Default to 5 minute candles
                             request_dict['timeframe'] = '5Min'
                         
-                        # Create the request with unpacked dictionary
-                        bars_request = StockBarsRequest(**request_dict)
+                        # For Alpaca API v0.40.0, we need to create a properly formatted TimeFrame
+                        # Simpler approach: map string timeframes directly
+                        timeframe_map = {
+                            '1Min': '1Min',
+                            '5Min': '5Min',
+                            '15Min': '15Min',
+                            '30Min': '30Min',
+                            '1Hour': '1H',
+                            '1Day': '1D'
+                        }
+                        
+                        # Use the mapped string value (or default to 5Min)
+                        timeframe_str = timeframe_map.get(timeframe, '5Min')
+                            
+                        # Update the request dictionary with the timeframe string
+                        request_dict['timeframe'] = timeframe_str
+                        
+                        # Create the request with the mapped timeframe string
+                        bars_request = StockBarsRequest(
+                            symbol_or_symbols=[ticker],
+                            timeframe=timeframe_str,
+                            start=start,
+                            end=end,
+                            limit=limit
+                        )
                         
                         # Get the data
                         bars_data = stock_client.get_stock_bars(bars_request)
