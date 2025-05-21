@@ -97,26 +97,26 @@
         });
 
         function fetchRecentSetups() {
-            fetch('/api/discord-messages')
+            fetch('/api/todays_tickers')
                 .then(response => response.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        displayDiscordMessages(data.data);
+                        displayTodaysTickers(data.tickers, data.message_date);
                     } else {
-                        displayError(data.message || 'Failed to load Discord messages');
+                        displayError(data.message || 'Failed to load today\'s tickers');
                     }
                 })
                 .catch(error => {
-                    console.error('Error fetching Discord messages:', error);
+                    console.error('Error fetching today\'s tickers:', error);
                     displayError('Error connecting to server. Please try again later.');
                 });
         }
 
-        function displayDiscordMessages(messages) {
+        function displayTodaysTickers(tickers, messageDate) {
             const container = document.getElementById('setupsContainer');
             container.innerHTML = '';
             
-            if (!messages || messages.length === 0) {
+            if (!tickers || tickers.length === 0) {
                 container.innerHTML = `
                     <div class="alert alert-info">
                         No trading setups found. New setups from Discord will appear here.
@@ -125,48 +125,118 @@
                 return;
             }
             
-            messages.forEach(message => {
-                const msgDate = new Date(message.timestamp).toLocaleDateString('en-US', {
-                    weekday: 'short',
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                });
-                
-                const msgTime = new Date(message.timestamp).toLocaleTimeString('en-US', {
-                    hour: '2-digit', 
-                    minute: '2-digit'
-                });
-                
-                // Extract ticker symbols from content
-                const tickerRegex = /\b[A-Z]{1,5}\b/g;
-                const tickerMatches = message.content.match(tickerRegex) || [];
-                // Filter out common words that might match the pattern
-                const commonWords = ['A', 'I', 'CEO', 'CFO', 'CTO', 'IPO', 'ETF'];
-                const tickers = tickerMatches.filter(ticker => !commonWords.includes(ticker));
-                
-                const tickerBadges = [...new Set(tickers)].map(symbol => 
-                    `<span class="badge bg-primary ticker-badge">${symbol}</span>`
-                ).join('');
-                
+            // Format the message date
+            const formattedDate = new Date(messageDate).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            // Create a date header for all tickers
+            const dateHeader = document.createElement('div');
+            dateHeader.className = 'alert alert-primary mb-4';
+            dateHeader.innerHTML = `
+                <h5 class="mb-0">Today's Active Trading Tickers</h5>
+                <p class="mb-0">Trade setups for ${formattedDate}</p>
+            `;
+            container.appendChild(dateHeader);
+            
+            // Create cards for each ticker
+            tickers.forEach(ticker => {
                 const card = document.createElement('div');
-                card.className = 'card setup-card';
+                card.className = 'card setup-card mb-4';
+                
+                // Determine card color based on ticker
+                const tickerColors = {
+                    'SPY': 'primary',
+                    'TSLA': 'success',
+                    'NVDA': 'info',
+                    'QQQ': 'warning',
+                    'AAPL': 'danger'
+                };
+                
+                const cardColor = tickerColors[ticker.symbol] || 'primary';
+                card.style.borderLeft = `4px solid var(--bs-${cardColor})`;
+                
+                // Format price levels in a readable way
+                function formatPrice(price) {
+                    return price !== null ? `$${price.toFixed(2)}` : 'N/A';
+                }
+                
+                // Create the price levels table
+                const priceLevels = ticker.price_levels;
+                const priceLevelsTable = `
+                    <table class="table table-sm table-bordered">
+                        <thead>
+                            <tr>
+                                <th colspan="2" class="text-center">Price Levels</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Rejection Near</strong></td>
+                                <td>${formatPrice(priceLevels.rejection)}</td>
+                            </tr>
+                            <tr class="table-danger">
+                                <td><strong>Aggressive Breakdown Below</strong></td>
+                                <td>${formatPrice(priceLevels.aggressive_breakdown)}</td>
+                            </tr>
+                            <tr class="table-danger">
+                                <td><strong>Conservative Breakdown Below</strong></td>
+                                <td>${formatPrice(priceLevels.conservative_breakdown)}</td>
+                            </tr>
+                            <tr class="table-success">
+                                <td><strong>Aggressive Breakout Above</strong></td>
+                                <td>${formatPrice(priceLevels.aggressive_breakout)}</td>
+                            </tr>
+                            <tr class="table-success">
+                                <td><strong>Conservative Breakout Above</strong></td>
+                                <td>${formatPrice(priceLevels.conservative_breakout)}</td>
+                            </tr>
+                            <tr class="table-info">
+                                <td><strong>Bounce From</strong></td>
+                                <td>${formatPrice(priceLevels.bounce)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                `;
+                
+                // Create the note section
+                const noteSection = ticker.note ? `
+                    <div class="alert alert-warning">
+                        <strong>Note:</strong> ${ticker.note}
+                    </div>
+                ` : '';
+                
                 card.innerHTML = `
                     <div class="card-header">
                         <div>
-                            <h5 class="mb-0">A+ Trade Setup</h5>
-                            <small class="setup-date">${msgDate} at ${msgTime}</small>
+                            <h4 class="mb-0 d-flex align-items-center">
+                                <span class="badge bg-${cardColor} me-2">${ticker.symbol}</span>
+                                Trading Setup
+                            </h4>
+                            <small class="setup-date">${formattedDate}</small>
                         </div>
                         <span class="badge bg-secondary source-badge">Discord</span>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3">
-                            <div class="mt-2">${tickerBadges}</div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                ${priceLevelsTable}
+                            </div>
+                            <div class="col-md-12">
+                                ${noteSection}
+                            </div>
                         </div>
-                        <div class="setup-message mb-3">${message.content.replace(/\n/g, '<br>')}</div>
                     </div>
-                    <div class="card-footer text-muted">
-                        <small>Message ID: ${message.id}</small>
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <small class="text-muted">Source: Discord A+ Setups Channel</small>
+                        <div>
+                            <button class="btn btn-sm btn-outline-${cardColor}" onclick="alert('Chart functionality coming soon!')">
+                                <i class="bi bi-graph-up"></i> View Chart
+                            </button>
+                        </div>
                     </div>
                 `;
                 
