@@ -16,6 +16,7 @@ class SetupModel(db.Model):
     raw_text = Column(Text, nullable=False)
     source = Column(String(50), default='unknown')
     created_at = Column(DateTime, default=datetime.utcnow)
+    parsed = Column(Boolean, default=False)
     
     # Relationships
     ticker_setups = relationship('TickerSetupModel', back_populates='setup', cascade='all, delete-orphan')
