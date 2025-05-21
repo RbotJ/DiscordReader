@@ -64,6 +64,8 @@ class EventEntry(Base):
     event_type = Column(String(100), nullable=False, index=True)
     payload = Column(Text, nullable=True)  # Using payload instead of event_data
     created_at = Column(DateTime, default=datetime.utcnow)
+    processed = Column(Boolean, default=False, index=True)
+    processed_at = Column(DateTime, nullable=True)
 
 # Global connection and thread state
 _db_engine = None
@@ -321,7 +323,7 @@ def _listen():
             for event in events:
                 try:
                     # Parse JSON data
-                    data = json.loads(event.data)
+                    data = json.loads(event.payload)
                     
                     # Process event with registered callbacks
                     with _lock:
