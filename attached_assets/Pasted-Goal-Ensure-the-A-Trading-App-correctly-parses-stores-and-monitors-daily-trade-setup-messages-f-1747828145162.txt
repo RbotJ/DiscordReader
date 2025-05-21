@@ -1,0 +1,92 @@
+Goal:
+Ensure the A+ Trading App correctly parses, stores, and monitors daily trade setup messages from Discord. Implement or verify models and logic for:
+
+1. Parsing trade setup messages
+2. Storing unique structured setup data (setup, signal, bias)
+3. Confirming price-level triggers with real-time market data
+4. Deduplicating price levels for chart display
+
+Specs:
+Raw Message Example:
+SPY
+❌ Rejection Near 592.53 (590.20, 588.00, 585.50)
+🔻 Aggressive Breakdown Below 590.20 (588.00, 585.50, 582.80)
+🔻 Conservative Breakdown Below 585.50 (582.80, 579.50, 576.90)
+🔼 Aggressive Breakout Above 592.53 (594.70, 597.20, 600.50)
+🔼 Conservative Breakout Above 594.70 (597.20, 600.50, 603.80)
+🔄 Bounce From 585.50 (588.00, 590.20, 592.00)
+⚠️ SPY bulls in charge while holding 590.20 — breakdown opens only under 585.50
+
+Tasks:
+✅ Parse message and extract:
+
+* ticker
+* setup type (breakout, breakdown, rejection, bounce)
+* aggressiveness (aggressive, conservative)
+* confirmation price (aka trigger level)
+* direction (up/down)
+* target levels
+* bias condition (e.g. "bulls in charge while holding 590.20")
+
+✅ Store parsed data using mock schemas below
+
+✅ Implement or validate confirmation logic that:
+
+* Monitors each trigger level
+* Confirms when a 5-minute candle closes beyond the threshold
+* Publishes confirmation alert with price, timestamp, and matched setup
+
+✅ Charting support:
+
+* Return a deduplicated list of all levels across all setups
+* Each unique level should be stored or returned once
+
+Schema Suggestions (models.py or database structure):
+
+class SetupMessage(BaseModel):
+id: int
+ticker: str
+raw\_text: str
+timestamp: datetime
+source: str  # discord message ID or channel
+
+class Signal(BaseModel):
+id: int
+setup\_id: int
+type: Literal\["breakout", "breakdown", "rejection", "bounce"]
+direction: Literal\["up", "down"]
+aggressiveness: Optional\[str]
+trigger: float
+targets: List\[float]
+confirmed: bool = False
+confirmed\_at: Optional\[datetime]
+confirmation\_details: Optional\[Dict]
+
+class Bias(BaseModel):
+id: int
+setup\_id: int
+direction: Literal\["bullish", "bearish"]
+hold\_level: float
+breakdown\_below: float
+
+Functions to verify or implement:
+
+* `parse_raw_setup_message(text: str) -> Tuple[SetupMessage, List[Signal], Optional[Bias]]`
+* `extract_unique_levels(signals: List[Signal]) -> Set[float]`
+* `is_confirmed_breakout(candle: Candle, signal: Signal, volume_avg: float) -> bool`
+* `monitor_signals(candles: AsyncGenerator[Candle], signals: List[Signal]) -> None`
+
+Output:
+
+* Place code in /features/setups/ and /features/strategy/
+* Confirmed signals should trigger `signal.triggered` event or Redis message
+
+Use architecture style:
+
+* vertical-slice
+
+Final deliverables:
+
+* parser.py: parsing logic
+* monitor.py: confirms setups from live candles
+* tests/test\_confirmations.py: candle-based test triggering a confirmation
