@@ -52,8 +52,15 @@ def initialize_clients() -> bool:
         return False
         
     try:
+        if not ALPACA_API_KEY or not ALPACA_API_SECRET:
+            logger.error("Alpaca API credentials not set in environment")
+            return False
+            
         # Initialize trading client
         _trading_client = TradingClient(ALPACA_API_KEY, ALPACA_API_SECRET, paper=ALPACA_PAPER)
+        
+        # Test connection
+        _trading_client.get_account()
         
         # Initialize data clients
         _stock_data_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)

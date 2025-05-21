@@ -470,10 +470,14 @@ def get_positions() -> List[Dict[str, Any]]:
     """Get all open positions."""
     if not trading_client:
         if not initialize_trading_client():
+            logger.error("Failed to initialize trading client")
             return []
     
     try:
         positions = trading_client.get_all_positions()
+        if not positions:
+            logger.info("No open positions found")
+            return []
         
         result = []
         
