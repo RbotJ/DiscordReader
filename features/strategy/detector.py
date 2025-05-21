@@ -19,6 +19,8 @@ from common.db_models import (
 from features.market.client import (
     register_price_callback, initialize_clients, add_symbols_to_watchlist
 )
+from common.events import EventChannels
+from common.event_compat import event_client, subscribe_to_events
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -38,55 +40,55 @@ strategy_routes = Blueprint('strategy', __name__)
 def start_detector():
     """Start the strategy detector."""
     global detector_running, detector_thread
-    
+
     # If already running, do nothing
     if detector_running:
         return
-    
+
     # Set the running flag
     detector_running = True
-    
+
     # Initialize clients
     initialize_clients()
-    
+
     # Load active triggers from database
     load_active_triggers()
-    
+
     # Register the price callback
     register_price_callback(process_price_update)
-    
+
     # Start the watchdog thread
     detector_thread = threading.Thread(target=detector_watchdog)
     detector_thread.daemon = True
     detector_thread.start()
-    
+
     logger.info("Strategy detector started")
 
 
 def stop_detector():
     """Stop the strategy detector."""
     global detector_running, detector_thread
-    
+
     # If not running, do nothing
     if not detector_running:
         return
-    
+
     # Set the running flag
     detector_running = False
-    
+
     # Wait for the thread to stop
     if detector_thread:
         detector_thread.join(timeout=5)
-    
+
     detector_thread = None
-    
+
     logger.info("Strategy detector stopped")
 
 
 def detector_status():
     """Get the status of the strategy detector."""
     global detector_running, active_triggers, symbols_processed, detector_symbols
-    
+
     return {
         "running": detector_running,
         "active_triggers_count": sum(len(triggers) for triggers in active_triggers.values()),
@@ -99,12 +101,12 @@ def detector_status():
 def load_active_triggers():
     """Load active triggers from the database."""
     global active_triggers, detector_symbols
-    
+
     try:
         # Clear existing triggers
         active_triggers = {}
         detector_symbols = set()
-        
+
         with app.app_context():
             # Query active price triggers with their signals and ticker details
             triggers = db.session.execute(text("""
@@ -126,15 +128,15 @@ def load_active_triggers():
                 ORDER BY 
                     setup.date DESC
             """)).fetchall()
-            
+
             # Process triggers
             for trigger in triggers:
                 symbol = trigger.symbol
-                
+
                 # Add to active triggers
                 if symbol not in active_triggers:
                     active_triggers[symbol] = []
-                
+
                 # Add trigger details
                 trigger_details = {
                     "id": trigger.id,
@@ -149,17 +151,17 @@ def load_active_triggers():
                     "ticker_symbol": trigger.ticker_symbol,
                     "setup_date": trigger.setup_date.isoformat() if trigger.setup_date else None
                 }
-                
+
                 active_triggers[symbol].append(trigger_details)
                 detector_symbols.add(symbol)
-            
+
             # Add symbols to watchlist
             if detector_symbols:
                 add_symbols_to_watchlist(list(detector_symbols))
-            
+
             logger.info(f"Loaded {sum(len(triggers) for triggers in active_triggers.values())} "
                         f"active triggers for {len(detector_symbols)} symbols")
-    
+
     except Exception as e:
         logger.error(f"Error loading active triggers: {e}")
 
@@ -167,34 +169,34 @@ def load_active_triggers():
 def process_price_update(symbol: str, price: float):
     """Process a price update for a symbol."""
     global active_triggers, symbols_processed
-    
+
     # Add to processed symbols
     symbols_processed.add(symbol)
-    
+
     # Check if we have triggers for this symbol
     if symbol not in active_triggers:
         return
-    
+
     # Check each trigger
     triggers_to_remove = []
-    
+
     for idx, trigger in enumerate(active_triggers[symbol]):
         triggered = check_trigger(trigger, price)
-        
+
         if triggered:
             # Mark the trigger as triggered in the database
             mark_trigger_triggered(trigger["id"])
-            
+
             # Create notification
             create_signal_notification(trigger, price)
-            
+
             # Add to removal list
             triggers_to_remove.append(idx)
-    
+
     # Remove triggered triggers
     for idx in sorted(triggers_to_remove, reverse=True):
         active_triggers[symbol].pop(idx)
-    
+
     # If no more triggers for this symbol, remove it
     if len(active_triggers[symbol]) == 0:
         del active_triggers[symbol]
@@ -205,7 +207,7 @@ def check_trigger(trigger: Dict[str, Any], price: float) -> bool:
     """Check if a trigger is triggered by the current price."""
     comparison = trigger["comparison"]
     trigger_value = trigger["trigger_value"]
-    
+
     # Convert trigger_value to list if it's not
     if isinstance(trigger_value, (int, float)):
         trigger_value = [float(trigger_value)]
@@ -221,7 +223,7 @@ def check_trigger(trigger: Dict[str, Any], price: float) -> bool:
                 except:
                     logger.error(f"Failed to parse trigger value: {trigger_value}")
                     return False
-    
+
     # Check comparison
     if comparison == "above" and price >= trigger_value[0]:
         return True
@@ -231,7 +233,7 @@ def check_trigger(trigger: Dict[str, Any], price: float) -> bool:
         return True
     elif comparison == "range" and len(trigger_value) >= 2:
         return trigger_value[0] <= price <= trigger_value[1]
-    
+
     return False
 
 
@@ -248,11 +250,11 @@ def mark_trigger_triggered(trigger_id: int):
                 WHERE
                     id = :trigger_id
             """), {"trigger_id": trigger_id})
-            
+
             db.session.commit()
-            
+
             logger.info(f"Marked trigger {trigger_id} as triggered")
-    
+
     except Exception as e:
         logger.error(f"Error marking trigger {trigger_id} as triggered: {e}")
 
@@ -262,21 +264,21 @@ def create_signal_notification(trigger: Dict[str, Any], price: float):
     try:
         symbol = trigger["symbol"]
         category = trigger["category"]
-        
+
         # Determine direction based on category
         direction = "bullish" if category in ["breakout", "bounce"] else "bearish"
-        
+
         # Create notification message
         title = f"{symbol} {category.capitalize()} Signal Triggered"
         message = (f"{symbol} price of ${price:.2f} has triggered a {category} signal "
                    f"with {trigger['aggressiveness']} aggressiveness.")
-        
+
         # Add target information
         targets = trigger["targets"]
         if targets and len(targets) > 0:
             targets_str = ", ".join([f"${t:.2f}" for t in targets])
             message += f" Price targets: {targets_str}"
-        
+
         # Meta data for the notification
         meta_data = {
             "symbol": symbol,
@@ -287,7 +289,7 @@ def create_signal_notification(trigger: Dict[str, Any], price: float):
             "ticker_setup_id": trigger["ticker_setup_id"],
             "targets": targets
         }
-        
+
         with app.app_context():
             # Create notification
             notification = NotificationModel()
@@ -296,12 +298,12 @@ def create_signal_notification(trigger: Dict[str, Any], price: float):
             notification.message = message
             notification.meta_data = meta_data
             notification.read = False
-            
+
             db.session.add(notification)
             db.session.commit()
-            
+
             logger.info(f"Created notification for triggered signal: {title}")
-    
+
     except Exception as e:
         logger.error(f"Error creating notification for triggered signal: {e}")
 
@@ -322,17 +324,17 @@ def create_price_trigger(
             trigger.trigger_value = trigger_value
             trigger.signal_id = signal_id
             trigger.active = True
-            
+
             db.session.add(trigger)
             db.session.commit()
-            
+
             # Add to active triggers
             load_active_triggers()
-            
+
             logger.info(f"Created price trigger for {symbol} {comparison} {trigger_value}")
-            
+
             return trigger.id
-    
+
     except Exception as e:
         logger.error(f"Error creating price trigger: {e}")
         return None
@@ -344,21 +346,21 @@ def deactivate_price_trigger(trigger_id: int) -> bool:
         with app.app_context():
             # Update the trigger
             trigger = db.session.query(PriceTriggerModel).filter_by(id=trigger_id).first()
-            
+
             if not trigger:
                 logger.warning(f"Trigger {trigger_id} not found")
                 return False
-            
+
             trigger.active = False
             db.session.commit()
-            
+
             # Reload active triggers
             load_active_triggers()
-            
+
             logger.info(f"Deactivated price trigger {trigger_id}")
-            
+
             return True
-    
+
     except Exception as e:
         logger.error(f"Error deactivating price trigger {trigger_id}: {e}")
         return False
@@ -388,7 +390,7 @@ def get_active_price_triggers() -> List[Dict[str, Any]]:
                 ORDER BY 
                     setup.date DESC
             """)).fetchall()
-            
+
             # Format results
             result = []
             for trigger in triggers:
@@ -406,9 +408,9 @@ def get_active_price_triggers() -> List[Dict[str, Any]]:
                     "setup_date": trigger.setup_date.isoformat() if trigger.setup_date else None
                 }
                 result.append(trigger_dict)
-            
+
             return result
-    
+
     except Exception as e:
         logger.error(f"Error getting active price triggers: {e}")
         return []
@@ -417,26 +419,26 @@ def get_active_price_triggers() -> List[Dict[str, Any]]:
 def detector_watchdog():
     """Background thread to periodically check and reload triggers."""
     global detector_running
-    
+
     logger.info("Starting detector watchdog thread")
-    
+
     while detector_running:
         # Sleep for 5 minutes
         for _ in range(30):  # 30 x 10 seconds = 5 minutes
             if not detector_running:
                 break
             threading.Event().wait(10)
-        
+
         if not detector_running:
             break
-        
+
         try:
             # Reload triggers to catch any new ones
             logger.info("Reloading active triggers")
             load_active_triggers()
         except Exception as e:
             logger.error(f"Error in detector watchdog: {e}")
-    
+
     logger.info("Detector watchdog thread stopped")
 
 
@@ -459,9 +461,9 @@ def generate_triggers_from_signals():
                     pt.id IS NULL
                     AND s.active = TRUE
             """)).fetchall()
-            
+
             triggers_created = 0
-            
+
             # Create triggers for each signal
             for signal in signals:
                 try:
@@ -472,23 +474,23 @@ def generate_triggers_from_signals():
                     trigger.trigger_value = signal.trigger_value
                     trigger.signal_id = signal.id
                     trigger.active = True
-                    
+
                     db.session.add(trigger)
                     triggers_created += 1
-                
+
                 except Exception as e:
                     logger.error(f"Error creating trigger for signal {signal.id}: {e}")
-            
+
             # Commit all changes
             db.session.commit()
-            
+
             # Reload active triggers
             load_active_triggers()
-            
+
             logger.info(f"Generated {triggers_created} price triggers from signals")
-            
+
             return triggers_created
-    
+
     except Exception as e:
         logger.error(f"Error generating triggers from signals: {e}")
         return 0
@@ -507,10 +509,10 @@ def control_detector():
     """Start or stop the strategy detector."""
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
-    
+
     data = request.get_json()
     action = data.get('action', '').lower()
-    
+
     if action == 'start':
         start_detector()
         return jsonify({
@@ -541,13 +543,13 @@ def create_trigger():
     """Create a new price trigger."""
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
-    
+
     data = request.get_json()
-    
+
     # Validate input
     if not all(key in data for key in ['symbol', 'comparison', 'trigger_value', 'signal_id']):
         return jsonify({"error": "Missing required fields"}), 400
-    
+
     # Create trigger
     trigger_id = create_price_trigger(
         data['symbol'],
@@ -555,7 +557,7 @@ def create_trigger():
         data['trigger_value'],
         data['signal_id']
     )
-    
+
     if trigger_id:
         return jsonify({
             "success": True,
@@ -572,7 +574,7 @@ def create_trigger():
 def delete_trigger(trigger_id):
     """Deactivate a price trigger."""
     success = deactivate_price_trigger(trigger_id)
-    
+
     if success:
         return jsonify({
             "success": True,
@@ -589,7 +591,7 @@ def delete_trigger(trigger_id):
 def generate_triggers():
     """Generate price triggers from existing signals."""
     count = generate_triggers_from_signals()
-    
+
     return jsonify({
         "success": True,
         "triggers_created": count
