@@ -232,3 +232,43 @@ def register_routes(app):
     """Register market API routes with the Flask app."""
     app.register_blueprint(bp)
     logger.info("Market API routes registered")
+@bp.route('/test/price-update/<symbol>', methods=['GET'])
+def test_price_update(symbol):
+    """Test price update publishing"""
+    try:
+        # Get latest price
+        price = get_latest_quote(symbol)
+        if not price:
+            return jsonify({'error': 'Could not fetch price'}), 400
+            
+        # Update price cache and publish event
+        timestamp = datetime.now()
+        update_price_cache(symbol, price['last_price'], timestamp)
+        
+        return jsonify({
+            'symbol': symbol,
+            'price': price['last_price'],
+            'timestamp': timestamp.isoformat(),
+            'status': 'published'
+        })
+    except Exception as e:
+        logger.error(f"Error testing price update: {e}")
+        return jsonify({'error': str(e)}), 500
+@bp.route('/test/event-publish', methods=['POST'])
+def test_event_publish():
+    """Test event publication system"""
+    try:
+        data = request.get_json()
+        channel = data.get('channel', 'test:events')
+        event_data = data.get('data', {'test': True})
+        
+        success = publish_event(channel, event_data)
+        
+        return jsonify({
+            'success': success,
+            'channel': channel,
+            'data': event_data
+        })
+    except Exception as e:
+        logger.error(f"Error testing event publish: {e}")
+        return jsonify({'error': str(e)}), 500

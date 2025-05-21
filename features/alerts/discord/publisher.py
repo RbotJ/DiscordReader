@@ -458,3 +458,22 @@ def register_alert_commands(bot: commands.Bot):
                 await interaction.response.send_message("❌ Failed to send test alert", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Alert publisher not available", ephemeral=True)
+    async def test_alert(self, alert_type: str, test_data: Optional[Dict] = None) -> bool:
+        """
+        Send a test alert to verify the system
+        
+        Args:
+            alert_type: Type of alert to test
+            test_data: Optional test data, uses defaults if None
+            
+        Returns:
+            bool: True if alert was sent successfully
+        """
+        if not test_data:
+            test_data = {
+                'symbol': 'TEST',
+                'price': 100.00,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        return await self.publish_alert(alert_type, test_data)
