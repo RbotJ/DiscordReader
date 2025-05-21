@@ -105,7 +105,7 @@ def main():
                 elif key != "id":  # Skip the id field
                     st.markdown(f"**{key.capitalize()}**: {value}")
     else:
-        st.info("No Discord messages found. Try generating sample data with `python generate_sample_discord_data.py`")
+        st.info("No Discord messages found. Awaiting authentic messages from Discord.")
     
     # Latest parsed setup
     st.header("Latest Parsed Trading Setup")

@@ -73,9 +73,9 @@ def main():
             with cols[col_index]:
                 st.metric(label=f"${ticker}", value="Active")
         
-        st.success(f"Found {message_count} trading message(s) from today with {len(todays_tickers)} active ticker(s)")
+        st.success(f"Found {message_count} authentic trading message(s) from today with {len(todays_tickers)} active ticker(s)")
     else:
-        st.info("Awaiting Trade Theory - No trading signals received today")
+        st.info("Awaiting Trade Theory - No authentic trading signals received today")
         st.markdown("""
         ### What to expect
         
