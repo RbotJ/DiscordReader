@@ -32,14 +32,16 @@ def start_message_consumer_service():
         """Worker function that runs in a separate thread."""
         try:
             logger.info("Starting message consumer worker thread")
-            consumer = MessageConsumer()
+            from app import app
             
             # Set flag to indicate the service is running
             global _consumer_running
             _consumer_running = True
             
-            # Start the consumer (blocking call)
-            consumer.start()
+            # Start the consumer with Flask app context (blocking call)
+            with app.app_context():
+                consumer = MessageConsumer()
+                consumer.start()
         except Exception as e:
             logger.error(f"Error in message consumer worker: {e}")
         finally:

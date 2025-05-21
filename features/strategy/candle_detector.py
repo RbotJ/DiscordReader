@@ -2,7 +2,8 @@
 Candle Detector Module
 
 This module implements candle-based signal detection for trading setups.
-It monitors candle closes and detects when price crosses trigger levels.
+It monitors candle closes and detects when price crosses trigger levels using
+PostgreSQL for event notification instead of Redis.
 """
 import logging
 import threading
@@ -10,18 +11,16 @@ import time
 from datetime import datetime
 from typing import Dict, List, Set, Any, Optional
 
-from common.redis_utils import RedisClient
+from common.events import poll_events, publish_event, get_latest_event_id, EventChannels
 from features.market.historical_data import get_historical_data
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-# Redis client for subscribing to candle updates and publishing signals
-redis_client = RedisClient()
-
 # Thread control variables
 _detector_thread = None
 _thread_running = False
+_last_event_id = 0
 
 # Store active trading signals
 _active_signals: Dict[str, List[Dict[str, Any]]] = {}
@@ -65,67 +64,60 @@ def init_candle_detector() -> bool:
 
 def _candle_detector_thread() -> None:
     """Candle detector thread function."""
-    global _thread_running
+    global _thread_running, _last_event_id
     
     logger.info("Candle detector thread started")
     
-    # Subscribe to candle updates using Redis pubsub
+    # Define channel for candle updates
     candle_channel = "candles:all"
     
-    # Get Redis client with error handling for when Redis is not available
+    # Get the latest event ID to start polling from
     try:
-        import redis
-        from common.redis_utils import get_redis_client
-        redis_conn = get_redis_client()
-        pubsub = redis_conn.pubsub()
-        pubsub.subscribe(candle_channel)
-        logger.info(f"Successfully subscribed to {candle_channel}")
+        from app import app
+        with app.app_context():
+            _last_event_id = get_latest_event_id()
+            logger.info(f"Starting candle detector polling from event ID: {_last_event_id}")
     except Exception as e:
-        # Create a dummy pubsub that won't fail the application
-        logger.warning(f"Failed to subscribe to Redis channel: {e} - Using dummy implementation")
-        class DummyPubSub:
-            def get_message(self, timeout=None):
-                time.sleep(0.1)  # Don't burn CPU cycles
-                return None
-        pubsub = DummyPubSub()
+        logger.warning(f"Error getting latest event ID: {e}")
+        _last_event_id = 0
     
     while _thread_running:
         try:
-            # Get message from Redis
-            message = pubsub.get_message(timeout=1.0)
+            # Poll for candle update events from PostgreSQL
+            from app import app
+            with app.app_context():
+                events = poll_events([candle_channel], _last_event_id)
+                
+                # Process any new events
+                for event in events:
+                    try:
+                        # Update the last event ID
+                        _last_event_id = max(_last_event_id, event.get('id', 0))
+                        
+                        # Get the payload
+                        payload = event.get('payload', {})
+                        if not payload:
+                            continue
+                        
+                        # Extract candle data
+                        symbol = payload.get('ticker')
+                        timeframe = payload.get('timeframe')
+                        is_closed = payload.get('is_closed', False)
+                        
+                        # Only process closed candles
+                        if not is_closed:
+                            continue
+                        
+                        # Process candle for signal detection
+                        _process_candle(symbol, timeframe, payload)
+                    except Exception as e:
+                        logger.error(f"Error processing candle event: {e}")
             
-            if message and message['type'] == 'message':
-                # Process candle update
-                try:
-                    data = message.get('data', {})
-                    if not data or not isinstance(data, dict):
-                        continue
-                    
-                    # Extract candle data
-                    symbol = data.get('ticker')
-                    timeframe = data.get('timeframe')
-                    is_closed = data.get('is_closed', False)
-                    
-                    # Only process closed candles
-                    if not is_closed:
-                        continue
-                    
-                    # Process candle for signal detection
-                    _process_candle(symbol, timeframe, data)
-                except Exception as e:
-                    logger.error(f"Error processing candle update: {e}")
-            
-            # Sleep briefly to avoid high CPU usage
-            time.sleep(0.1)
+            # Sleep briefly to avoid excessive database polling
+            time.sleep(0.5)
         except Exception as e:
             logger.error(f"Error in candle detector thread: {e}")
             time.sleep(5)  # Sleep longer on error
-    
-    # Unsubscribe and clean up
-    try:
-        pubsub.unsubscribe()
-    except Exception as e:
-        logger.error(f"Error unsubscribing from Redis channel: {e}")
     
     logger.info("Candle detector thread stopped")
 
@@ -273,7 +265,7 @@ def _publish_signal_event(
     target: Optional[Dict[str, Any]] = None
 ) -> None:
     """
-    Publish signal event to Redis.
+    Publish signal event to PostgreSQL event bus.
     
     Args:
         symbol: Ticker symbol
@@ -297,11 +289,14 @@ def _publish_signal_event(
         if target and event_type == 'target_hit':
             event_data['target'] = target
         
-        # Publish to symbol-specific channel
-        redis_client.publish(f"signals:{symbol}", event_data)
-        
-        # Also publish to general signals channel
-        redis_client.publish("signals:all", event_data)
+        # Use app context for database operations
+        from app import app
+        with app.app_context():
+            # Publish to symbol-specific channel
+            publish_event(f"signals:{symbol}", event_type, event_data)
+            
+            # Also publish to general signals channel
+            publish_event("signals:all", event_type, event_data)
         
         logger.info(f"Published signal {event_type} event for {symbol}")
     except Exception as e:
@@ -345,8 +340,13 @@ def add_signal(signal_data: Dict[str, Any]) -> bool:
             'event_type': 'added',
             'timestamp': datetime.now().isoformat()
         }
-        redis_client.publish(f"signals:{symbol}", event_data)
-        redis_client.publish("signals:all", event_data)
+        
+        # Use app context for database operations
+        from app import app
+        with app.app_context():
+            # Publish to PostgreSQL event bus
+            publish_event(f"signals:{symbol}", "signal_added", event_data)
+            publish_event("signals:all", "signal_added", event_data)
         
         return True
     except Exception as e:
@@ -398,8 +398,13 @@ def remove_signal(signal_id: str) -> bool:
                         'event_type': 'removed',
                         'timestamp': datetime.now().isoformat()
                     }
-                    redis_client.publish(f"signals:{symbol}", event_data)
-                    redis_client.publish("signals:all", event_data)
+                    
+                    # Use app context for database operations
+                    from app import app
+                    with app.app_context():
+                        # Publish to PostgreSQL event bus
+                        publish_event(f"signals:{symbol}", "signal_removed", event_data)
+                        publish_event("signals:all", "signal_removed", event_data)
                     
                     return True
         
