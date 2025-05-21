@@ -305,37 +305,52 @@ def add_todays_tickers_route(app, db):
             else:
                 timeframe = '5Min'  # Default
             
-            # Calculate start and end times
-            end = datetime.now()
-            if timeframe_str in ['1Min', '5Min', '15Min', '30Min']:
-                # For intraday, use market hours (9:30 AM - 4:00 PM ET)
-                start = end - timedelta(days=1)  # Last trading day
+            # Calculate start and end times for Eastern Time (4am to 12pm)
+            now = datetime.now()
+            
+            # Create Eastern timezone
+            import pytz
+            eastern = pytz.timezone('US/Eastern')
+            
+            # Get current time in Eastern timezone
+            current_eastern = now.astimezone(eastern)
+            
+            # Set end time to 12pm today in Eastern time
+            today_noon_eastern = eastern.localize(
+                datetime(
+                    current_eastern.year,
+                    current_eastern.month,
+                    current_eastern.day,
+                    12, 0, 0
+                )
+            )
+            
+            # If current time is past noon, use 12pm as end time, otherwise use current time
+            if current_eastern.hour >= 12:
+                end = today_noon_eastern
             else:
-                # For daily, use more history
-                start = end - timedelta(days=30)
+                end = current_eastern
+                
+            # Set start time to 4am today in Eastern time (premarket)
+            start = eastern.localize(
+                datetime(
+                    current_eastern.year,
+                    current_eastern.month,
+                    current_eastern.day,
+                    4, 0, 0
+                )
+            )
+            
+            # Convert to UTC for Alpaca API
+            start = start.astimezone(pytz.UTC)
+            end = end.astimezone(pytz.UTC)
             
             # If we have a valid stock client, try to get real data
             if stock_client:
                 try:
-                    # Create timeframe instance dynamically
-                    from alpaca.data.timeframe import TimeFrame
-                    
-                    # Create the TimeFrame object based on the string
-                    if timeframe == '1Min':
-                        tf = TimeFrame(1, TimeFrame.Unit.MINUTE)
-                    elif timeframe == '5Min':
-                        tf = TimeFrame(5, TimeFrame.Unit.MINUTE)
-                    elif timeframe == '15Min':
-                        tf = TimeFrame(15, TimeFrame.Unit.MINUTE)
-                    elif timeframe == '30Min':
-                        tf = TimeFrame(30, TimeFrame.Unit.MINUTE)
-                    elif timeframe == '1Hour':
-                        tf = TimeFrame(1, TimeFrame.Unit.HOUR)
-                    elif timeframe == '1Day':
-                        tf = TimeFrame(1, TimeFrame.Unit.DAY)
-                    else:
-                        # Default to 5 minute candles
-                        tf = TimeFrame(5, TimeFrame.Unit.MINUTE)
+                    # Use the string representation directly for newer Alpaca SDK
+                    # The SDK will handle conversion internally
+                    tf = timeframe
                     
                     # Make the request to Alpaca
                     bars_request = StockBarsRequest(
