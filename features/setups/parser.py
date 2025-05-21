@@ -46,7 +46,19 @@ def parse_setup_message(
         return None
         
     try:
-    """
+        """
+        Parse a setup message into structured data.
+        
+        This is a functional wrapper around the SetupParser class for backwards compatibility.
+        
+        Args:
+            message_text: Raw setup message text
+            setup_date: Date of the setup message (defaults to today)
+            source: Source of the setup message
+            
+        Returns:
+            TradeSetupDTO: Parsed setup data
+        """
     Parse a setup message into structured data.
     
     This is a functional wrapper around the SetupParser class for backwards compatibility.
