@@ -27,7 +27,7 @@ class OrderExecutor:
     
     def __init__(self):
         """Initialize the order executor."""
-        self.db_events = True  # Flag to indicate we're using DB events instead of Redis
+        # Using PostgreSQL event system directly now
         self.pending_orders = {}  # Track orders in progress
         self.filled_orders = {}   # Track orders that have been filled
         
@@ -447,18 +447,17 @@ class OrderExecutor:
                         self.filled_orders[order_id] = self.pending_orders[order_id]
                         del self.pending_orders[order_id]
                         
-                        # Publish order filled event to Redis
-                        if self.redis:
-                            try:
-                                event = {
-                                    'event': 'order_filled',
-                                    'order_id': order_id,
-                                    'order': order,
-                                    'properties': self.filled_orders[order_id].get('properties')
-                                }
-                                self.redis.publish('events:orders', json.dumps(event))
-                            except Exception as e:
-                                logger.warning(f"Error publishing order filled event to Redis: {e}")
+                        # Publish order filled event to PostgreSQL event system
+                        try:
+                            event = {
+                                'event': 'order_filled',
+                                'order_id': order_id,
+                                'order': order,
+                                'properties': self.filled_orders[order_id].get('properties')
+                            }
+                            publish_event('orders', event)
+                        except Exception as e:
+                            logger.warning(f"Error publishing order filled event to PostgreSQL: {e}")
                                 
                     # Check if failed/canceled
                     elif status in ['canceled', 'expired', 'rejected', 'suspended']:
