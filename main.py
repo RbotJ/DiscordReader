@@ -46,6 +46,11 @@ def create_app():
         from api_routes import register_api_routes
         register_api_routes(app, db)
         logging.info("API routes registered")
+        
+        # Register today's tickers API route
+        from api_routes_update import add_todays_tickers_route
+        add_todays_tickers_route(app, db)
+        logging.info("Today's tickers API route registered")
     except ImportError as e:
         logging.warning(f"Could not register API routes: {e}")
     
