@@ -499,6 +499,19 @@ class SetupParser:
         """
         targets = set()
         
+        # Extract comma-separated targets from parentheses
+        paren_pattern = r'\((\s*\d+(?:\.\d+)?(?:\s*,\s*\d+(?:\.\d+)?)*\s*)\)'
+        paren_matches = re.finditer(paren_pattern, text)
+        for match in paren_matches:
+            target_group = match.group(1)
+            # Split and parse individual targets
+            for target_str in target_group.split(','):
+                try:
+                    target = float(target_str.strip())
+                    targets.add(target)
+                except (ValueError, TypeError):
+                    pass
+        
         # Extract targets using various patterns
         for pattern in self.target_patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)

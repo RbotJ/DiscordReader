@@ -73,6 +73,12 @@ class TestNumberExtraction(unittest.TestCase):
         result = extract_targets(test_text, signal_line)
         self.assertEqual(result, [585.80, 587.90, 589.50])
         
+    def test_extract_targets_from_parentheses(self):
+        """Test extracting targets from parentheses format."""
+        test_text = "🔼 Aggressive Breakout Above 592.53 (594.70, 597.20, 600.50)"
+        result = extract_targets(test_text)
+        self.assertEqual(set(result), {594.70, 597.20, 600.50})
+        
     def test_extract_targets_from_signal_line(self):
         """Test extracting targets from the signal line."""
         test_text = "Random text"
