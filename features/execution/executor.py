@@ -75,11 +75,11 @@ class OrderExecutor:
                     'timestamp': datetime.now().isoformat()
                 }
                 
-                # Publish order event to Redis
-                if self.redis:
+                # Publish order event to database events system
+                if self.db_events:
                     try:
                         event = {
-                            'event': 'order_created',
+                            'event_type': 'order_created',
                             'order_id': order_id,
                             'symbol': symbol,
                             'side': side,
@@ -87,9 +87,9 @@ class OrderExecutor:
                             'order_type': 'market',
                             'properties': order_properties
                         }
-                        self.redis.publish('events:orders', json.dumps(event))
+                        publish_event('events:orders', event)
                     except Exception as e:
-                        logger.warning(f"Error publishing order event to Redis: {e}")
+                        logger.warning(f"Error publishing order event to database: {e}")
                 
             return order
         except Exception as e:
@@ -468,18 +468,18 @@ class OrderExecutor:
                         # Remove from pending orders
                         del self.pending_orders[order_id]
                         
-                        # Publish order failed event to Redis
-                        if self.redis:
+                        # Publish order failed event to database events system
+                        if self.db_events:
                             try:
                                 event = {
-                                    'event': 'order_failed',
+                                    'event_type': 'order_failed',
                                     'order_id': order_id,
                                     'status': status,
                                     'order': order
                                 }
-                                self.redis.publish('events:orders', json.dumps(event))
+                                publish_event('events:orders', event)
                             except Exception as e:
-                                logger.warning(f"Error publishing order failed event to Redis: {e}")
+                                logger.warning(f"Error publishing order failed event to database: {e}")
         except Exception as e:
             logger.error(f"Error updating order status: {e}")
 
