@@ -348,14 +348,59 @@ def add_todays_tickers_route(app, db):
             # If we have a valid stock client, try to get real data
             if stock_client:
                 try:
-                    # Use the string representation directly for newer Alpaca SDK
-                    # The SDK will handle conversion internally
-                    tf = timeframe
+                    # Get the proper TimeFrame for Alpaca API
+                    # The TimeFrame class in alpaca-py needs to be instantiated with the right values
+                    # For version compatibility, we'll create manually with string manipulation
+                    minutes_map = {
+                        '1Min': 1,
+                        '5Min': 5,
+                        '15Min': 15,
+                        '30Min': 30
+                    }
+                    hours_map = {
+                        '1Hour': 1,
+                        '2Hour': 2,
+                        '4Hour': 4
+                    }
+                    days_map = {
+                        '1Day': 1
+                    }
+                    
+                    # Create string-based timeframe for version compatibility
+                    if timeframe in minutes_map:
+                        minutes = minutes_map[timeframe]
+                        tf = f"{minutes}Min" 
+                    elif timeframe in hours_map:
+                        hours = hours_map[timeframe]
+                        tf = f"{hours}Hour"
+                    elif timeframe in days_map:
+                        days = days_map[timeframe]
+                        tf = f"{days}Day"
+                    else:
+                        # Default to 5 minute candles
+                        tf = "5Min"
+                    
+                    # Convert string timeframe to TimeFrame object
+                    if timeframe == '1Min':
+                        tf_obj = TimeFrame(1, TimeFrame.Minute)
+                    elif timeframe == '5Min':
+                        tf_obj = TimeFrame(5, TimeFrame.Minute)
+                    elif timeframe == '15Min':
+                        tf_obj = TimeFrame(15, TimeFrame.Minute)
+                    elif timeframe == '30Min':
+                        tf_obj = TimeFrame(30, TimeFrame.Minute)
+                    elif timeframe == '1Hour':
+                        tf_obj = TimeFrame(1, TimeFrame.Hour)
+                    elif timeframe == '1Day':
+                        tf_obj = TimeFrame(1, TimeFrame.Day)
+                    else:
+                        # Default to 5 minute candles
+                        tf_obj = TimeFrame(5, TimeFrame.Minute)
                     
                     # Make the request to Alpaca
                     bars_request = StockBarsRequest(
                         symbol_or_symbols=[ticker],
-                        timeframe=tf,
+                        timeframe=tf_obj,
                         start=start,
                         end=end,
                         limit=limit
