@@ -5,6 +5,23 @@ This module handles publishing alerts to Discord channels based on
 trading signals and events from the PostgreSQL event system.
 """
 
+import json
+import logging
+from datetime import datetime
+from typing import Dict, Any, Optional
+
+from common.events import subscribe_to_events, publish_event, EventChannels
+from common.event_compat import event_client
+from common.db_models import NotificationModel
+from common.db import db
+from common.event_constants import (
+    DISCORD_RAW_MESSAGE_CHANNEL,
+    DISCORD_SETUP_MESSAGE_CHANNEL
+)
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
 import logging
 import json
 import asyncio
@@ -164,35 +181,39 @@ class AlertPublisher:
 
         return alert_data
 
-    async def publish_alert(self, alert_type: str, alert_data: Dict[str, Any]) -> bool:
+    async def publish_alert(self, alert_type: str, data: Dict[str, Any]) -> bool:
         """
-        Publish an alert to the appropriate Discord channel
-
-        Args:
-            alert_type: The type of alert
-            alert_data: Alert data
-
-        Returns:
-            bool: True if published successfully, False otherwise
+        Publish an alert to Discord using PostgreSQL event system
         """
         try:
-            # Get the channel from the channel manager
-            if not hasattr(self.bot, 'channel_manager'):
-                logger.error("Channel manager not available")
+            # Add metadata to alert
+            enriched_data = {
+                **data,
+                "timestamp": datetime.utcnow().isoformat(),
+                "alert_type": alert_type
+            }
+
+            # Store notification in database
+            notification = NotificationModel(
+                type=alert_type,
+                title=self._get_alert_title(alert_type, data),
+                message=json.dumps(enriched_data),
+                meta_data=enriched_data
+            )
+
+            try:
+                db.session.add(notification)
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Error storing notification: {e}")
+                db.session.rollback()
                 return False
 
-            channel = self.bot.channel_manager.get_alert_channel(alert_type)
-            if not channel:
-                logger.warning(f"No channel set for alert type: {alert_type}")
-                return False
-
-            # Format the alert message
-            embed = self._format_alert_embed(alert_type, alert_data)
-
-            # Send the message
-            await channel.send(embed=embed)
-            logger.info(f"Published {alert_type} alert to #{channel.name}")
-            return True
+            # Publish event
+            return publish_event(
+                DISCORD_SETUP_MESSAGE_CHANNEL,
+                enriched_data
+            )
 
         except Exception as e:
             logger.error(f"Error publishing alert: {e}")
