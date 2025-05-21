@@ -1,7 +1,7 @@
 """
 Event Constants Module
 
-This module defines constants for event channels and types used in Redis pub/sub.
+This module defines constants for event channels and types used in PostgreSQL-based event system.
 """
 
 # Setup event channels

@@ -486,6 +486,75 @@ def get_latest_event_id(channel: Union[str, List[str]] = None) -> int:
         return 0
 
 # Price cache functions
+def cache_data(key: str, data: Dict[str, Any], expiry_seconds: int = 900) -> bool:
+    from datetime import timedelta
+    """
+    Store data in the database cache system.
+    
+    Args:
+        key: The cache key to use
+        data: The data to cache (must be JSON serializable)
+        expiry_seconds: How long the cache entry should live (in seconds)
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Calculate expiry time
+        expiry_time = datetime.utcnow() + timedelta(seconds=expiry_seconds)
+        
+        # Create event with cache data
+        event_data = {
+            'event_type': 'cache_data',
+            'data': data,
+            'expiry_time': expiry_time.isoformat()
+        }
+        
+        # Use the cache: prefix for all cache entries
+        cache_channel = f"cache:{key}"
+        
+        return publish_event(cache_channel, event_data)
+    except Exception as e:
+        logger.error(f"Error caching data for key {key}: {e}")
+        return False
+
+def get_cached_data(key: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve data from the database cache system.
+    
+    Args:
+        key: The cache key to retrieve
+        
+    Returns:
+        Optional[Dict]: The cached data or None if not found or expired
+    """
+    try:
+        # Use the cache: prefix for all cache entries
+        cache_channel = f"cache:{key}"
+        
+        # Get the most recent cache entry for this key
+        events = poll_events(cache_channel, count=1)
+        
+        if not events or len(events) == 0:
+            return None
+            
+        # Get the event data
+        event = events[0]
+        
+        # Check if expired
+        expiry_time_str = event.get('expiry_time')
+        if expiry_time_str:
+            expiry_time = datetime.fromisoformat(expiry_time_str)
+            if datetime.utcnow() > expiry_time:
+                # Cache entry is expired
+                return None
+                
+        # Return the cached data
+        return event.get('data')
+    except Exception as e:
+        logger.error(f"Error retrieving cached data for key {key}: {e}")
+        return None
+
 def update_price_cache(ticker: str, price: float, timestamp: Optional[datetime] = None) -> bool:
     """
     Update the price in the cache.

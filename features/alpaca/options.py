@@ -57,7 +57,7 @@ class OptionsChainFetcher:
             raise ValueError("Alpaca API credentials required")
             
         self.client = options_historical_client or OptionHistoricalDataClient(api_key, api_secret)
-        self.redis = get_redis_client()
+        self.use_db_cache = True  # Flag indicating we're using DB for cache instead of Redis
 
     def get_chain(
         self,
