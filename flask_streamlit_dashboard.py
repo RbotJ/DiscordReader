@@ -502,19 +502,35 @@ with col2:
     )
 
 with col3:
-    # Get market status
-    market_data = get_market_status()
-    if market_data and 'is_open' in market_data:
-        market_status = "Open" if market_data['is_open'] else "Closed"
-        if market_data['is_open'] and 'next_close' in market_data:
-            next_time = market_data['next_close']
-            time_label = "Market Closes"
-        elif not market_data['is_open'] and 'next_open' in market_data:
-            next_time = market_data['next_open']
-            time_label = "Market Opens"
+    # Get market status from Alpaca
+    try:
+        response = requests.get('http://localhost:5000/api/market/status')
+        if response.status_code == 200:
+            market_data = response.json()
+            if market_data['status'] == 'success':
+                market_status = "Open" if market_data['is_open'] else "Closed"
+                if market_data['is_open'] and market_data['next_close']:
+                    next_time = datetime.datetime.fromisoformat(market_data['next_close'].replace('Z', '+00:00'))
+                    time_label = "Market Closes"
+                elif not market_data['is_open'] and market_data['next_open']:
+                    next_time = datetime.datetime.fromisoformat(market_data['next_open'].replace('Z', '+00:00'))
+                    time_label = "Market Opens"
+                else:
+                    next_time = None
+                    time_label = ""
+            else:
+                market_status = "Unknown"
+                next_time = None
+                time_label = ""
         else:
+            market_status = "Error"
             next_time = None
             time_label = ""
+    except Exception as e:
+        logger.error(f"Error fetching market status: {e}")
+        market_status = "Error"
+        next_time = None
+        time_label = ""
         
         if next_time:
             next_time_str = next_time.strftime("%H:%M:%S") if isinstance(next_time, datetime.datetime) else str(next_time)
