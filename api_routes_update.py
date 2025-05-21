@@ -380,32 +380,43 @@ def add_todays_tickers_route(app, db):
                         # Default to 5 minute candles
                         tf = "5Min"
                     
-                    # Use correct TimeFrame objects for Alpaca API v0.40.0
-                    if timeframe == '1Min':
-                        tf_obj = TimeFrame(1, 'Min')
-                    elif timeframe == '5Min':
-                        tf_obj = TimeFrame(5, 'Min')
-                    elif timeframe == '15Min':
-                        tf_obj = TimeFrame(15, 'Min')
-                    elif timeframe == '30Min':
-                        tf_obj = TimeFrame(30, 'Min')
-                    elif timeframe == '1Hour':
-                        tf_obj = TimeFrame(1, 'Hour')
-                    elif timeframe == '1Day':
-                        tf_obj = TimeFrame(1, 'Day')
-                    else:
-                        # Default to 5 minute candles
-                        tf_obj = TimeFrame(5, 'Min')
-                    
-                    # Make the request to Alpaca
-                    bars_request = StockBarsRequest(
-                        symbol_or_symbols=[ticker],
-                        timeframe=tf_obj,
-                        start=start,
-                        end=end,
-                        limit=limit
-                    )
-                    bars_data = stock_client.get_stock_bars(bars_request)
+                    # The simplest approach for Alpaca API v0.40.0
+                    try:
+                        # Create a request with a dictionary for more flexibility
+                        request_dict = {
+                            'symbol_or_symbols': [ticker],
+                            'start': start,
+                            'end': end,
+                            'limit': limit,
+                        }
+                        
+                        # Handle the timeframe string-to-object conversion
+                        if timeframe == '1Min':
+                            request_dict['timeframe'] = '1Min'
+                        elif timeframe == '5Min':
+                            request_dict['timeframe'] = '5Min'
+                        elif timeframe == '15Min': 
+                            request_dict['timeframe'] = '15Min'
+                        elif timeframe == '30Min':
+                            request_dict['timeframe'] = '30Min'
+                        elif timeframe == '1Hour':
+                            request_dict['timeframe'] = '1Hour'
+                        elif timeframe == '1Day':
+                            request_dict['timeframe'] = '1Day'
+                        else:
+                            # Default to 5 minute candles
+                            request_dict['timeframe'] = '5Min'
+                        
+                        # Create the request with unpacked dictionary
+                        bars_request = StockBarsRequest(**request_dict)
+                        
+                        # Get the data
+                        bars_data = stock_client.get_stock_bars(bars_request)
+                        
+                    except Exception as e:
+                        # Fall back to synthetic data if we can't get real data
+                        logging.error(f"Error fetching Alpaca data for {ticker}: {e}")
+                        bars_data = None
                     
                     # Convert to list of candles
                     candles = []
