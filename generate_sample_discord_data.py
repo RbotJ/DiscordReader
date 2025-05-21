@@ -1,14 +1,13 @@
 """
-Generate Sample Discord Data for Testing
+Discord Message Statistics Tool
 
-This script generates sample Discord message data for testing the
-trade monitor dashboard without requiring a Discord connection.
+This script displays statistics about stored Discord messages including 
+counts and timestamps. It only uses authentic data received from Discord.
 """
 import json
 import logging
 import os
-from datetime import datetime, timedelta
-import random
+from datetime import datetime
 
 # Import our storage module
 import discord_message_storage
@@ -17,125 +16,50 @@ import discord_message_storage
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Sample Discord messages
-SAMPLE_MESSAGES = [
+def check_message_stats():
     """
-A+ Trade Setups - Today May 20
-
-$SPY Rejection Near 586
-Bias: Bearish
-
-$AAPL Breaking Support
-Support at $182
-Target: $178
-Stop: $185
-    """,
+    Check and display message statistics.
     """
-A+ Trade Setups - Today's Picks
-
-$NVDA Bounce at $920
-Looks strong heading into earnings next week
-    """,
-    """
-A+ Trade Setups - Hot Alert
-
-$AMD Breaking Out Above $143
-Target: $150
-Stop: $140
-Resistance at $147
-    """,
-    """
-A+ Trade Setups - Sector Alert
-
-$META Support Test at $450
-Looking for bounce
-Target: $470
-Stop: $440
-    """,
-    """
-A+ Trade Setups - Quick Update
-
-$TSLA Breakdown Below $180
-Bias: Bearish
-Support at $170
-    """
-]
-
-def generate_sample_messages(count=5):
-    """
-    Generate sample Discord messages.
-    
-    Args:
-        count: Number of messages to generate
-        
-    Returns:
-        List of generated message dictionaries
-    """
-    messages = []
-    
-    # Base timestamp (now)
-    base_time = datetime.now()
-    
-    for i in range(count):
-        # Message timestamp (going backward in time from now)
-        msg_time = base_time - timedelta(hours=i*4)
-        
-        # Select a random message content
-        content = SAMPLE_MESSAGES[i % len(SAMPLE_MESSAGES)]
-        
-        # Generate a random message ID
-        msg_id = str(random.randint(1000000000000000000, 9999999999999999999))
-        
-        # Create the message data
-        message_data = {
-            "id": msg_id,
-            "content": content,
-            "author": "TradingBot",
-            "timestamp": msg_time.isoformat(),
-            "channel_name": "a-plus-signals",
-            "fetch_timestamp": datetime.now().isoformat()
-        }
-        
-        messages.append(message_data)
-    
-    return messages
-
-def save_sample_messages(count=5):
-    """
-    Generate and save sample messages to storage.
-    
-    Args:
-        count: Number of messages to generate
-        
-    Returns:
-        Number of messages saved successfully
-    """
-    messages = generate_sample_messages(count)
-    
-    success_count = 0
-    for message in messages:
-        if discord_message_storage.save_message(message):
-            success_count += 1
-    
-    logger.info(f"Generated and saved {success_count} sample messages")
-    
-    # Get updated stats
+    # Get stats from storage
     stats = discord_message_storage.get_message_stats()
-    logger.info(f"Total messages in storage: {stats['count']}")
     
-    return success_count
+    # Display general stats
+    print("=== Discord Message Statistics ===")
+    print(f"Total messages: {stats['count']}")
+    
+    if stats.get('latest_timestamp'):
+        print(f"Latest message: {stats['latest_timestamp']}")
+        print(f"Latest author: {stats.get('latest_author', 'Unknown')}")
+        print(f"Latest channel: {stats.get('latest_channel', 'Unknown')}")
+    else:
+        print("No messages found in storage.")
+    
+    # Ticker frequency
+    if stats.get('ticker_frequency'):
+        print("\n=== Ticker Frequency ===")
+        for ticker, count in stats['ticker_frequency'].items():
+            print(f"${ticker}: {count} mention(s)")
+    
+    return stats
+
+def display_message_content():
+    """
+    Display the content of the latest message.
+    """
+    latest = discord_message_storage.get_latest_message()
+    
+    if latest and 'content' in latest:
+        print("\n=== Latest Message Content ===")
+        print(latest['content'])
+    else:
+        print("\nNo message content available.")
 
 if __name__ == "__main__":
-    # Generate and save sample messages
-    num_messages = 5  # Default
+    # Check storage stats
+    stats = check_message_stats()
     
-    # Check for command-line argument
-    import sys
-    if len(sys.argv) > 1:
-        try:
-            num_messages = int(sys.argv[1])
-        except ValueError:
-            pass
+    # Show latest message content
+    if stats['count'] > 0:
+        display_message_content()
     
-    save_sample_messages(num_messages)
-    print(f"Generated {num_messages} sample messages. Check discord_message_history.json")
+    print("\nNote: This tool only displays authentic data received from Discord.")

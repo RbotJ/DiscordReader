@@ -21,6 +21,7 @@ LATEST_MESSAGE_FILE = "latest_discord_message.json"
 def save_message(message_data: Dict[str, Any]) -> bool:
     """
     Save a Discord message to the message history.
+    Only saves authentic messages from Discord with valid ID and timestamp.
     
     Args:
         message_data: Dictionary containing message data
@@ -29,6 +30,15 @@ def save_message(message_data: Dict[str, Any]) -> bool:
         True if successful, False otherwise
     """
     try:
+        # Verify this is an authentic message with required fields
+        message_id = message_data.get('id')
+        timestamp = message_data.get('timestamp')
+        content = message_data.get('content')
+        
+        if not message_id or not timestamp or not content:
+            logger.error("Message missing required fields (id, timestamp, or content)")
+            return False
+            
         # First, save as latest message
         with open(LATEST_MESSAGE_FILE, 'w') as f:
             json.dump(message_data, f, indent=2)
@@ -38,30 +48,23 @@ def save_message(message_data: Dict[str, Any]) -> bool:
         if not history:
             history = []
         
-        # Add the current message if it's not already in the history
-        # Check by message ID to avoid duplicates
-        message_id = message_data.get('id')
-        if message_id:
-            # Filter out any existing message with the same ID
-            history = [msg for msg in history if msg.get('id') != message_id]
-            
-            # Add the new message at the beginning
-            history.insert(0, message_data)
-            
-            # Limit history size if needed (e.g., keep last 100 messages)
-            MAX_HISTORY = 100
-            if len(history) > MAX_HISTORY:
-                history = history[:MAX_HISTORY]
-            
-            # Save the updated history
-            with open(MESSAGE_HISTORY_FILE, 'w') as f:
-                json.dump(history, f, indent=2)
-            
-            logger.info(f"Message added to history. Total messages: {len(history)}")
-            return True
-        else:
-            logger.error("Message data does not contain an ID")
-            return False
+        # Filter out any existing message with the same ID to avoid duplicates
+        history = [msg for msg in history if msg.get('id') != message_id]
+        
+        # Add the new message at the beginning
+        history.insert(0, message_data)
+        
+        # Limit history size (keep last 100 messages)
+        MAX_HISTORY = 100
+        if len(history) > MAX_HISTORY:
+            history = history[:MAX_HISTORY]
+        
+        # Save the updated history
+        with open(MESSAGE_HISTORY_FILE, 'w') as f:
+            json.dump(history, f, indent=2)
+        
+        logger.info(f"Authentic message added to history. Total messages: {len(history)}")
+        return True
             
     except Exception as e:
         logger.error(f"Error saving message: {e}")
