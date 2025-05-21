@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 import json
 import random
 import numpy as np
+import pytz
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit

@@ -35,6 +35,14 @@ def create_app():
     # Initialize database
     init_db(app)
     
+    # Initialize PostgreSQL-based event system
+    from common.events import initialize_events
+    success = initialize_events()
+    if success:
+        logging.info("PostgreSQL event system initialized")
+    else:
+        logging.warning("Failed to initialize PostgreSQL event system")
+    
     # Initialize SocketIO
     socketio.init_app(app, cors_allowed_origins="*")
     

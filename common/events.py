@@ -1,333 +1,432 @@
 """
-Event Bus System
+PostgreSQL-based Event System
 
-This module provides event publishing and subscription functionality
-using PostgreSQL instead of Redis.
+This module provides a database-backed event system that replaces Redis pub/sub
+for feature-to-feature communication in the trading application.
 """
 import json
 import logging
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Callable, Union
+from typing import Dict, List, Callable, Any, Optional, Union
 
-from app import db
-from sqlalchemy import text
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import os
 
-# Configure logging
+# Set up logging
 logger = logging.getLogger(__name__)
 
-# Define standard event channels (keeping same names as before for compatibility)
+# Event channel definitions to replace Redis channels
 class EventChannels:
-    """Standard event channels used throughout the application."""
-    SETUP_RECEIVED = "setup.received"
-    SETUP_PARSED = "setup.parsed"
-    MARKET_PRICE_UPDATE = "market.price_update"
-    SIGNAL_TRIGGERED = "signal.triggered"
-    TRADE_EXECUTED = "trade.executed"
-    POSITION_UPDATED = "position.updated"
-    POSITION_CLOSED = "position.closed"
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
-
-# Discord-specific channels
-DISCORD_RAW_MESSAGE_CHANNEL = "events:discord:raw_messages"
-DISCORD_SETUP_MESSAGE_CHANNEL = "events:discord:setup_messages"
-SETUP_CREATED_CHANNEL = "events:setup:created"
-SIGNAL_CREATED_CHANNEL = "events:signal:created"
-
-def publish_event(channel: str, event_type: str, payload: Dict[str, Any]) -> bool:
     """
-    Publish an event to the event bus.
+    Event channel definitions used throughout the application.
+    All former Redis channels are now mapped to PostgreSQL table entries.
+    """
+    # Market data channels
+    MARKET_PRICE_UPDATE = "market:price:update"
+    MARKET_BARS_UPDATE = "market:bars:update"
+    MARKET_OPTION_UPDATE = "market:option:update"
+    
+    # Setup channels
+    SETUP_CREATED = "setup:created"
+    SETUP_UPDATED = "setup:updated"
+    SETUP_DETECTED = "setup:detected"
+    
+    # Signal channels
+    SIGNAL_TRIGGERED = "signal:triggered"
+    SIGNAL_UPDATED = "signal:updated"
+    SIGNAL_CANCELLED = "signal:cancelled"
+    
+    # Trade channels
+    TRADE_EXECUTED = "trade:executed"
+    TRADE_UPDATED = "trade:updated"
+    TRADE_CLOSED = "trade:closed"
+    
+    # Discord channels
+    DISCORD_MESSAGE_RECEIVED = "discord:message:received"
+    DISCORD_BATCH_CREATED = "discord:batch:created"
+
+# Create SQLAlchemy models
+Base = declarative_base()
+
+class EventEntry(Base):
+    """Event entry in the database"""
+    __tablename__ = 'event_bus'
+    
+    id = Column(Integer, primary_key=True)
+    channel = Column(String(100), nullable=False, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    data = Column(Text, nullable=True)
+    processed = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, nullable=True)
+
+# Global connection and thread state
+_db_engine = None
+_db_session = None
+_listeners = {}
+_message_counters = {'published': 0, 'processed': 0, 'errors': 0}
+_running = False
+_listener_thread = None
+_lock = threading.Lock()
+_last_health_check = None
+_last_processed_id = 0
+
+def initialize_events(db_url=None):
+    """
+    Initialize the event system with a database connection.
+    
+    Args:
+        db_url: Optional database URL, defaults to DATABASE_URL env var
+    """
+    global _db_engine, _db_session
+    
+    if not db_url:
+        db_url = os.environ.get('DATABASE_URL')
+    
+    if not db_url:
+        logger.error("No DATABASE_URL provided for event system")
+        return False
+    
+    try:
+        # Create database engine and session
+        _db_engine = create_engine(db_url)
+        Session = sessionmaker(bind=_db_engine)
+        _db_session = Session()
+        
+        # Create tables if they don't exist
+        Base.metadata.create_all(_db_engine)
+        
+        logger.info(f"Event system initialized with database at {db_url}")
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing event system: {e}")
+        return False
+
+def publish_event(channel: str, data: Dict[str, Any]) -> bool:
+    """
+    Publish an event to a channel.
     
     Args:
         channel: The channel to publish to
-        event_type: The type of event
-        payload: The event data payload
+        data: The event data (must be JSON serializable)
         
     Returns:
-        bool: True if published successfully, False otherwise
+        bool: True if successful, False otherwise
     """
+    global _message_counters
+    
+    if not _db_session:
+        logger.error("Event system not initialized")
+        return False
+    
     try:
-        # Add timestamp if not present
-        if 'timestamp' not in payload:
-            payload['timestamp'] = datetime.now().isoformat()
-            
-        with db.session.begin():
-            # Insert into event_bus table
-            sql = text("""
-                INSERT INTO event_bus (event_type, channel, payload)
-                VALUES (:event_type, :channel, :payload)
-            """)
-            
-            db.session.execute(
-                sql, 
-                {
-                    'event_type': event_type,
-                    'channel': channel,
-                    'payload': json.dumps(payload)
-                }
-            )
-            
-        logger.debug(f"Published event to {channel}: {event_type}")
-        return True
+        # Ensure data has event_type
+        event_type = data.get('event_type', 'generic')
         
+        # Create event entry
+        event = EventEntry(
+            channel=channel,
+            event_type=event_type,
+            data=json.dumps(data),
+            created_at=datetime.utcnow()
+        )
+        
+        # Add to database
+        _db_session.add(event)
+        _db_session.commit()
+        
+        # Update counter
+        _message_counters['published'] += 1
+        
+        logger.debug(f"Published event to channel {channel}: {event_type}")
+        return True
     except Exception as e:
         logger.error(f"Error publishing event to {channel}: {e}")
+        _message_counters['errors'] += 1
         return False
 
-def poll_events(channels: List[str], since_id: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+def subscribe(channels: List[str], callback: Callable) -> bool:
     """
-    Poll for new events on the specified channels.
+    Subscribe to channels with a callback.
     
     Args:
-        channels: List of channels to poll
-        since_id: Get events with ID greater than this
-        limit: Maximum number of events to return
+        channels: List of channels to subscribe to
+        callback: Function to call when an event is received
         
     Returns:
-        List of events
+        bool: True if successful, False otherwise
     """
+    global _listeners, _lock
+    
+    if not _db_session:
+        logger.error("Event system not initialized")
+        return False
+    
     try:
-        with db.session.begin():
-            sql = text("""
-                SELECT id, event_type, channel, payload, created_at
-                FROM event_bus
-                WHERE channel = ANY(:channels)
-                AND id > :since_id
-                ORDER BY id ASC
-                LIMIT :limit
-            """)
-            
-            result = db.session.execute(
-                sql, 
-                {
-                    'channels': channels,
-                    'since_id': since_id,
-                    'limit': limit
-                }
-            )
-            
-            events = []
-            for row in result:
-                events.append({
-                    'id': row.id,
-                    'event_type': row.event_type,
-                    'channel': row.channel,
-                    'payload': json.loads(row.payload) if row.payload else {},
-                    'created_at': row.created_at.isoformat() if row.created_at else None
-                })
-                
-            return events
-            
+        with _lock:
+            # Register callback for each channel
+            for channel in channels:
+                if channel not in _listeners:
+                    _listeners[channel] = []
+                if callback not in _listeners[channel]:
+                    _listeners[channel].append(callback)
+        
+        # Start listener thread if not already running
+        start_listener()
+        
+        logger.info(f"Subscribed to channels: {channels}")
+        return True
     except Exception as e:
-        logger.error(f"Error polling events: {e}")
-        return []
+        logger.error(f"Error subscribing to channels {channels}: {e}")
+        return False
 
-def get_latest_event_id() -> int:
+def unsubscribe(channels: List[str], callback: Callable) -> bool:
     """
-    Get the latest event ID from the event bus.
+    Unsubscribe from channels.
+    
+    Args:
+        channels: List of channels to unsubscribe from
+        callback: Callback function to remove
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    global _listeners, _lock
+    
+    try:
+        with _lock:
+            for channel in channels:
+                if channel in _listeners and callback in _listeners[channel]:
+                    _listeners[channel].remove(callback)
+                    # Remove channel if no more listeners
+                    if not _listeners[channel]:
+                        del _listeners[channel]
+        
+        logger.info(f"Unsubscribed from channels: {channels}")
+        return True
+    except Exception as e:
+        logger.error(f"Error unsubscribing from channels {channels}: {e}")
+        return False
+
+def unsubscribe_all() -> bool:
+    """
+    Unsubscribe from all channels.
     
     Returns:
-        The latest event ID or 0 if no events exist
+        bool: True if successful, False otherwise
     """
+    global _listeners, _lock
+    
     try:
-        with db.session.begin():
-            sql = text("SELECT MAX(id) FROM event_bus")
-            result = db.session.execute(sql).scalar()
-            return result or 0
+        with _lock:
+            _listeners.clear()
+        
+        logger.info("Unsubscribed from all channels")
+        return True
+    except Exception as e:
+        logger.error(f"Error unsubscribing from all channels: {e}")
+        return False
+
+def start_listener():
+    """Start the event listener thread if not already running."""
+    global _running, _listener_thread
+    
+    if _running and _listener_thread and _listener_thread.is_alive():
+        return
+    
+    _running = True
+    _listener_thread = threading.Thread(target=_listen, daemon=True)
+    _listener_thread.start()
+    
+    logger.info("Event listener thread started")
+
+def stop_listener():
+    """Stop the event listener thread."""
+    global _running
+    
+    _running = False
+    
+    logger.info("Event listener thread stopping")
+
+def _listen():
+    """Background thread that listens for events"""
+    global _running, _message_counters, _last_processed_id, _last_health_check
+    
+    logger.info("PostgreSQL event listener thread started")
+    
+    while _running:
+        try:
+            # Update health check timestamp
+            _last_health_check = time.time()
             
+            # Get unprocessed events from database
+            events = _db_session.query(EventEntry) \
+                .filter(EventEntry.processed == False) \
+                .filter(EventEntry.id > _last_processed_id) \
+                .order_by(EventEntry.id.asc()) \
+                .limit(100) \
+                .all()
+            
+            if not events:
+                # No events to process, sleep briefly
+                time.sleep(0.1)
+                continue
+            
+            # Process each event
+            for event in events:
+                try:
+                    # Parse JSON data
+                    data = json.loads(event.data)
+                    
+                    # Process event with registered callbacks
+                    with _lock:
+                        if event.channel in _listeners:
+                            for callback in _listeners[event.channel]:
+                                try:
+                                    callback(event.channel, data)
+                                except Exception as e:
+                                    logger.error(f"Error in event callback: {e}")
+                                    _message_counters['errors'] += 1
+                    
+                    # Mark event as processed
+                    event.processed = True
+                    event.processed_at = datetime.utcnow()
+                    _db_session.commit()
+                    
+                    # Update counters
+                    _message_counters['processed'] += 1
+                    _last_processed_id = event.id
+                    
+                except Exception as e:
+                    logger.error(f"Error processing event {event.id}: {e}")
+                    _message_counters['errors'] += 1
+                    # Continue to next event
+                    continue
+            
+        except Exception as e:
+            logger.error(f"Error in event listener thread: {e}")
+            time.sleep(1)  # Sleep to avoid tight loop on error
+    
+    logger.info("Event listener thread stopped")
+
+def clear_events():
+    """
+    Clear all events from the database.
+    
+    Returns:
+        int: Number of events cleared
+    """
+    if not _db_session:
+        logger.error("Event system not initialized")
+        return 0
+    
+    try:
+        # Delete all events
+        count = _db_session.query(EventEntry).delete()
+        _db_session.commit()
+        
+        logger.info(f"Cleared {count} events from database")
+        return count
+    except Exception as e:
+        logger.error(f"Error clearing events: {e}")
+        return 0
+
+def poll_events(channel: str, last_id: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    """
+    Poll for events from a channel since a given ID.
+    
+    Args:
+        channel: The channel to poll from
+        last_id: Only get events with ID greater than this
+        count: Maximum number of events to return
+        
+    Returns:
+        List of event data dictionaries
+    """
+    if not _db_session:
+        logger.error("Event system not initialized")
+        return []
+    
+    try:
+        # Find events for this channel with ID greater than last_id
+        events = _db_session.query(EventEntry) \
+            .filter(EventEntry.channel == channel) \
+            .filter(EventEntry.id > last_id) \
+            .order_by(EventEntry.id.asc()) \
+            .limit(count) \
+            .all()
+        
+        # Convert to list of data dictionaries
+        result = []
+        for event in events:
+            try:
+                # Load data from JSON
+                data = json.loads(event.data)
+                
+                # Add event metadata
+                data['_event_id'] = event.id
+                data['_event_timestamp'] = event.created_at.isoformat()
+                
+                result.append(data)
+            except Exception as e:
+                logger.error(f"Error parsing event data for ID {event.id}: {e}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error polling events from channel {channel}: {e}")
+        return []
+
+def get_latest_event_id(channel: str = None) -> int:
+    """
+    Get the latest event ID for a channel, or across all channels.
+    
+    Args:
+        channel: Optional channel filter
+        
+    Returns:
+        Latest event ID, or 0 if no events found
+    """
+    if not _db_session:
+        logger.error("Event system not initialized")
+        return 0
+    
+    try:
+        # Create query for the latest event ID
+        query = _db_session.query(EventEntry.id)
+        
+        # Filter by channel if specified
+        if channel:
+            query = query.filter(EventEntry.channel == channel)
+        
+        # Get the max ID
+        result = query.order_by(EventEntry.id.desc()).first()
+        
+        # Return the ID or 0 if no events
+        return result[0] if result else 0
     except Exception as e:
         logger.error(f"Error getting latest event ID: {e}")
         return 0
 
-# Event listener class for background polling
-class EventListener:
-    """Event listener that polls the event bus in a background thread."""
-    
-    def __init__(self, channels: List[str], callback: Callable[[Dict[str, Any]], None], 
-                 poll_interval: float = 0.5):
-        """
-        Initialize an event listener.
-        
-        Args:
-            channels: List of channels to subscribe to
-            callback: Function to call when an event is received
-            poll_interval: How often to poll for events (in seconds)
-        """
-        self.channels = channels
-        self.callback = callback
-        self.poll_interval = poll_interval
-        self.running = False
-        self.thread = None
-        self.last_id = get_latest_event_id()
-        
-    def start(self) -> bool:
-        """
-        Start the event listener thread.
-        
-        Returns:
-            bool: True if started, False otherwise
-        """
-        if self.running:
-            logger.warning("Event listener already running")
-            return False
-            
-        self.running = True
-        self.thread = threading.Thread(target=self._poll_loop, daemon=True)
-        self.thread.start()
-        
-        logger.info(f"Started event listener for channels: {self.channels}")
-        return True
-        
-    def stop(self) -> bool:
-        """
-        Stop the event listener thread.
-        
-        Returns:
-            bool: True if stopped, False otherwise
-        """
-        if not self.running:
-            logger.warning("Event listener not running")
-            return False
-            
-        self.running = False
-        
-        if self.thread:
-            self.thread.join(timeout=2.0)
-            if self.thread.is_alive():
-                logger.warning("Event listener thread did not terminate cleanly")
-            self.thread = None
-            
-        logger.info("Stopped event listener")
-        return True
-        
-    def _poll_loop(self):
-        """Poll for events in a loop."""
-        logger.info("Event listener thread started")
-        
-        while self.running:
-            try:
-                # Poll for new events
-                events = poll_events(self.channels, self.last_id)
-                
-                # Process events
-                for event in events:
-                    try:
-                        # Update last_id
-                        self.last_id = max(self.last_id, event['id'])
-                        
-                        # Call callback
-                        self.callback(event)
-                    except Exception as e:
-                        logger.error(f"Error processing event: {e}")
-                
-                # Sleep briefly
-                time.sleep(self.poll_interval)
-                
-            except Exception as e:
-                logger.error(f"Error in event listener: {e}")
-                time.sleep(1.0)  # Sleep longer on error
-
-# For backward compatibility
-def subscribe_to_channel(channel: str, callback: Callable) -> EventListener:
+def get_status():
     """
-    Subscribe to a channel.
+    Get the status of the event system.
     
-    Args:
-        channel: Channel to subscribe to
-        callback: Function to call when an event is received
-        
     Returns:
-        EventListener instance
+        dict: Status information
     """
-    listener = EventListener([channel], callback)
-    listener.start()
-    return listener
-
-# Cache operations for price updates
-def update_price_cache(symbol: str, price: float) -> bool:
-    """
-    Update the price cache for a symbol.
+    global _running, _message_counters, _last_health_check
     
-    Args:
-        symbol: The ticker symbol
-        price: The current price
-        
-    Returns:
-        bool: True if updated, False otherwise
-    """
-    try:
-        with db.session.begin():
-            sql = text("""
-                INSERT INTO price_cache (symbol, last_price, updated_at)
-                VALUES (:symbol, :price, NOW())
-                ON CONFLICT (symbol) 
-                DO UPDATE SET 
-                    last_price = :price,
-                    updated_at = NOW()
-            """)
-            
-            db.session.execute(
-                sql, 
-                {
-                    'symbol': symbol,
-                    'price': price
-                }
-            )
-            
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error updating price cache for {symbol}: {e}")
-        return False
-
-def get_price_from_cache(symbol: str) -> Optional[float]:
-    """
-    Get the cached price for a symbol.
-    
-    Args:
-        symbol: The ticker symbol
-        
-    Returns:
-        The cached price or None if not found
-    """
-    try:
-        with db.session.begin():
-            sql = text("""
-                SELECT last_price FROM price_cache
-                WHERE symbol = :symbol
-            """)
-            
-            result = db.session.execute(sql, {'symbol': symbol}).scalar()
-            return result
-            
-    except Exception as e:
-        logger.error(f"Error getting price from cache for {symbol}: {e}")
-        return None
-
-def clear_price_cache(symbol: Optional[str] = None) -> bool:
-    """
-    Clear the price cache for a symbol or all symbols.
-    
-    Args:
-        symbol: Symbol to clear or None to clear all
-        
-    Returns:
-        bool: True if cleared, False otherwise
-    """
-    try:
-        with db.session.begin():
-            if symbol:
-                sql = text("DELETE FROM price_cache WHERE symbol = :symbol")
-                db.session.execute(sql, {'symbol': symbol})
-            else:
-                sql = text("DELETE FROM price_cache")
-                db.session.execute(sql)
-                
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error clearing price cache: {e}")
-        return False
+    return {
+        'running': _running,
+        'listener_alive': _listener_thread.is_alive() if _listener_thread else False,
+        'channels': list(_listeners.keys()),
+        'published': _message_counters['published'],
+        'processed': _message_counters['processed'],
+        'errors': _message_counters['errors'],
+        'last_health_check': datetime.fromtimestamp(_last_health_check).isoformat() if _last_health_check else None,
+        'last_processed_id': _last_processed_id
+    }
