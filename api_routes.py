@@ -6,9 +6,11 @@ It follows a RESTful structure and the vertical slice architecture of the applic
 """
 
 import logging
+import json
 from flask import jsonify, request
-from datetime import datetime
+from datetime import datetime, date
 import os
+from sqlalchemy import text
 
 def register_api_routes(app, db):
     """
