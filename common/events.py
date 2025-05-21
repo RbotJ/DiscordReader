@@ -161,17 +161,33 @@ def publish_event(channel: str, data: Dict[str, Any]) -> bool:
         )
         
         # Add to database
-        _db_session.add(event)
-        _db_session.commit()
+        session.add(event)
+        session.commit()
         
         # Update counter
         _message_counters['published'] += 1
         
         logger.debug(f"Published event to channel {channel}: {event_type}")
+        
+        # Close the session
+        session.close()
         return True
     except Exception as e:
         logger.error(f"Error publishing event to {channel}: {e}")
         _message_counters['errors'] += 1
+        
+        # Try to rollback the transaction
+        try:
+            session.rollback()
+        except:
+            pass
+        
+        # Make sure to close the session
+        try:
+            session.close()
+        except:
+            pass
+            
         return False
 
 def subscribe(channels: List[str], callback: Callable) -> bool:
@@ -463,7 +479,10 @@ def get_latest_event_id(channel: Union[str, List[str]] = None) -> int:
     except Exception as e:
         logger.error(f"Error getting latest event ID: {e}")
         # Make sure to close the session even on error
-        session.close()
+        try:
+            session.close()
+        except:
+            pass
         return 0
 
 # Price cache functions
