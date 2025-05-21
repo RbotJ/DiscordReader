@@ -396,9 +396,7 @@ with col4:
 # Charts section
 st.header("Charts")
 
-if not st.session_state.active_tickers:
-    st.info("Select tickers from the sidebar to display charts")
-else:
+if st.session_state.active_tickers:
     # Calculate how many tickers per row (1, 2, or 3 depending on count)
     charts_per_row = min(len(st.session_state.active_tickers), 2)
     
