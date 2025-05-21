@@ -24,11 +24,28 @@ from common.schemas import (
 # Global parser instance for the functional API
 _parser = None
 
+def validate_price_levels(prices: List[float]) -> List[float]:
+    """Validate price levels are reasonable"""
+    if not prices:
+        return []
+    
+    # Filter out obviously wrong prices (e.g. negative or too high)
+    return [p for p in prices if 0 < p < 100000]
+
 def parse_setup_message(
     message_text: str,
     setup_date: Optional[date] = None,
     source: str = "unknown"
-) -> TradeSetupDTO:
+) -> Optional[TradeSetupDTO]:
+    """
+    Parse a setup message with validation.
+    Returns None if the message cannot be parsed.
+    """
+    if not message_text or not message_text.strip():
+        logger.warning("Empty message text")
+        return None
+        
+    try:
     """
     Parse a setup message into structured data.
     
@@ -75,12 +92,28 @@ def parse_setup_message(
     # Ensure setup_date is not None
     actual_date = setup_date if setup_date is not None else datetime.now().date()
     
-    return TradeSetupDTO(
-        date=actual_date,
-        raw_text=message_text,
-        source=source,
-        ticker_setups=ticker_setups
-    )
+    # Validate all price levels
+    for setup in ticker_setups:
+        setup.signals = [
+            s for s in setup.signals
+            if validate_price_levels([s.trigger]) and validate_price_levels(list(s.targets))
+        ]
+        
+        if setup.bias and setup.bias.price:
+            if not validate_price_levels([setup.bias.price]):
+                setup.bias = None
+    
+    # Only return if we have valid setups
+    if any(setup.signals or setup.bias for setup in ticker_setups):
+        return TradeSetupDTO(
+            date=actual_date,
+            raw_text=message_text,
+            source=source,
+            ticker_setups=ticker_setups
+        )
+    
+    logger.warning("No valid price levels found in message")
+    return None
 import logging
 import re
 from datetime import datetime, date
