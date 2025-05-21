@@ -1,0 +1,159 @@
+✅ General Conversion Strategy
+For every module that depended on Redis:
+
+Remove the import of common.redis_utils.
+
+Replace Redis pub/sub or caching logic with calls to a new helper module: common/events.py and optionally common/cache.py.
+
+Use PostgreSQL tables:
+
+event_bus for event publishing/subscription
+
+price_cache or signal_store for last-seen values
+
+Add polling loop or async trigger points if needed for event consumers
+
+🧱 1. Create the New PostgreSQL Helpers
+common/events.py
+python
+Copy
+Edit
+from datetime import datetime
+import json
+import asyncpg
+
+class EventBus:
+    def __init__(self, pool):
+        self.pool = pool
+
+    async def publish_event(self, channel: str, event_type: str, payload: dict):
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO event_bus (channel, event_type, payload, created_at)
+                VALUES ($1, $2, $3, $4)
+                """,
+                channel, event_type, json.dumps(payload), datetime.utcnow()
+            )
+
+    async def poll_events(self, channel: str, last_id: int):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM event_bus
+                WHERE channel = $1 AND id > $2
+                ORDER BY id ASC
+                """,
+                channel, last_id
+            )
+        return rows
+🔄 2. Convert Each Affected Feature
+✅ Options API Routes
+Error: No module named 'common.redis_utils'
+
+Action: In features/options/api.py, change:
+
+python
+Copy
+Edit
+# OLD
+from common.redis_utils import publish_event
+To:
+
+python
+Copy
+Edit
+from common.events import EventBus
+Then, instantiate EventBus(pool) and replace publish_event(...) with await bus.publish_event(...).
+
+✅ Market Data Routes (get_history_provider)
+Likely depended on Redis caching or eventing.
+
+Action:
+
+Remove Redis imports
+
+If using caching, move logic to common/cache.py (if needed)
+
+Replace event updates with EventBus().publish_event() on market.price_update
+
+✅ Execution Routes
+Error: Redis used for trade.executed and position.updated
+
+Action:
+
+Replace those Redis publish_event() calls with the PostgreSQL equivalent from common/events.py
+
+Same pattern: remove Redis, inject Postgres pool, call publish_event(...)
+
+✅ Discord Integration
+Likely using Redis to publish parsed messages and setup data.
+
+Action:
+
+In features/discord/message_publisher.py, replace:
+
+python
+Copy
+Edit
+publish_event("events:discord:setup_messages", "setup.received", payload)
+With:
+
+python
+Copy
+Edit
+await bus.publish_event("discord:setup_messages", "setup.received", payload)
+✅ Strategy Routes / Candle Detector
+Used Redis subscriptions to detect price levels.
+
+Action:
+
+Remove subscription logic.
+
+Replace with polling logic:
+
+python
+Copy
+Edit
+last_event_id = 0
+while True:
+    events = await bus.poll_events("market.price_update", last_event_id)
+    for event in events:
+        # process event['payload']
+        last_event_id = event['id']
+    await asyncio.sleep(1)
+✅ Historical Data Provider
+Error: Redis used as a fallback cache.
+
+Action:
+
+Drop caching or move to a cache table if needed
+
+Store previously pulled data in a persistent table (you can also consider a historical_data table to cache by ticker/date range)
+
+✅ Options Trader
+Used Redis to listen for signal events like signal.triggered.
+
+Action:
+
+Replace Redis subscription with polling event_bus for "signal.triggered" channel
+
+When received, execute trade logic as before
+
+📋 Postgres Tables Needed
+sql
+Copy
+Edit
+CREATE TABLE event_bus (
+  id SERIAL PRIMARY KEY,
+  channel TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE UNLOGGED TABLE price_cache (
+  symbol TEXT PRIMARY KEY,
+  last_price NUMERIC,
+  updated_at TIMESTAMPTZ
+);
