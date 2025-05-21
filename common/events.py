@@ -518,7 +518,7 @@ def cache_data(key: str, data: Dict[str, Any], expiry_seconds: int = 900) -> boo
         logger.error(f"Error caching data for key {key}: {e}")
         return False
 
-def get_cached_data(key: str) -> Optional[Dict[str, Any]]:
+def get_from_cache(key: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve data from the database cache system.
     

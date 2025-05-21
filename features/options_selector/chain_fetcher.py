@@ -3,13 +3,14 @@ import requests
 import threading
 import time
 import math
+import json
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from flask import Blueprint, jsonify, request, current_app
 from alpaca.trading import TradingClient
 from alpaca.data import StockHistoricalDataClient
 from common.models import OptionsContract
-from common.redis_utils import RedisClient
+from common.events import get_database_connection, cache_data as store_in_cache, get_from_cache
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -52,14 +53,13 @@ def fetch_options_chain(symbol: str, expiration_date: Optional[str] = None) -> D
     
     Note: In production, this would be replaced with a direct Polygon.io subscription.
     """
-    # Check if we have a cached chain that's still valid
-    cache_key = f"{symbol}_{expiration_date or 'all'}"
+    # Check if we have a cached chain that's still valid using PostgreSQL cache
+    cache_key = f"options_chain:{symbol}_{expiration_date or 'all'}"
     
-    if cache_key in options_cache:
-        cache_entry = options_cache[cache_key]
-        if (datetime.now() - cache_entry['timestamp']).total_seconds() < CACHE_EXPIRY:
-            logger.debug(f"Using cached options chain for {cache_key}")
-            return cache_entry['data']
+    cached_data = get_from_cache(cache_key)
+    if cached_data:
+        logger.debug(f"Using cached options chain for {cache_key}")
+        return cached_data
     
     # For demonstration purposes, we'll construct a synthetic options chain
     # In production, this would call the Polygon.io API
@@ -211,11 +211,8 @@ def fetch_options_chain(symbol: str, expiration_date: Optional[str] = None) -> D
                 chain["chains"][exp]["calls"].append(call)
                 chain["chains"][exp]["puts"].append(put)
         
-        # Cache the result
-        options_cache[cache_key] = {
-            'timestamp': datetime.now(),
-            'data': chain
-        }
+        # Cache the result in PostgreSQL
+        store_in_cache(cache_key.replace("options_chain:", ""), chain, CACHE_EXPIRY)
         
         return chain
         
