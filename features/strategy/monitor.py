@@ -21,8 +21,8 @@ DEFAULT_MIN_BODY_PERCENT = 0.2  # Minimum candle body size as percentage
 DEFAULT_VOLUME_MULTIPLIER = 1.5  # Minimum volume relative to average
 DEFAULT_AVG_VOLUME_PERIODS = 5   # Number of periods for volume average
 
-# Confirmation tracking to avoid duplicate alerts
-_confirmed_setups = set()  # Set of confirmed setup IDs
+from common.db_models import SignalConfirmation
+from common.db import db
 
 class Candle:
     """Simple candle data structure with OHLCV data"""
@@ -255,8 +255,8 @@ async def monitor_setups(
                 if not _is_breakout_setup_type(setup_type):
                     continue
                     
-                # Skip if already confirmed
-                if setup_id in _confirmed_setups:
+                # Check if already confirmed in database
+                if SignalConfirmation.query.filter_by(setup_id=setup_id).first():
                     continue
                 
                 # Check if this candle confirms the breakout
@@ -270,8 +270,13 @@ async def monitor_setups(
                     min_body_percent=min_body_percent,
                     volume_multiplier=volume_multiplier
                 ):
-                    # Mark as confirmed to avoid duplicate alerts
-                    _confirmed_setups.add(setup_id)
+                    # Store confirmation in database
+                    confirmation = SignalConfirmation(
+                        setup_id=setup_id,
+                        confirmed_at=datetime.now()
+                    )
+                    db.session.add(confirmation)
+                    db.session.commit()
                     
                     # Log the confirmation
                     logger.info(
@@ -345,5 +350,6 @@ def _publish_confirmation_event(setup: Dict[str, Any], candle: Candle) -> bool:
 
 
 def clear_confirmed_setups() -> None:
-    """Clear the confirmed setups tracking set (for testing)."""
-    _confirmed_setups.clear()
+    """Clear the confirmed setups (for testing)."""
+    SignalConfirmation.query.delete()
+    db.session.commit()
