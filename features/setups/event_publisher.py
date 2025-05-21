@@ -37,11 +37,13 @@ def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
             }
         }
         
+        # Prepare event data with event_type
+        event_data["event_type"] = EventType.DISCORD_SETUP_MESSAGE_RECEIVED
+        
         # Publish to PostgreSQL event system
         success = publish_event(
-            EventType.DISCORD_SETUP_MESSAGE_RECEIVED, 
-            event_data,
-            SETUP_CREATED_CHANNEL
+            SETUP_CREATED_CHANNEL,
+            event_data
         )
         
         if not success:
@@ -90,9 +92,9 @@ def _publish_signals_for_ticker(ticker_setup: TickerSetup) -> None:
         
         # Publish to PostgreSQL event system
         publish_event(
-            EventType.SIGNAL_TRIGGERED,
-            event_data,
-            SIGNAL_CREATED_CHANNEL
+            event_type=EventType.SIGNAL_TRIGGERED,
+            data=event_data,
+            channel=SIGNAL_CREATED_CHANNEL
         )
 
 
