@@ -35,39 +35,14 @@
             <div class="col-md-10 text-center">
                 <h1 class="display-4 mb-4">A+ Trading Platform</h1>
                 <p class="lead mb-4">An AI-powered options trading application with Discord integration for real-time signal processing</p>
-                
+
                 <div class="d-grid gap-2 d-md-flex justify-content-md-center mt-5">
                     <a href="/dashboard" class="btn btn-primary btn-lg me-md-2">View Dashboard</a>
                     <a href="/recent-setups" class="btn btn-outline-secondary btn-lg">View Recent Setups</a>
                 </div>
             </div>
         </div>
-        
-        <!-- Main Content -->
-        <div class="row mt-5">
-            <div class="col-md-12">
-                                        <div class="card-body">
-                                            <h4 class="card-title">${{ ticker }}</h4>
-                                            <a href="/monitor?ticker={{ ticker }}" class="btn btn-sm btn-outline-primary">Monitor</a>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                            <div class="alert alert-success mt-3">
-                                Found {{ message_count }} trading message(s) from today with {{ tickers|length }} active ticker(s)
-                            </div>
-                        {% else %}
-                            <div class="alert alert-info">
-                                <h4 class="alert-heading">Awaiting Trade Theory</h4>
-                                <p>No trading signals received today. When new signals arrive, they will appear here.</p>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        
+
         <div class="row mt-5 pt-5">
             <div class="col-md-4 mb-4">
                 <div class="card h-100 stat-card">
