@@ -102,16 +102,19 @@ def _price_monitor_thread() -> None:
                         price = quote.get('last_price', 0)
                     
                     # Check if price has changed
-                    if (symbol in _price_cache and 
-                        abs(_price_cache[symbol].get('price', 0) - price) < 0.0001):
+                    if (symbol in _local_price_cache and 
+                        abs(_local_price_cache[symbol].get('price', 0) - price) < 0.0001):
                         # Price hasn't changed significantly, skip update
                         continue
                     
-                    # Update price cache
-                    _price_cache[symbol] = {
+                    # Update local cache
+                    _local_price_cache[symbol] = {
                         'price': price,
                         'timestamp': timestamp
                     }
+                    
+                    # Update PostgreSQL price cache
+                    update_price_cache(symbol, price)
                     
                     # Create price update message
                     price_update = {
@@ -124,11 +127,11 @@ def _price_monitor_thread() -> None:
                         'status': 'active'
                     }
                     
-                    # Publish to Redis channel for this symbol
-                    redis_client.publish(f"price:{symbol}", price_update)
+                    # Publish to event bus for this symbol
+                    publish_event(f"price:{symbol}", "price_update", price_update)
                     
                     # Also publish to the general price channel
-                    redis_client.publish("price:all", price_update)
+                    publish_event(EventChannels.MARKET_PRICE_UPDATE, "price_update", price_update)
                 except Exception as e:
                     logger.error(f"Error getting quote for {symbol}: {e}")
             
@@ -163,8 +166,9 @@ def add_symbol(symbol: str) -> bool:
             'timestamp': datetime.now().isoformat(),
             'status': 'active'
         }
-        redis_client.publish(f"events:{symbol.upper()}", watch_event)
-        redis_client.publish("events:all", watch_event)
+        # Publish watch events to PostgreSQL event bus
+        publish_event(f"events:{symbol.upper()}", "watch", watch_event)
+        publish_event("events:all", "watch", watch_event)
         
         logger.info(f"Added symbol to price monitor: {symbol}")
         return True
@@ -207,9 +211,12 @@ def remove_symbol(symbol: str) -> bool:
         if symbol.upper() in _monitored_symbols:
             _monitored_symbols.remove(symbol.upper())
         
-        # Also remove from price cache
-        if symbol.upper() in _price_cache:
-            del _price_cache[symbol.upper()]
+        # Also remove from local price cache
+        if symbol.upper() in _local_price_cache:
+            del _local_price_cache[symbol.upper()]
+        
+        # Clear from PostgreSQL price cache
+        clear_price_cache(symbol.upper())
         
         # Publish unwatch event
         unwatch_event = {
@@ -218,8 +225,8 @@ def remove_symbol(symbol: str) -> bool:
             'timestamp': datetime.now().isoformat(),
             'status': 'inactive'
         }
-        redis_client.publish(f"events:{symbol.upper()}", unwatch_event)
-        redis_client.publish("events:all", unwatch_event)
+        publish_event(f"events:{symbol.upper()}", "unwatch", unwatch_event)
+        publish_event("events:all", "unwatch", unwatch_event)
         
         logger.info(f"Removed symbol from price monitor: {symbol}")
         return True

@@ -1,12 +1,13 @@
 """
 Discord Message Consumer
 
-This module subscribes to the Redis Discord message channel and processes
+This module polls the PostgreSQL event bus for Discord messages and processes
 incoming messages into structured ticker setup objects ready for charting
 and monitoring.
 """
 import json
 import logging
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from models import (
     ComparisonTypeEnum,
     BiasDirectionEnum
 )
-from common.redis_utils import get_redis_client
+from common.events import poll_events, publish_event, get_latest_event_id
 from common.event_constants import (
     DISCORD_SETUP_MESSAGE_CHANNEL, 
     DISCORD_RAW_MESSAGE_CHANNEL,
@@ -61,45 +62,52 @@ class TickerSetupDTO:
 
 
 class MessageConsumer:
-    """Consumes Discord messages from Redis and processes them into structured data."""
+    """Consumes Discord messages from PostgreSQL event bus and processes them into structured data."""
     
     def __init__(self):
         """Initialize the message consumer."""
-        self.redis_client = get_redis_client()
         self.parser = SetupParser()
+        self.last_event_id = get_latest_event_id()
+        self.running = True
         
     def start(self):
-        """Start listening for Discord setup messages."""
+        """Start polling for Discord setup messages."""
         try:
             logger.info("Starting Discord message consumer")
             
-            # Subscribe to the Discord setup message channel
-            pubsub = self.redis_client.pubsub()
-            pubsub.subscribe(DISCORD_SETUP_MESSAGE_CHANNEL)
-            
-            # Process incoming messages
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    try:
-                        self._process_message(message)
-                    except Exception as e:
-                        logger.error(f"Error processing message: {e}")
+            # Main polling loop
+            while self.running:
+                try:
+                    # Poll for new events on the Discord setup message channel
+                    events = poll_events([DISCORD_SETUP_MESSAGE_CHANNEL], self.last_event_id)
+                    
+                    # Process any new events
+                    for event in events:
+                        self._process_event(event)
+                        self.last_event_id = max(self.last_event_id, event['id'])
+                    
+                    # Sleep briefly to avoid excessive database queries
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    logger.error(f"Error in event polling loop: {e}")
+                    time.sleep(2)  # Sleep longer on error
                         
         except Exception as e:
             logger.error(f"Error in message consumer: {e}")
         finally:
             logger.info("Discord message consumer stopped")
             
-    def _process_message(self, redis_message):
+    def _process_event(self, event):
         """
-        Process a message from Redis.
+        Process an event from the PostgreSQL event bus.
         
         Args:
-            redis_message: Raw Redis message
+            event: Event data from the event bus
         """
         try:
-            # Parse the message data
-            payload = json.loads(redis_message['data'])
+            # Extract the payload
+            payload = event.get('payload', {})
             
             # Check if this is a setup message event
             if payload.get('event_type') == EventType.DISCORD_SETUP_MESSAGE_RECEIVED:
@@ -124,9 +132,9 @@ class MessageConsumer:
                 self._process_setup_message(message_id, content, timestamp)
                 
         except json.JSONDecodeError:
-            logger.error("Failed to decode JSON message from Redis")
+            logger.error("Failed to decode JSON message from event payload")
         except Exception as e:
-            logger.error(f"Error processing Redis message: {e}")
+            logger.error(f"Error processing event: {e}")
     
     def _process_setup_message(self, message_id: str, content: str, timestamp: datetime):
         """
@@ -289,9 +297,6 @@ class MessageConsumer:
             ticker_setups: List of processed ticker setups
         """
         try:
-            from common.redis_utils import publish_event
-            from common.event_constants import EventType
-            
             # Prepare data for charting
             for ticker_setup in ticker_setups:
                 # Create a serializable representation of the ticker setup
@@ -311,11 +316,11 @@ class MessageConsumer:
                     ]
                 }
                 
-                # Publish event for this ticker setup
+                # Publish event for this ticker setup using PostgreSQL event bus
                 publish_event(
-                    channel=f"events:charting:ticker:{ticker_setup.symbol}",
-                    event_type=EventType.SETUP_CREATED,
-                    data=setup_data
+                    f"events:charting:ticker:{ticker_setup.symbol}", 
+                    "setup_created", 
+                    setup_data
                 )
                 
             logger.debug(f"Published {len(ticker_setups)} ticker setups for charting")
@@ -326,8 +331,10 @@ class MessageConsumer:
 
 def start_consumer():
     """Start the Discord message consumer."""
-    consumer = MessageConsumer()
-    consumer.start()
+    from app import app
+    with app.app_context():
+        consumer = MessageConsumer()
+        consumer.start()
 
 
 if __name__ == "__main__":
