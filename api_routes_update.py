@@ -1,11 +1,17 @@
 """
-Update the API routes to add today's tickers endpoint
+Update the API routes to add today's tickers endpoint and candle data
 """
 import logging
-from flask import jsonify
+from flask import jsonify, request
 from sqlalchemy import text
-from datetime import date
+from datetime import date, datetime, timedelta
 import json
+import random
+import numpy as np
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
+import os
 
 def add_todays_tickers_route(app, db):
     """
