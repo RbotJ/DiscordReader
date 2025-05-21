@@ -9,15 +9,12 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from common.redis_utils import publish_event
+from common.events import publish_event
 from common.event_constants import EventType
+from common.event_constants import DISCORD_RAW_MESSAGE_CHANNEL, DISCORD_SETUP_MESSAGE_CHANNEL
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Define Redis channels
-DISCORD_RAW_MESSAGE_CHANNEL = "events:discord:raw_messages"
-DISCORD_SETUP_MESSAGE_CHANNEL = "events:discord:setup_messages"
 
 def publish_raw_discord_message(message_id: str, content: str, author: str, 
                                 timestamp: datetime, channel_id: str) -> bool:

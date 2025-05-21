@@ -8,14 +8,11 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 
-from common.redis_utils import get_redis_client
+from common.events import publish_event
 from common.models import TradeSetupMessage, TickerSetup
+from common.event_constants import SETUP_CREATED_CHANNEL, SIGNAL_CREATED_CHANNEL
 
 logger = logging.getLogger(__name__)
-
-# Define event channels
-SETUP_CREATED_CHANNEL = "events:setup:created"
-SIGNAL_CREATED_CHANNEL = "events:signal:created"
 
 
 def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
