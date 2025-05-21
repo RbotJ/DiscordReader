@@ -267,3 +267,48 @@ class TestMessageParsing(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+from common.utils import extract_all_levels
+from common.models import TickerSetupDTO, Signal, Bias, BiasFlip
+from common.models import SignalCategory, ComparisonType, BiasDirection, Aggressiveness
+
+def test_extract_all_levels():
+    """Test extracting all price levels from ticker setups."""
+    # Create test data with overlapping values
+    signal1 = Signal(
+        category=SignalCategory.BREAKOUT,
+        comparison=ComparisonType.ABOVE,
+        trigger=590.20,  # Duplicate with bias price
+        targets={588.00, 585.50, 582.80},
+        aggressiveness=Aggressiveness.AGGRESSIVE
+    )
+    
+    signal2 = Signal(
+        category=SignalCategory.REJECTION,
+        comparison=ComparisonType.NEAR,
+        trigger=585.50,  # Duplicate with signal1 target
+        targets={580.00, 575.00},
+        aggressiveness=Aggressiveness.NONE
+    )
+    
+    bias = Bias(
+        direction=BiasDirection.BULLISH,
+        condition=ComparisonType.ABOVE,
+        price=590.20,  # Duplicate with signal1 trigger
+        flip=BiasFlip(
+            direction=BiasDirection.BEARISH,
+            price_level=575.00  # Duplicate with signal2 target
+        )
+    )
+    
+    setup = TickerSetupDTO(
+        symbol="SPY",
+        signals=[signal1, signal2],
+        bias=bias
+    )
+    
+    # Extract levels
+    levels = extract_all_levels([setup])
+    
+    # Verify unique levels
+    expected = {590.20, 588.00, 585.50, 582.80, 580.00, 575.00}
+    assert levels == expected

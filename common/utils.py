@@ -3,7 +3,8 @@ import logging
 import json
 import uuid
 from datetime import datetime, date
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Set, Dict, Any, Union
+from common.models import TickerSetupDTO, Signal, Bias
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def generate_client_order_id(prefix: str = "aplus") -> str:
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """Load configuration from a JSON file or environment variables."""
     config = {}
-    
+
     # Try to load from config file if provided
     if config_path and os.path.exists(config_path):
         try:
@@ -36,7 +37,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 logger.info(f"Configuration loaded from {config_path}")
         except Exception as e:
             logger.error(f"Error loading config from {config_path}: {e}")
-    
+
     # Override with environment variables
     env_vars = {
         "ALPACA_API_KEY": os.environ.get("ALPACA_API_KEY"),
@@ -45,12 +46,12 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "REDIS_URL": os.environ.get("REDIS_URL"),
         "LOG_LEVEL": os.environ.get("LOG_LEVEL", "INFO"),
     }
-    
+
     # Update config with non-None environment variables
     for key, value in env_vars.items():
         if value is not None:
             config[key] = value
-    
+
     return config
 
 
@@ -82,3 +83,38 @@ def calculate_risk_reward(entry: float, target: float, stop: float) -> Optional[
 def log_trade_execution(trade_data: Dict[str, Any]) -> None:
     """Log trade execution details."""
     logger.info(f"Trade executed: {json.dumps(trade_data, cls=DateTimeEncoder)}")
+
+def extract_all_levels(setups: List[TickerSetupDTO]) -> Set[float]:
+    """
+    Extract all unique price levels from a list of ticker setups.
+    Includes trigger prices, targets, bias prices and flip levels.
+
+    Args:
+        setups: List of TickerSetupDTO objects
+
+    Returns:
+        Set of unique price levels as floats
+    """
+    levels: Set[float] = set()
+
+    for setup in setups:
+        # Extract from signals
+        for signal in setup.signals:
+            # Add trigger price
+            if isinstance(signal.trigger, (int, float)):
+                levels.add(float(signal.trigger))
+            elif isinstance(signal.trigger, tuple):
+                levels.update(float(t) for t in signal.trigger)
+
+            # Add target prices
+            levels.update(float(t) for t in signal.targets)
+
+        # Extract from bias
+        if setup.bias:
+            levels.add(float(setup.bias.price))
+
+            # Add flip price level if present
+            if setup.bias.flip and setup.bias.flip.price_level:
+                levels.add(float(setup.bias.flip.price_level))
+
+    return levels
