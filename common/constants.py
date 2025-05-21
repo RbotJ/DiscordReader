@@ -60,8 +60,8 @@ class OptionType(str, Enum):
     CALL = "call"
     PUT = "put"
 
-# Redis channels
-class RedisChannel(str, Enum):
+# Event channels
+class EventChannel(str, Enum):
     # Market data channels
     PRICE_UPDATES = "prices:all"
     PRICE_UPDATES_PREFIX = "prices:"

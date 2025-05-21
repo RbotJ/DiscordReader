@@ -32,8 +32,8 @@ else:
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///aplus_trading.db"
 
 # Initialize event system
-from common.redis_utils import ensure_redis_is_running, redis_client
-ensure_redis_is_running()
+from common.event_compat import ensure_event_system, event_client
+ensure_event_system()
 
 # Configure Alpaca API credentials
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
