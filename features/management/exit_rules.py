@@ -18,14 +18,12 @@ from common.db_models import (
     PositionModel, OrderModel, SignalModel, NotificationModel,
     OptionsContractModel, MarketDataModel, TickerSetupModel, BiasModel
 )
-from common.redis_utils import RedisClient
+from common.events import publish_event
+from common.event_constants import EventType
 from features.management.position_manager import get_position, close_position, close_position_partial
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Initialize Redis client
-redis_client = RedisClient()
 
 class ExitRule:
     """Base class for exit rules."""
@@ -229,12 +227,14 @@ class ExitRulesEngine:
                     db.session.add(notification)
                     db.session.commit()
                     
-                    # Publish to Redis for real-time updates
-                    redis_client.publish("position_exits", json.dumps({
+                    # Publish to PostgreSQL event system for real-time updates
+                    exit_event_data = {
+                        "event_type": EventType.POSITION_UPDATED,
                         "symbol": position["symbol"],
                         "reason": combined_reason,
                         "timestamp": datetime.utcnow().isoformat()
-                    }))
+                    }
+                    publish_event("position_exits", exit_event_data)
                 else:
                     logger.error(f"Failed to exit position {position['symbol']}: {result['message']}")
     

@@ -90,11 +90,13 @@ def _publish_signals_for_ticker(ticker_setup: TickerSetup) -> None:
                 "price": ticker_setup.bias.price
             }
         
+        # Prepare event data with event_type
+        event_data["event_type"] = EventType.SIGNAL_TRIGGERED
+        
         # Publish to PostgreSQL event system
         publish_event(
-            event_type=EventType.SIGNAL_TRIGGERED,
-            data=event_data,
-            channel=SIGNAL_CREATED_CHANNEL
+            SIGNAL_CREATED_CHANNEL,
+            event_data
         )
 
 

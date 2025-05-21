@@ -82,8 +82,9 @@ def safe_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
     
     return default
 
-from common.redis_utils import RedisClient
 from common.utils import format_currency, calculate_risk_reward
+from common.events import publish_event
+from common.event_constants import EventType
 
 # Type alias for SQLAlchemy models
 Model = TypeVar('Model')
@@ -117,9 +118,6 @@ def update_model_attr(model: Any, attr_name: str, value: Any) -> None:
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Initialize Redis client
-redis_client = RedisClient()
 
 # Trading client (will be initialized)
 trading_client = None
