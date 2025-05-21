@@ -12,8 +12,9 @@ import datetime
 import logging
 from flask import Blueprint, jsonify, request
 from features.alpaca.client import get_trading_client
-from common.events import EventChannels, publish_event, subscribe_to_events
-from common.event_compat import event_client
+from common.events import publish_event, EventChannels
+from common.db import db
+from common.db_models import MarketDataModel
 
 # Create blueprint
 bp = Blueprint('market_api', __name__, url_prefix='/api/market')

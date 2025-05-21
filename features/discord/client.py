@@ -14,9 +14,9 @@ import discord
 from discord.ext import tasks
 
 from features.discord.message_parser import parse_message
-from common.events import subscribe_to_events, publish_event, EventChannels
-from common.event_compat import event_client
-
+from common.events import publish_event, EventChannels
+from common.db import db
+from common.db_models import NotificationModel
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -272,3 +272,4 @@ async def fetch_recent_messages(limit: int = 10) -> List[Dict]:
     except Exception as e:
         logger.error(f"Error fetching recent messages: {e}")
         return []
+```
