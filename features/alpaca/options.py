@@ -89,13 +89,19 @@ class OptionsChainFetcher:
         )
         
         # Try to get from cache if not forcing refresh
-        if not force_refresh and self.redis:
-            cached = self.redis.get(cache_key)
-            if cached:
-                try:
-                    return json.loads(cached)
-                except Exception as e:
-                    logger.error(f"Cache parse error: {e}")
+        if not force_refresh and self.use_db_cache:
+            cached_data = None
+            try:
+                from common.db_models import CacheEntryModel
+                from sqlalchemy import text
+                from app import db
+                
+                cache_entry = CacheEntryModel.query.filter_by(key=cache_key).first()
+                if cache_entry and cache_entry.value:
+                    cached_data = cache_entry.value
+                    return json.loads(cached_data)
+            except Exception as e:
+                logger.error(f"DB cache retrieve error: {e}")
 
         # Parse option_type to ContractType
         contract_type = None
@@ -127,9 +133,30 @@ class OptionsChainFetcher:
             raw_chain = self.client.get_option_chain(req)
             formatted = self._format_options_chain(raw_chain)
             
-            # Cache the result
-            if self.redis:
-                self.redis.set(cache_key, json.dumps(formatted), ex=CACHE_TTL)
+            # Cache the result in the database
+            if self.use_db_cache:
+                try:
+                    from common.db_models import CacheEntryModel
+                    from app import db
+                    import datetime
+                    
+                    # Check if cache entry already exists
+                    cache_entry = CacheEntryModel.query.filter_by(key=cache_key).first()
+                    if cache_entry:
+                        cache_entry.value = json.dumps(formatted)
+                        cache_entry.expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=CACHE_TTL)
+                    else:
+                        cache_entry = CacheEntryModel(
+                            key=cache_key,
+                            value=json.dumps(formatted),
+                            expires_at=datetime.datetime.utcnow() + datetime.timedelta(seconds=CACHE_TTL)
+                        )
+                        db.session.add(cache_entry)
+                    
+                    db.session.commit()
+                except Exception as e:
+                    logger.error(f"Error caching options chain in database: {e}")
+                    db.session.rollback()
                 
             return formatted
 
@@ -153,9 +180,30 @@ class OptionsChainFetcher:
                     raw_chain = self.client.get_option_chain(req)
                     formatted = self._format_options_chain(raw_chain)
                     
-                    # Cache the result
-                    if self.redis:
-                        self.redis.set(cache_key, json.dumps(formatted), ex=CACHE_TTL)
+                    # Cache the result in the database
+                    if self.use_db_cache:
+                        try:
+                            from common.db_models import CacheEntryModel
+                            from app import db
+                            import datetime
+                            
+                            # Check if cache entry already exists
+                            cache_entry = CacheEntryModel.query.filter_by(key=cache_key).first()
+                            if cache_entry:
+                                cache_entry.value = json.dumps(formatted)
+                                cache_entry.expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=CACHE_TTL)
+                            else:
+                                cache_entry = CacheEntryModel(
+                                    key=cache_key,
+                                    value=json.dumps(formatted),
+                                    expires_at=datetime.datetime.utcnow() + datetime.timedelta(seconds=CACHE_TTL)
+                                )
+                                db.session.add(cache_entry)
+                            
+                            db.session.commit()
+                        except Exception as e:
+                            logger.error(f"Error caching options chain in database: {e}")
+                            db.session.rollback()
                         
                     return formatted
                     

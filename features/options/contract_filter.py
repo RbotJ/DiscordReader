@@ -15,13 +15,11 @@ import math
 
 from app import app, db
 from common.db_models import OptionsContractModel
-from common.redis_utils import RedisClient
+from common.events import publish_event, get_events
+from common.event_constants import EventType
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Initialize Redis client
-redis_client = RedisClient()
 
 class OptionsFilter:
     """Base class for options contract filters."""
