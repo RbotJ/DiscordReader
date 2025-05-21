@@ -1,73 +1,59 @@
-"""
-Discord Direct Test
-
-This script directly tests the Discord integration by sending a test message.
-"""
 import os
+import asyncio
 import logging
-from discord import Client, Intents
+from datetime import datetime
+import discord
+from common.events import publish_event, EventChannels
+from common.db import db
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get Discord token and channel ID from environment
-DISCORD_BOT_TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
-DISCORD_TEST_CHANNEL = os.environ.get('DISCORD_CHANNEL_TEST_HERE_ONE')
-
-async def send_message(client, channel_id, message):
-    """Send a message to a Discord channel."""
-    channel = client.get_channel(int(channel_id))
-    if channel:
-        await channel.send(message)
-        logger.info(f"Message sent to channel {channel_id}")
-    else:
-        logger.error(f"Channel not found: {channel_id}")
-
-class TestClient(Client):
-    """Test Discord client for sending messages."""
-    
+class SetupMessageClient(discord.Client):
     async def on_ready(self):
-        """Called when the client is ready."""
-        logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
-        
-        if DISCORD_TEST_CHANNEL:
-            try:
-                await send_message(
-                    self, 
-                    int(DISCORD_TEST_CHANNEL), 
-                    "🚀 **Test Message**: This is a direct test from the A+ Trading Bot"
-                )
-            except Exception as e:
-                logger.error(f"Error sending message: {e}")
-        else:
-            logger.error("Test channel ID not configured")
-        
-        # Close the connection after sending the message
-        await self.close()
+        logger.info(f'{self.user} has connected to Discord!')
 
-def main():
-    """Run the Discord test."""
-    if not DISCORD_BOT_TOKEN:
-        logger.error("Discord bot token not found in environment")
+    async def on_message(self, message):
+        if message.author == self.user:
+            return
+
+        try:
+            # Store message in database
+            event_data = {
+                'event_type': 'discord_message',
+                'message_id': str(message.id),
+                'content': message.content,
+                'author': str(message.author),
+                'timestamp': message.created_at.isoformat()
+            }
+
+            # Publish event
+            publish_event(EventChannels.DISCORD_MESSAGE_RECEIVED, event_data)
+
+            logger.info(f"Message stored and published: {message.id}")
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+
+async def main():
+    # Get Discord token
+    token = os.getenv('DISCORD_BOT_TOKEN')
+    if not token:
+        logger.error("No Discord bot token found")
         return
-    
-    if not DISCORD_TEST_CHANNEL:
-        logger.error("Discord test channel ID not found in environment")
-        return
-    
-    # Create and run the client
-    intents = Intents.default()
+
+    # Create client
+    intents = discord.Intents.default()
     intents.message_content = True
-    client = TestClient(intents=intents)
-    
-    logger.info("Starting Discord client...")
+    client = SetupMessageClient(intents=intents)
+
     try:
-        client.run(DISCORD_BOT_TOKEN)
-        logger.info("Test completed successfully")
+        await client.start(token)
     except Exception as e:
         logger.error(f"Error running Discord client: {e}")
+    finally:
+        await client.close()
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    asyncio.run(main())
