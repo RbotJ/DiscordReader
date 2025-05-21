@@ -36,7 +36,7 @@ class AccountInfoService:
             force_refresh: Whether to force a refresh of the cache
             
         Returns:
-            Dict containing account information
+            Dict containing account information with market status
         """
         # Check if cached data is still valid
         if not force_refresh and self.account_cache and self.cache_timestamp:
@@ -44,12 +44,47 @@ class AccountInfoService:
             if elapsed < self.cache_ttl:
                 # Cache is still valid
                 return self.account_cache
+
+        from features.alpaca.client import get_trading_client, get_market_clock
                 
-        # Get fresh data
-        self.account_cache = get_account_info()
-        self.cache_timestamp = datetime.now()
-        
-        return self.account_cache or {}
+        # Get fresh account data
+        client = get_trading_client()
+        if not client:
+            return {}
+            
+        try:
+            account = client.get_account()
+            clock = get_market_clock()
+            
+            self.account_cache = {
+                'id': account.id,
+                'account_number': account.account_number,
+                'status': account.status,
+                'currency': account.currency,
+                'cash': float(account.cash),
+                'portfolio_value': float(account.portfolio_value),
+                'buying_power': float(account.buying_power),
+                'position_market_value': float(account.position_market_value),
+                'pattern_day_trader': account.pattern_day_trader,
+                'trading_blocked': account.trading_blocked,
+                'transfers_blocked': account.transfers_blocked,
+                'account_blocked': account.account_blocked,
+                'created_at': account.created_at.isoformat() if account.created_at else None,
+                'market': {
+                    'is_open': clock.get('is_open', False),
+                    'next_open': clock.get('next_open'),
+                    'next_close': clock.get('next_close'),
+                    'timestamp': clock.get('timestamp')
+                }
+            }
+            
+            self.cache_timestamp = datetime.now()
+            
+            return self.account_cache
+            
+        except Exception as e:
+            logger.error(f"Error getting account info: {e}")
+            return {}
         
     def get_positions(self, force_refresh: bool = False) -> List[Dict]:
         """
