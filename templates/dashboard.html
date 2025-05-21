@@ -76,25 +76,25 @@
         </div>
       </div>
       
-      <!-- System Status Card -->
+      <!-- Market Info Card -->
       <div class="row mb-4">
         <div class="col-12">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">System Status</h5>
+          <div class="card border-left-primary">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">Market Information</h5>
             </div>
             <div class="card-body">
               <div class="row">
                 <div class="col-md-6">
                   <div class="d-flex align-items-center mb-2">
-                    <span class="status-indicator" id="strategy-status"></span>
-                    <span>Strategy Detector</span>
+                    <i class="bi bi-clock me-2"></i>
+                    <span>Eastern Time: <span id="eastern-time">Loading...</span></span>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="d-flex align-items-center mb-2">
-                    <span class="status-indicator" id="execution-status"></span>
-                    <span>Options Execution</span>
+                    <i class="bi bi-calendar-event me-2"></i>
+                    <span>Trading Day: <span id="trading-day">Loading...</span></span>
                   </div>
                 </div>
               </div>
@@ -291,7 +291,49 @@
   document.addEventListener('DOMContentLoaded', function() {
     // Fetch today's tickers
     fetchTodaysTickers();
+    
+    // Start eastern time display
+    updateEasternTime();
+    setInterval(updateEasternTime, 1000);
   });
+  
+  // Function to update Eastern Time display
+  function updateEasternTime() {
+    const now = new Date();
+    const easternTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    
+    // Format the date for US Eastern Time
+    const options = {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZoneName: 'short'
+    };
+    
+    const formattedTime = easternTime.toLocaleString('en-US', options);
+    
+    // Set the eastern time element content
+    const timeElement = document.getElementById('eastern-time');
+    if (timeElement) {
+      timeElement.textContent = formattedTime;
+    }
+    
+    // Set the trading day element content
+    const dayElement = document.getElementById('trading-day');
+    if (dayElement) {
+      const tradingDay = easternTime.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      dayElement.textContent = tradingDay;
+    }
+  }
   
   function fetchTodaysTickers() {
     fetch('/api/todays_tickers')
@@ -348,15 +390,18 @@
     `;
     container.appendChild(header);
     
-    // Create a container for the ticker cards
-    const cardsRow = document.createElement('div');
-    cardsRow.className = 'row';
+    // Create a container for the ticker cards - each in its own row
+    const cardsContainer = document.createElement('div');
     
     // Add each ticker
     tickers.forEach(ticker => {
-      // Create card for each ticker
+      // Create a row for each ticker
+      const tickerRow = document.createElement('div');
+      tickerRow.className = 'row mb-4';
+      
+      // Create card column - full width
       const cardCol = document.createElement('div');
-      cardCol.className = 'col-lg-4 mb-4';
+      cardCol.className = 'col-12';
       
       // Determine card color based on ticker
       const tickerColors = {
@@ -443,8 +488,14 @@
       card.dataset.ticker = ticker.symbol;
       
       // Add the card to the container
+      // Add card to the columns
       cardCol.appendChild(card);
-      cardsRow.appendChild(cardCol);
+      
+      // Add column to the row
+      tickerRow.appendChild(cardCol);
+      
+      // Add row to the container
+      cardsContainer.appendChild(tickerRow);
       
       // Queue chart initialization
       setTimeout(() => {
@@ -454,19 +505,20 @@
             if (data && data.candles && data.candles.length > 0) {
               renderCandlestickChart(ticker.symbol, data.candles, ticker.price_levels);
             } else {
-              // Generate synthetic chart data based on price levels
+              // Display price levels visualization if no candle data available
               generateSyntheticChart(ticker.symbol, ticker.price_levels);
             }
           })
           .catch(error => {
             console.error(`Error fetching chart data for ${ticker.symbol}:`, error);
-            // Generate synthetic chart data on error
+            // Display price levels visualization on error
             generateSyntheticChart(ticker.symbol, ticker.price_levels);
           });
       }, 100);
     });
     
-    container.appendChild(cardsRow);
+    // Add all cards to the main container
+    container.appendChild(cardsContainer);
   }
   
   // Generate synthetic chart if real data isn't available

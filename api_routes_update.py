@@ -317,23 +317,25 @@ def add_todays_tickers_route(app, db):
             # If we have a valid stock client, try to get real data
             if stock_client:
                 try:
-                    # Convert string timeframe to TimeFrame object
+                    # Create timeframe instance dynamically
                     from alpaca.data.timeframe import TimeFrame
                     
+                    # Create the TimeFrame object based on the string
                     if timeframe == '1Min':
-                        tf = TimeFrame.MINUTE
+                        tf = TimeFrame(1, TimeFrame.Unit.MINUTE)
                     elif timeframe == '5Min':
-                        tf = TimeFrame.MINUTE_5
+                        tf = TimeFrame(5, TimeFrame.Unit.MINUTE)
                     elif timeframe == '15Min':
-                        tf = TimeFrame.MINUTE_15
+                        tf = TimeFrame(15, TimeFrame.Unit.MINUTE)
                     elif timeframe == '30Min':
-                        tf = TimeFrame.MINUTE_30
+                        tf = TimeFrame(30, TimeFrame.Unit.MINUTE)
                     elif timeframe == '1Hour':
-                        tf = TimeFrame.HOUR
+                        tf = TimeFrame(1, TimeFrame.Unit.HOUR)
                     elif timeframe == '1Day':
-                        tf = TimeFrame.DAY
+                        tf = TimeFrame(1, TimeFrame.Unit.DAY)
                     else:
-                        tf = TimeFrame.MINUTE_5
+                        # Default to 5 minute candles
+                        tf = TimeFrame(5, TimeFrame.Unit.MINUTE)
                     
                     # Make the request to Alpaca
                     bars_request = StockBarsRequest(
