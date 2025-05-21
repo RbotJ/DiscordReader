@@ -380,22 +380,22 @@ def add_todays_tickers_route(app, db):
                         # Default to 5 minute candles
                         tf = "5Min"
                     
-                    # Convert string timeframe to TimeFrame object
+                    # Use correct TimeFrame objects for Alpaca API v0.40.0
                     if timeframe == '1Min':
-                        tf_obj = TimeFrame(1, TimeFrame.Minute)
+                        tf_obj = TimeFrame(1, 'Min')
                     elif timeframe == '5Min':
-                        tf_obj = TimeFrame(5, TimeFrame.Minute)
+                        tf_obj = TimeFrame(5, 'Min')
                     elif timeframe == '15Min':
-                        tf_obj = TimeFrame(15, TimeFrame.Minute)
+                        tf_obj = TimeFrame(15, 'Min')
                     elif timeframe == '30Min':
-                        tf_obj = TimeFrame(30, TimeFrame.Minute)
+                        tf_obj = TimeFrame(30, 'Min')
                     elif timeframe == '1Hour':
-                        tf_obj = TimeFrame(1, TimeFrame.Hour)
+                        tf_obj = TimeFrame(1, 'Hour')
                     elif timeframe == '1Day':
-                        tf_obj = TimeFrame(1, TimeFrame.Day)
+                        tf_obj = TimeFrame(1, 'Day')
                     else:
                         # Default to 5 minute candles
-                        tf_obj = TimeFrame(5, TimeFrame.Minute)
+                        tf_obj = TimeFrame(5, 'Min')
                     
                     # Make the request to Alpaca
                     bars_request = StockBarsRequest(
