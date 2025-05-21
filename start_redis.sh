@@ -1,19 +1,21 @@
 #!/bin/bash
+# Start Redis server and make sure it's properly configured
+# for the A+ Trading application
 
-# Stop any running Redis instances
+# Kill any existing Redis server
 pkill -f redis-server || true
 
-# Start Redis server with configuration suitable for Replit
-redis-server --daemonize yes --protected-mode no --maxmemory 100mb --maxmemory-policy allkeys-lru
+# Start Redis server with proper binding
+redis-server --daemonize yes --bind 0.0.0.0 --port 6379
 
-# Wait for Redis to start up
-for i in {1..10}; do
-    if redis-cli ping > /dev/null 2>&1; then
-        echo "Redis server started successfully"
-        exit 0
-    fi
-    sleep 0.5
-done
+# Wait for Redis to start
+sleep 2
 
-echo "Failed to start Redis server"
-exit 1
+# Check if Redis is running
+if redis-cli ping | grep -q PONG; then
+  echo "Redis server started successfully"
+  exit 0
+else
+  echo "Failed to start Redis server"
+  exit 1
+fi
