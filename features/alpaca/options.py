@@ -20,7 +20,7 @@ class ContractType:
     CALL = "call"
     PUT = "put"
 
-from common.redis_utils import get_redis_client
+from common.events import publish_event, poll_events
 from common.constants import OptionType
 
 logger = logging.getLogger(__name__)
