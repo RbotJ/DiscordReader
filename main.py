@@ -201,9 +201,13 @@ def register_web_routes(app):
     @app.route('/')
     def index():
         """Main landing page."""
-        # Get today's date for display
-        from datetime import date
-        today = date.today().strftime('%A, %B %d, %Y')
+        # Get today's date for display in Eastern Time (ET) for NYSE
+        from datetime import datetime
+        import pytz
+        
+        eastern = pytz.timezone('US/Eastern')
+        et_now = datetime.now(pytz.utc).astimezone(eastern)
+        today = et_now.strftime('%A, %B %d, %Y %I:%M %p ET')
         
         # Get today's tickers from Discord messages
         import re
