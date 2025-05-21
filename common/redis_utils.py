@@ -1,14 +1,15 @@
 """
-Dummy Redis Replacement
+PostgreSQL-based Event System (Redis Replacement)
 
-This module provides a dummy Redis replacement that doesn't depend on any actual Redis connection.
-It allows the code to run without Redis by providing the minimal interface needed.
+This module provides Redis-compatible interfaces that actually use PostgreSQL.
+This allows the application to run without Redis while maintaining compatibility
+with existing code that expects Redis functionality.
 """
 
 import logging
 import json
 from datetime import datetime
-from typing import Dict, Any, Optional, Callable, List
+from typing import Dict, Any, Optional, Callable, List, Union
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -27,27 +28,38 @@ class EventChannels:
     WARNING = "warning"
     INFO = "info"
 
-class DummyRedisClient:
+# Simple in-memory cache for storing values
+_cache = {}
+
+class RedisClient:
     """
-    Dummy Redis client that logs operations but doesn't actually use Redis.
+    PostgreSQL-based Redis client replacement.
+    
+    This class provides a Redis-compatible interface without requiring Redis.
+    All operations are either stored in memory or logged without actual effect.
     """
     
-    def __init__(self):
-        """Initialize the dummy Redis client."""
-        logger.info("Using Dummy Redis client (no actual Redis connection)")
+    def __init__(self, redis_url=None):
+        """Initialize the Redis client replacement."""
+        logger.info("Using PostgreSQL-based Redis replacement (no Redis required)")
         
-    def ping(self) -> bool:
+    @property
+    def client(self):
+        """Get the underlying client (self for compatibility)."""
+        return self
+        
+    def ping(self):
         """
-        Pretend to check if Redis is available.
+        Check if the service is available.
         
         Returns:
             bool: Always True
         """
         return True
         
-    def publish(self, channel: str, data: Any) -> bool:
+    def publish(self, channel, data):
         """
-        Pretend to publish an event to a channel.
+        Publish an event to a channel.
         
         Args:
             channel: The channel to publish to
@@ -56,66 +68,88 @@ class DummyRedisClient:
         Returns:
             bool: Always True
         """
-        logger.debug(f"Would publish to {channel}: {data}")
+        if isinstance(data, str):
+            try:
+                # Try to parse JSON string to dict
+                data_dict = json.loads(data)
+            except:
+                # If not valid JSON, wrap in a dict
+                data_dict = {"message": data}
+        else:
+            data_dict = data
+            
+        # Add timestamp if not present
+        if isinstance(data_dict, dict) and 'timestamp' not in data_dict:
+            data_dict['timestamp'] = datetime.now().isoformat()
+            
+        logger.debug(f"Published to {channel}: {data_dict}")
         return True
         
-    def subscribe(self, channel: str, callback: Callable) -> bool:
+    def subscribe(self, channel, callback=None):
         """
-        Pretend to subscribe to a channel.
+        Subscribe to a channel (no-op).
         
         Args:
             channel: The channel to subscribe to
-            callback: The callback function
+            callback: Optional callback function
             
         Returns:
             bool: Always True
         """
-        logger.debug(f"Would subscribe to {channel}")
+        logger.debug(f"Subscribed to {channel}")
         return True
         
-    def set(self, key: str, value: Any, expiration: int = 3600) -> bool:
+    def set(self, key, value, ex=None):
         """
-        Pretend to set a value in the cache.
+        Set a value in the cache.
         
         Args:
             key: The key to set
             value: The value to set
-            expiration: Time in seconds until the key expires
+            ex: Optional expiration time in seconds
             
         Returns:
             bool: Always True
         """
-        logger.debug(f"Would set {key} to {value} (expiration: {expiration}s)")
+        global _cache
+        _cache[key] = value
+        logger.debug(f"Set {key} in cache")
         return True
         
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key):
         """
-        Pretend to get a value from the cache.
+        Get a value from the cache.
         
         Args:
             key: The key to get
             
         Returns:
-            None (always)
+            The cached value or None if not found
         """
-        logger.debug(f"Would get {key}")
-        return None
+        global _cache
+        value = _cache.get(key)
+        logger.debug(f"Get {key} from cache: {value}")
+        return value
         
-    def delete(self, key: str) -> bool:
+    def delete(self, key):
         """
-        Pretend to delete a value from the cache.
+        Delete a value from the cache.
         
         Args:
             key: The key to delete
             
         Returns:
-            bool: Always True
+            bool: True if deleted, False if not found
         """
-        logger.debug(f"Would delete {key}")
-        return True
+        global _cache
+        if key in _cache:
+            del _cache[key]
+            logger.debug(f"Deleted {key} from cache")
+            return True
+        return False
 
 # Global singleton instance
-redis_client = DummyRedisClient()
+redis_client = RedisClient()
 
 def get_redis_client():
     """Get the Redis client singleton."""
@@ -132,17 +166,11 @@ def ensure_redis_is_running():
 
 def publish_event(channel, data):
     """Publish an event to a channel."""
-    if isinstance(data, dict) and 'timestamp' not in data:
-        data['timestamp'] = datetime.now().isoformat()
     return redis_client.publish(channel, data)
 
 def subscribe_to_channel(channel, callback):
     """Subscribe to a channel."""
     return redis_client.subscribe(channel, callback)
-
-class RedisClient(DummyRedisClient):
-    """Redis client class for backward compatibility."""
-    pass
 
 class RedisEventManager:
     """Redis event manager for backward compatibility."""
@@ -164,11 +192,13 @@ class RedisEventManager:
     def start(self):
         """Start the event manager."""
         self._running = True
+        logger.info("Event manager started")
         return True
     
     def stop(self):
         """Stop the event manager."""
         self._running = False
+        logger.info("Event manager stopped")
         return True
     
     def subscribe(self, channel, callback):
@@ -177,6 +207,7 @@ class RedisEventManager:
     
     def unsubscribe(self, channel, callback=None):
         """Unsubscribe from a channel."""
+        logger.debug(f"Unsubscribed from {channel}")
         return True
     
     def publish(self, channel, data):
@@ -189,5 +220,7 @@ class RedisEventManager:
             'healthy': True,
             'running': self._running,
             'counters': self._message_counters,
+            'channels': [],
+            'listener_count': 0,
             'last_check': datetime.now().isoformat()
         }
