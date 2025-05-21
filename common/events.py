@@ -52,6 +52,9 @@ class EventChannels:
 # Create SQLAlchemy models
 Base = declarative_base()
 
+# Maintain a price cache in memory for quick lookups
+_price_cache = {}
+
 class EventEntry(Base):
     """Event entry in the database"""
     __tablename__ = 'event_bus'
@@ -59,7 +62,7 @@ class EventEntry(Base):
     id = Column(Integer, primary_key=True)
     channel = Column(String(100), nullable=False, index=True)
     event_type = Column(String(100), nullable=False, index=True)
-    data = Column(Text, nullable=True)
+    event_data = Column(Text, nullable=True)  # Using event_data instead of data
     processed = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     processed_at = Column(DateTime, nullable=True)
@@ -95,16 +98,38 @@ def initialize_events(db_url=None):
         # Create database engine and session
         _db_engine = create_engine(db_url)
         Session = sessionmaker(bind=_db_engine)
-        _db_session = Session()
         
         # Create tables if they don't exist
         Base.metadata.create_all(_db_engine)
+        
+        # Create a fresh session
+        _db_session = Session()
         
         logger.info(f"Event system initialized with database at {db_url}")
         return True
     except Exception as e:
         logger.error(f"Error initializing event system: {e}")
         return False
+
+def get_session():
+    """
+    Get a fresh database session to avoid transaction issues.
+    
+    Returns:
+        SQLAlchemy session
+    """
+    global _db_engine
+    
+    if not _db_engine:
+        logger.error("Event system not initialized")
+        return None
+    
+    try:
+        Session = sessionmaker(bind=_db_engine)
+        return Session()
+    except Exception as e:
+        logger.error(f"Error creating new session: {e}")
+        return None
 
 def publish_event(channel: str, data: Dict[str, Any]) -> bool:
     """
@@ -335,81 +360,176 @@ def clear_events():
         logger.error(f"Error clearing events: {e}")
         return 0
 
-def poll_events(channel: str, last_id: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+def poll_events(channel: Union[str, List[str]], last_id: int = 0, count: int = 100) -> List[Dict[str, Any]]:
     """
     Poll for events from a channel since a given ID.
     
     Args:
-        channel: The channel to poll from
+        channel: The channel to poll from (string or list of strings)
         last_id: Only get events with ID greater than this
         count: Maximum number of events to return
         
     Returns:
         List of event data dictionaries
     """
-    if not _db_session:
-        logger.error("Event system not initialized")
+    # Create a new session for this query to avoid transaction issues
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for polling events")
         return []
     
     try:
-        # Find events for this channel with ID greater than last_id
-        events = _db_session.query(EventEntry) \
-            .filter(EventEntry.channel == channel) \
-            .filter(EventEntry.id > last_id) \
-            .order_by(EventEntry.id.asc()) \
-            .limit(count) \
-            .all()
+        # Start with a base query for events newer than last_id
+        query = session.query(EventEntry).filter(EventEntry.id > last_id)
+        
+        # Apply channel filter - handle both string and list inputs
+        if isinstance(channel, list):
+            if channel:  # Only if the list isn't empty
+                # Get the channel strings from the list
+                channel_strings = [c for c in channel if isinstance(c, str)]
+                if channel_strings:
+                    query = query.filter(EventEntry.channel.in_(channel_strings))
+        elif isinstance(channel, str):
+            query = query.filter(EventEntry.channel == channel)
+        
+        # Get events ordered by ID with limit
+        events = query.order_by(EventEntry.id.asc()).limit(count).all()
         
         # Convert to list of data dictionaries
         result = []
         for event in events:
             try:
-                # Load data from JSON
-                data = json.loads(event.data)
-                
-                # Add event metadata
-                data['_event_id'] = event.id
-                data['_event_timestamp'] = event.created_at.isoformat()
-                
-                result.append(data)
+                # Convert JSON data to dictionary
+                if event.data:
+                    data = json.loads(event.data)
+                    
+                    # Add event metadata
+                    data['_event_id'] = event.id
+                    data['_event_timestamp'] = event.created_at.isoformat()
+                    
+                    result.append(data)
             except Exception as e:
                 logger.error(f"Error parsing event data for ID {event.id}: {e}")
         
+        # Close the session
+        session.close()
         return result
     except Exception as e:
         logger.error(f"Error polling events from channel {channel}: {e}")
+        # Make sure to close the session even on error
+        session.close()
         return []
 
-def get_latest_event_id(channel: str = None) -> int:
+def get_latest_event_id(channel: Union[str, List[str]] = None) -> int:
     """
     Get the latest event ID for a channel, or across all channels.
     
     Args:
-        channel: Optional channel filter
+        channel: Optional channel filter (string or list of strings)
         
     Returns:
         Latest event ID, or 0 if no events found
     """
-    if not _db_session:
-        logger.error("Event system not initialized")
+    # Create a new session for this query
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for getting latest event ID")
         return 0
     
     try:
         # Create query for the latest event ID
-        query = _db_session.query(EventEntry.id)
+        query = session.query(EventEntry.id)
         
         # Filter by channel if specified
         if channel:
-            query = query.filter(EventEntry.channel == channel)
+            if isinstance(channel, list):
+                if channel:  # Only if the list isn't empty
+                    # Get the channel strings from the list
+                    channel_strings = [c for c in channel if isinstance(c, str)]
+                    if channel_strings:
+                        query = query.filter(EventEntry.channel.in_(channel_strings))
+            elif isinstance(channel, str):
+                query = query.filter(EventEntry.channel == channel)
         
         # Get the max ID
         result = query.order_by(EventEntry.id.desc()).first()
         
         # Return the ID or 0 if no events
-        return result[0] if result else 0
+        result_id = result[0] if result else 0
+        
+        # Close the session
+        session.close()
+        return result_id
     except Exception as e:
         logger.error(f"Error getting latest event ID: {e}")
+        # Make sure to close the session even on error
+        session.close()
         return 0
+
+# Price cache functions
+def update_price_cache(ticker: str, price: float, timestamp: Optional[datetime] = None) -> bool:
+    """
+    Update the price in the cache.
+    
+    Args:
+        ticker: The ticker symbol
+        price: The current price
+        timestamp: Optional timestamp, defaults to now
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    global _price_cache
+    
+    if not timestamp:
+        timestamp = datetime.utcnow()
+    
+    _price_cache[ticker] = {
+        'price': price,
+        'timestamp': timestamp.isoformat() if isinstance(timestamp, datetime) else timestamp
+    }
+    
+    # Also publish an event for subscribers
+    try:
+        event_data = {
+            'event_type': 'price_update',
+            'ticker': ticker,
+            'price': price,
+            'timestamp': timestamp.isoformat() if isinstance(timestamp, datetime) else timestamp
+        }
+        publish_event(EventChannels.MARKET_PRICE_UPDATE, event_data)
+        return True
+    except Exception as e:
+        logger.error(f"Error publishing price update for {ticker}: {e}")
+        return False
+
+def get_price_from_cache(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Get the price data from cache.
+    
+    Args:
+        ticker: The ticker symbol
+        
+    Returns:
+        Dict with price data or None if not found
+    """
+    global _price_cache
+    
+    if ticker in _price_cache:
+        return _price_cache[ticker]
+    return None
+
+def clear_price_cache() -> bool:
+    """
+    Clear the price cache.
+    
+    Returns:
+        bool: True if successful
+    """
+    global _price_cache
+    
+    _price_cache.clear()
+    return True
 
 def get_status():
     """
@@ -418,7 +538,7 @@ def get_status():
     Returns:
         dict: Status information
     """
-    global _running, _message_counters, _last_health_check
+    global _running, _message_counters, _last_health_check, _price_cache
     
     return {
         'running': _running,
@@ -428,5 +548,6 @@ def get_status():
         'processed': _message_counters['processed'],
         'errors': _message_counters['errors'],
         'last_health_check': datetime.fromtimestamp(_last_health_check).isoformat() if _last_health_check else None,
-        'last_processed_id': _last_processed_id
+        'last_processed_id': _last_processed_id,
+        'price_cache_size': len(_price_cache)
     }
