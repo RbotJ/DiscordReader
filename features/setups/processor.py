@@ -1,4 +1,3 @@
-
 """
 Setup Message Processor Module
 
@@ -22,12 +21,12 @@ def parse_new_setup_messages() -> int:
     Returns the number of successfully processed messages.
     """
     processed_count = 0
-    
+
     try:
         # Get all unparsed messages
         unparsed_messages = SetupModel.query.filter_by(parsed=False).all()
         logger.info(f"Found {len(unparsed_messages)} unparsed setup messages")
-        
+
         for setup_model in unparsed_messages:
             try:
                 # Parse the message
@@ -36,11 +35,11 @@ def parse_new_setup_messages() -> int:
                     setup_date=setup_model.date,
                     source=setup_model.source
                 )
-                
+
                 if not setup_dto:
                     logger.warning(f"Could not parse setup message {setup_model.id}")
                     continue
-                
+
                 # Process each ticker setup
                 for ticker_setup in setup_dto.ticker_setups:
                     # Create ticker setup record
@@ -52,7 +51,7 @@ def parse_new_setup_messages() -> int:
                     )
                     db.session.add(db_ticker)
                     db.session.flush()  # Get ID without committing
-                    
+
                     # Process signals
                     for signal in ticker_setup.signals:
                         db_signal = SignalModel(
@@ -66,7 +65,7 @@ def parse_new_setup_messages() -> int:
                             created_at=datetime.utcnow()
                         )
                         db.session.add(db_signal)
-                    
+
                     # Process bias if present
                     if ticker_setup.bias:
                         db_bias = BiasModel(
@@ -76,21 +75,21 @@ def parse_new_setup_messages() -> int:
                             price=float(ticker_setup.bias.price),
                             created_at=datetime.utcnow()
                         )
-                        
+
                         # Add flip data if present
                         if ticker_setup.bias.flip:
                             db_bias.flip_direction = ticker_setup.bias.flip.direction.value
                             db_bias.flip_price_level = float(ticker_setup.bias.flip.price_level)
-                        
+
                         db.session.add(db_bias)
-                
+
                 # Mark as parsed
                 setup_model.parsed = True
                 processed_count += 1
-                
+
                 # Commit changes for this message
                 db.session.commit()
-                
+
                 # Publish event
                 try:
                     publish_event('setup.parsed', {
@@ -100,16 +99,16 @@ def parse_new_setup_messages() -> int:
                     })
                 except Exception as e:
                     logger.warning(f"Could not publish setup.parsed event: {e}")
-                
+
             except SQLAlchemyError as e:
                 logger.error(f"Database error processing setup {setup_model.id}: {e}")
                 db.session.rollback()
             except Exception as e:
                 logger.error(f"Error processing setup {setup_model.id}: {e}")
                 db.session.rollback()
-        
+
         return processed_count
-        
+
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching unparsed messages: {e}")
         return 0
