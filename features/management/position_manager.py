@@ -15,7 +15,6 @@ from alpaca.common.types import RawData
 from sqlalchemy.orm import declarative_base, Session
 from sqlalchemy.orm.attributes import set_attribute
 from sqlalchemy.orm.decl_api import DeclarativeMeta
-from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.sql.schema import Column
 from datetime import datetime, timedelta
 import time
@@ -28,6 +27,8 @@ from common.db_models import (
     PositionModel, OrderModel, SignalModel, NotificationModel,
     OptionsContractModel, MarketDataModel
 )
+from common.events import EventChannels, publish_event, subscribe_to_events
+from common.event_compat import event_client
 
 # Type variable for SQLAlchemy model instance
 Model = TypeVar('Model')
@@ -38,11 +39,11 @@ logger = logging.getLogger(__name__)
 # Utility functions
 def safe_float(value: Any, default: float = 0.0) -> float:
     """Safely convert a value to float.
-    
+
     Args:
         value: The value to convert
         default: The default value to return if conversion fails
-        
+
     Returns:
         The converted float value or the default
     """
@@ -55,22 +56,22 @@ def safe_float(value: Any, default: float = 0.0) -> float:
 
 def safe_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
     """Safely get an attribute from an object that may be a dictionary or object.
-    
+
     Args:
         obj: The object to get the attribute from
         attr_name: The name of the attribute to get
         default: The default value to return if the attribute doesn't exist
-        
+
     Returns:
         The attribute value or the default
     """
     if obj is None:
         return default
-    
+
     # Try attribute access first (for objects)
     if hasattr(obj, attr_name):
         return getattr(obj, attr_name, default)
-    
+
     # Try dictionary access (for dicts or dict-like objects)
     try:
         if isinstance(obj, dict) and attr_name in obj:
@@ -79,7 +80,7 @@ def safe_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
             return obj.get(attr_name, default)
     except (TypeError, KeyError):
         pass
-    
+
     return default
 
 from common.utils import format_currency, calculate_risk_reward
@@ -91,13 +92,13 @@ Model = TypeVar('Model')
 
 def create_model(model_class: Type[Model], **kwargs) -> Model:
     """Safely create a SQLAlchemy model instance with keyword arguments.
-    
+
     This helper function works around type checking issues with SQLAlchemy models.
-    
+
     Args:
         model_class: The SQLAlchemy model class to instantiate
         **kwargs: Keyword arguments to pass to the model constructor
-        
+
     Returns:
         A new instance of the model
     """
@@ -106,9 +107,9 @@ def create_model(model_class: Type[Model], **kwargs) -> Model:
 
 def update_model_attr(model: Any, attr_name: str, value: Any) -> None:
     """Safely update a SQLAlchemy model attribute.
-    
+
     This helper function works around type checking issues with SQLAlchemy models.
-    
+
     Args:
         model: The SQLAlchemy model instance to update
         attr_name: The name of the attribute to update
@@ -125,16 +126,16 @@ trading_client = None
 def initialize_position_manager():
     """Initialize the position manager with Alpaca client."""
     from alpaca.trading.client import TradingClient
-    
+
     global trading_client
-    
+
     api_key = os.environ.get("ALPACA_API_KEY")
     api_secret = os.environ.get("ALPACA_API_SECRET")
-    
+
     if not api_key or not api_secret:
         logger.warning("Alpaca API credentials not found. Position manager will run in limited mode.")
         return False
-    
+
     try:
         # Initialize paper trading client
         trading_client = TradingClient(api_key, api_secret, paper=True)
@@ -147,7 +148,7 @@ def initialize_position_manager():
 def get_all_positions() -> List[Dict[str, Any]]:
     """Get all positions from Alpaca and local database."""
     positions = []
-    
+
     # Get positions from database
     db_positions = PositionModel.query.filter_by(closed_at=None).all()
     for position in db_positions:
@@ -166,14 +167,14 @@ def get_all_positions() -> List[Dict[str, Any]]:
             "change_today": position.change_today,
             "created_at": position.created_at.isoformat() if position.created_at else None
         })
-    
+
     # Get positions from Alpaca if available
     if trading_client:
         try:
             alpaca_positions = trading_client.get_all_positions()
             # Sync positions from Alpaca to our database
             sync_positions_from_alpaca(alpaca_positions)
-            
+
             # Add any positions from Alpaca that are not in our list
             for ap in alpaca_positions:
                 # Extract required attributes safely with type checking
@@ -183,26 +184,26 @@ def get_all_positions() -> List[Dict[str, Any]]:
                     if not symbol:
                         logger.warning(f"Position object missing symbol attribute: {ap}")
                         continue
-                    
+
                     # Convert to string
                     symbol = str(symbol)
-                        
+
                     if not any(p["symbol"] == symbol for p in positions):
                         # Extract and convert other attributes safely
                         try:
                             # Extract quantity using helper function
                             qty_value = safe_attr(ap, 'qty')
                             qty = int(qty_value) if qty_value is not None else 0
-                            
+
                             # Extract avg_entry_price using helper function
                             avg_entry_price = safe_float(safe_attr(ap, 'avg_entry_price'))
-                                
+
                             # Extract side using helper function
                             side_value = safe_attr(ap, 'side', 'long')  # Default to long
                             side = "long" if str(side_value).lower() == "long" else "short"
-                                
+
                             # Use the module-level safe_float function
-                            
+
                             # Build position dictionary with safe attribute access using helper functions
                             position_data = {
                                 "symbol": symbol,
@@ -218,7 +219,7 @@ def get_all_positions() -> List[Dict[str, Any]]:
                                 "change_today": safe_float(safe_attr(ap, 'change_today')),
                                 "created_at": None
                             }
-                            
+
                             positions.append(position_data)
                         except Exception as e:
                             logger.error(f"Error processing position {symbol}: {str(e)}")
@@ -226,12 +227,12 @@ def get_all_positions() -> List[Dict[str, Any]]:
                     logger.error(f"Error extracting data from Alpaca position: {str(e)}")
         except Exception as e:
             logger.error(f"Error fetching positions from Alpaca: {str(e)}")
-    
+
     return positions
 
 def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, List[Any]]) -> None:
     """Sync positions from Alpaca to our local database.
-    
+
     Args:
         alpaca_positions: List of position objects from Alpaca API or raw data.
             Each position object has attributes like symbol, qty, avg_entry_price, etc.
@@ -240,21 +241,21 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
         # Get current positions from our database
         db_positions = PositionModel.query.filter_by(closed_at=None).all()
         db_position_symbols = {p.symbol for p in db_positions}
-        
+
         # Initialize list of alpaca symbols for tracking closed positions
         alpaca_symbols = set()
-        
+
         # Process Alpaca positions
         for ap in alpaca_positions:
             # Type validation - ensure ap is a proper Alpaca position object
             if not hasattr(ap, 'symbol'):
                 logger.warning(f"Skipping invalid position object: {ap}")
                 continue
-                
+
             # Get position symbol and add to our tracking set
             symbol = str(ap.symbol)
             alpaca_symbols.add(symbol)
-            
+
             # Type-safe attribute access with defaults
             try:
                 qty = int(ap.qty) if hasattr(ap, 'qty') else 0
@@ -271,7 +272,7 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
             except (ValueError, TypeError) as e:
                 logger.warning(f"Error parsing position data for {symbol}: {str(e)}")
                 continue
-            
+
             # Check if we already have this position in our DB
             if symbol in db_position_symbols:
                 # Update existing position
@@ -288,7 +289,7 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
                 setattr(position, 'lastday_price', lastday_price)
                 setattr(position, 'change_today', change_today)
                 setattr(position, 'updated_at', datetime.utcnow())
-                
+
                 # Remove from set to track remaining positions
                 db_position_symbols.remove(symbol)
             else:
@@ -309,7 +310,7 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
                     updated_at=datetime.utcnow()
                 )
                 db.session.add(new_position)
-                
+
                 # Create notification for new position with helper function
                 notification = create_model(NotificationModel,
                     type="position",
@@ -325,12 +326,12 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
                     created_at=datetime.utcnow()
                 )
                 db.session.add(notification)
-        
+
         # Mark positions not in Alpaca as closed
         for symbol in db_position_symbols:
             position = next(p for p in db_positions if p.symbol == symbol)
             position.closed_at = datetime.utcnow()
-            
+
             # Create notification for closed position using helper function
             notification = create_model(NotificationModel,
                 type="position",
@@ -346,10 +347,10 @@ def sync_positions_from_alpaca(alpaca_positions: Union[List[Position], RawData, 
                 created_at=datetime.utcnow()
             )
             db.session.add(notification)
-        
+
         # Commit all changes
         db.session.commit()
-        
+
     except Exception as e:
         logger.error(f"Error syncing positions from Alpaca: {str(e)}")
         db.session.rollback()
@@ -374,7 +375,7 @@ def get_position(symbol: str) -> Optional[Dict[str, Any]]:
             "change_today": position.change_today,
             "created_at": position.created_at.isoformat() if position.created_at else None
         }
-    
+
     # If not in database, try getting from Alpaca
     if trading_client:
         try:
@@ -384,10 +385,10 @@ def get_position(symbol: str) -> Optional[Dict[str, Any]]:
                 # Extract data safely using helper functions
                 qty_value = safe_attr(alpaca_position, 'qty')
                 qty = int(qty_value) if qty_value is not None else 0
-                
+
                 side_value = safe_attr(alpaca_position, 'side', 'long')
                 side = "long" if str(side_value).lower() == "long" else "short"
-                
+
                 new_position = create_model(PositionModel,
                     symbol=symbol,
                     quantity=qty,
@@ -405,7 +406,7 @@ def get_position(symbol: str) -> Optional[Dict[str, Any]]:
                 )
                 db.session.add(new_position)
                 db.session.commit()
-                
+
                 # Return position data using the same helper functions
                 return {
                     "id": new_position.id,
@@ -424,7 +425,7 @@ def get_position(symbol: str) -> Optional[Dict[str, Any]]:
                 }
         except Exception as e:
             logger.error(f"Error fetching position from Alpaca: {str(e)}")
-    
+
     return None
 
 def close_position(symbol: str) -> Dict[str, Any]:
@@ -434,17 +435,17 @@ def close_position(symbol: str) -> Dict[str, Any]:
             "success": False,
             "message": "Trading client not initialized"
         }
-    
+
     try:
         # Close the position through Alpaca's direct method
         trading_client.close_position(symbol)
-        
+
         # Mark as closed in our database
         position = PositionModel.query.filter_by(symbol=symbol, closed_at=None).first()
         if position:
             position.closed_at = datetime.utcnow()
             db.session.commit()
-            
+
             # Create notification using helper function
             notification = create_model(NotificationModel,
                 type="position",
@@ -461,7 +462,7 @@ def close_position(symbol: str) -> Dict[str, Any]:
             )
             db.session.add(notification)
             db.session.commit()
-        
+
         return {
             "success": True,
             "message": f"Position {symbol} closed successfully"
@@ -480,7 +481,7 @@ def close_position_partial(symbol: str, quantity: int) -> Dict[str, Any]:
             "success": False,
             "message": "Trading client not initialized"
         }
-    
+
     try:
         # Get current position
         position = get_position(symbol)
@@ -489,14 +490,14 @@ def close_position_partial(symbol: str, quantity: int) -> Dict[str, Any]:
                 "success": False,
                 "message": f"No open position found for {symbol}"
             }
-        
+
         current_qty = position["quantity"]
         if quantity > current_qty:
             return {
                 "success": False,
                 "message": f"Cannot close {quantity} shares/contracts, only {current_qty} available"
             }
-        
+
         # Close partial position
         order = trading_client.submit_order(
             symbol=symbol,
@@ -505,14 +506,14 @@ def close_position_partial(symbol: str, quantity: int) -> Dict[str, Any]:
             type="market",
             time_in_force="day"
         )
-        
+
         # If full position is closed, mark as closed
         if quantity == current_qty:
             db_position = PositionModel.query.filter_by(symbol=symbol, closed_at=None).first()
             if db_position:
                 db_position.closed_at = datetime.utcnow()
                 db.session.commit()
-        
+
         # Create notification using helper function
         notification = create_model(NotificationModel,
             type="position",
@@ -529,7 +530,7 @@ def close_position_partial(symbol: str, quantity: int) -> Dict[str, Any]:
         )
         db.session.add(notification)
         db.session.commit()
-        
+
         return {
             "success": True,
             "message": f"Closed {quantity} of {current_qty} {symbol}",
@@ -549,7 +550,7 @@ def scale_position(symbol: str, additional_quantity: int) -> Dict[str, Any]:
             "success": False,
             "message": "Trading client not initialized"
         }
-    
+
     try:
         # Get current position
         position = get_position(symbol)
@@ -558,7 +559,7 @@ def scale_position(symbol: str, additional_quantity: int) -> Dict[str, Any]:
                 "success": False,
                 "message": f"No open position found for {symbol}"
             }
-        
+
         # Scale position
         order = trading_client.submit_order(
             symbol=symbol,
@@ -567,7 +568,7 @@ def scale_position(symbol: str, additional_quantity: int) -> Dict[str, Any]:
             type="market",
             time_in_force="day"
         )
-        
+
         # Create notification using helper function
         notification = create_model(NotificationModel,
             type="position",
@@ -584,7 +585,7 @@ def scale_position(symbol: str, additional_quantity: int) -> Dict[str, Any]:
         )
         db.session.add(notification)
         db.session.commit()
-        
+
         return {
             "success": True,
             "message": f"Added {additional_quantity} to position in {symbol}",
@@ -612,41 +613,41 @@ def calculate_portfolio_metrics() -> Dict[str, Any]:
         "positions_by_side": {"long": 0, "short": 0},
         "positions_by_profitability": {"profit": 0, "loss": 0}
     }
-    
+
     positions = get_all_positions()
     if not positions:
         return metrics
-    
+
     metrics["total_positions"] = len(positions)
-    
+
     for position in positions:
         metrics["total_market_value"] += position.get("market_value", 0)
         metrics["total_cost_basis"] += position.get("cost_basis", 0)
         metrics["total_unrealized_pl"] += position.get("unrealized_pl", 0)
-        
+
         # Track by side
         side = position.get("side", "long")
         metrics["positions_by_side"][side] += 1
-        
+
         if side == "long":
             metrics["long_exposure"] += position.get("market_value", 0)
         else:
             metrics["short_exposure"] += position.get("market_value", 0)
-        
+
         # Track by profitability
         if position.get("unrealized_pl", 0) > 0:
             metrics["positions_by_profitability"]["profit"] += 1
         else:
             metrics["positions_by_profitability"]["loss"] += 1
-    
+
     # Calculate net and gross exposure
     metrics["net_exposure"] = metrics["long_exposure"] - metrics["short_exposure"]
     metrics["gross_exposure"] = metrics["long_exposure"] + metrics["short_exposure"]
-    
+
     # Calculate overall P&L percentage
     if metrics["total_cost_basis"] > 0:
         metrics["total_unrealized_plpc"] = (metrics["total_unrealized_pl"] / metrics["total_cost_basis"]) * 100
-    
+
     return metrics
 
 def calculate_position_size(
@@ -658,30 +659,30 @@ def calculate_position_size(
     """Calculate position size based on risk parameters."""
     if not trading_client:
         return 1  # Default to 1 contract if no trading client
-    
+
     try:
         # Get account equity
         account = trading_client.get_account()
         equity = float(account.equity)
-        
+
         # Calculate max risk amount (e.g., 1% of equity)
         max_risk_amount = equity * (risk_percent / 100)
-        
+
         # Calculate stop loss price
         stop_loss_price = price * (1 - (stop_loss_percent / 100))
-        
+
         # Calculate risk per contract
         risk_per_contract = price - stop_loss_price
-        
+
         # Calculate position size
         if risk_per_contract > 0:
             position_size = math.floor(max_risk_amount / risk_per_contract)
         else:
             position_size = 1
-        
+
         # Ensure at least 1 contract
         position_size = max(1, position_size)
-        
+
         logger.info(f"Calculated position size for {symbol}: {position_size} contracts")
         return position_size
     except Exception as e:
@@ -691,7 +692,7 @@ def calculate_position_size(
 def get_position_history(days: int = 30) -> List[Dict[str, Any]]:
     """Get history of closed positions."""
     cutoff_date = datetime.utcnow() - timedelta(days=days)
-    
+
     closed_positions = (
         PositionModel.query
         .filter(PositionModel.closed_at.isnot(None))
@@ -699,7 +700,7 @@ def get_position_history(days: int = 30) -> List[Dict[str, Any]]:
         .order_by(PositionModel.closed_at.desc())
         .all()
     )
-    
+
     results = []
     for position in closed_positions:
         results.append({
@@ -714,14 +715,14 @@ def get_position_history(days: int = 30) -> List[Dict[str, Any]]:
             "closed_at": position.closed_at.isoformat() if position.closed_at else None,
             "duration": (position.closed_at - position.created_at).total_seconds() // 60 if position.closed_at and position.created_at else None
         })
-    
+
     return results
 
 def start_position_update_thread():
     """Start a background thread to update positions periodically."""
     # Import Flask app here to avoid circular imports
     from app import app
-    
+
     def update_positions_job():
         """Run position updates with Flask application context."""
         while True:
@@ -735,15 +736,15 @@ def start_position_update_thread():
                         logger.debug(f"Updated {len(alpaca_positions)} positions from Alpaca")
             except Exception as e:
                 logger.error(f"Error in position update thread: {str(e)}")
-            
+
             # Sleep for 60 seconds
             time.sleep(60)
-    
+
     # Start thread
     update_thread = threading.Thread(target=update_positions_job, daemon=True)
     update_thread.start()
     logger.info("Position update thread started")
-    
+
     return update_thread
 
 # Initialize position manager
@@ -752,32 +753,32 @@ initialize_position_manager()
 # Routes for position manager API
 def register_position_routes(app):
     from flask import Blueprint, jsonify, request
-    
+
     position_routes = Blueprint('position_routes', __name__)
-    
+
     @position_routes.route('/api/positions', methods=['GET'])
     def get_positions_api():
         """Get all positions."""
         positions = get_all_positions()
         return jsonify(positions)
-    
+
     @position_routes.route('/api/positions/<symbol>', methods=['GET'])
     def get_position_api(symbol):
         """Get a specific position by symbol."""
         position = get_position(symbol)
-        
+
         if not position:
             return jsonify({
                 "error": f"Position for {symbol} not found"
             }), 404
-        
+
         return jsonify(position)
-    
+
     @position_routes.route('/api/positions/<symbol>/close', methods=['POST'])
     def close_position_api(symbol):
         """Close a position by symbol."""
         quantity = request.json.get('quantity')
-        
+
         if quantity:
             try:
                 quantity = int(quantity)  # Ensure quantity is an integer
@@ -789,23 +790,23 @@ def register_position_routes(app):
                 }), 400
         else:
             result = close_position(symbol)
-        
+
         if result["success"]:
             return jsonify(result)
         else:
             return jsonify(result), 400
-    
+
     @position_routes.route('/api/positions/<symbol>/scale', methods=['POST'])
     def scale_position_api(symbol):
         """Add to an existing position."""
         quantity = request.json.get('quantity')
-        
+
         if not quantity:
             return jsonify({
                 "success": False,
                 "message": "Quantity is required"
             }), 400
-        
+
         try:
             quantity = int(quantity)  # Ensure quantity is an integer
             result = scale_position(symbol, quantity)
@@ -814,28 +815,28 @@ def register_position_routes(app):
                 "success": False,
                 "message": "Quantity must be a valid integer"
             }), 400
-        
+
         if result["success"]:
             return jsonify(result)
         else:
             return jsonify(result), 400
-    
+
     @position_routes.route('/api/positions/metrics', methods=['GET'])
     def portfolio_metrics_api():
         """Get portfolio-wide metrics."""
         metrics = calculate_portfolio_metrics()
         return jsonify(metrics)
-    
+
     @position_routes.route('/api/positions/history', methods=['GET'])
     def position_history_api():
         """Get history of closed positions."""
         days = request.args.get('days', 30, type=int)
         history = get_position_history(days)
         return jsonify(history)
-    
+
     # Register blueprint
     app.register_blueprint(position_routes)
-    
+
     return position_routes
 
 # Start position update thread when app is ready

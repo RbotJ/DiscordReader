@@ -67,21 +67,21 @@ class EventChannel(str, Enum):
     PRICE_UPDATES_PREFIX = "prices:"
     CANDLE_UPDATES = "candles:all"
     CANDLE_UPDATES_PREFIX = "candles:"
-    
+
     # Signal channels
     SIGNAL_UPDATES = "signals:all"
     SIGNAL_UPDATES_PREFIX = "signals:"
-    
+
     # Trade channels
     TRADE_UPDATES = "trades:all"
     TRADE_UPDATES_PREFIX = "trades:"
-    
+
     # System channels
     SYSTEM_EVENTS = "system:events"
-    
+
     # Strategy channels
     STRATEGY_CHANNEL = "strategy:events"
-    
+
     # Account channels
     ACCOUNT_UPDATES = "account:updates"
     POSITION_UPDATES = "positions:updates"
@@ -109,3 +109,6 @@ POSITIONS_ENDPOINT = f"{API_PREFIX}/positions"
 CANDLES_ENDPOINT = f"{API_PREFIX}/candles"
 SIGNALS_ENDPOINT = f"{API_PREFIX}/signals"
 ORDERS_ENDPOINT = f"{API_PREFIX}/orders"
+
+# Event system configuration
+EVENT_SYSTEM_ENABLED = True
