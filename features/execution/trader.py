@@ -18,7 +18,7 @@ from common.db_models import (
 )
 from common.events import publish_event, EventChannels
 from common.db import db
-from common.db_models import OrderModel, TradeModel
+from common.db_models import TradeModel, OrderModel
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest
@@ -884,7 +884,7 @@ def place_order_api():
     qty = int(data.get('qty'))
     side = data.get('side').lower()
     order_type = data.get('type').lower()
-    time_in_force = data.get('time_in_force', 'day').lower()
+    time_in_force = data.get('force', 'day').lower()
     extended_hours = data.get('extended_hours', False)
     signal_id = data.get('signal_id')
 
