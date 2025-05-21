@@ -1,8 +1,8 @@
 """
 Event Publisher for Setup Events
 
-This module provides functionality to publish setup events to Redis
-or a fallback in-memory queue when Redis is not available.
+This module provides functionality to publish setup events to the PostgreSQL event system
+or a fallback in-memory queue when the database is not available.
 """
 import json
 import logging
@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, List
 
 from common.events import publish_event
 from common.models import TradeSetupMessage, TickerSetup
-from common.event_constants import SETUP_CREATED_CHANNEL, SIGNAL_CREATED_CHANNEL
+from common.event_constants import SETUP_CREATED_CHANNEL, SIGNAL_CREATED_CHANNEL, EventType
 
 logger = logging.getLogger(__name__)
 
