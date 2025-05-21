@@ -103,12 +103,22 @@
         </div>
       </div>
       
-      <!-- Tickers Info -->
+      <!-- Today's Trading Tickers -->
       <div class="row mb-4">
         <div class="col-12">
-          <div class="alert alert-info">
-            <i class="bi bi-info-circle me-2"></i>
-            Select tickers from the sidebar to display charts
+          <div class="card">
+            <div class="card-header">
+              <h5 class="mb-0">Today's Trading Setups</h5>
+            </div>
+            <div class="card-body">
+              <div id="tickersContainer">
+                <div class="d-flex justify-content-center">
+                  <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading trading tickers...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -267,6 +277,337 @@
     }
   } catch (error) {
     console.error('React mounting error:', error);
+  }
+</script>
+
+<!-- Load Plotly for charts -->
+<script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+
+<!-- Load our ticker charts module -->
+<script src="{{ url_for('static', filename='js/ticker_charts.js') }}"></script>
+
+<!-- Load Today's Tickers Data -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Fetch today's tickers
+    fetchTodaysTickers();
+  });
+  
+  function fetchTodaysTickers() {
+    fetch('/api/todays_tickers')
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        if (data.status === 'success' && data.tickers && data.tickers.length > 0) {
+          displayTickerCards(data.tickers, data.message_date);
+        } else {
+          const container = document.getElementById('tickersContainer');
+          if (container) {
+            container.innerHTML = `
+              <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                No trading setups found for today. Check back later for updates.
+              </div>
+            `;
+          }
+        }
+      })
+      .catch(function(error) {
+        console.error('Error fetching today\'s tickers:', error);
+        const container = document.getElementById('tickersContainer');
+        if (container) {
+          container.innerHTML = `
+            <div class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              Error loading today's trading setups. Please try again later.
+            </div>
+          `;
+        }
+      });
+  }
+  
+  function displayTickerCards(tickers, messageDate) {
+    const container = document.getElementById('tickersContainer');
+    if (!container) return;
+    
+    // Clear loading indicator
+    container.innerHTML = '';
+    
+    // Create header with date info
+    const formattedDate = new Date(messageDate).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    const header = document.createElement('div');
+    header.className = 'alert alert-primary mb-4';
+    header.innerHTML = `
+      <h5 class="mb-0">Today's Trading Setups</h5>
+      <p class="mb-0">Trade setups for ${formattedDate}</p>
+    `;
+    container.appendChild(header);
+    
+    // Create a container for the ticker cards
+    const cardsRow = document.createElement('div');
+    cardsRow.className = 'row';
+    
+    // Add each ticker
+    tickers.forEach(ticker => {
+      // Create card for each ticker
+      const cardCol = document.createElement('div');
+      cardCol.className = 'col-lg-4 mb-4';
+      
+      // Determine card color based on ticker
+      const tickerColors = {
+        'SPY': 'primary',
+        'TSLA': 'success',
+        'NVDA': 'info',
+        'QQQ': 'warning',
+        'AAPL': 'danger'
+      };
+      
+      const cardColor = tickerColors[ticker.symbol] || 'primary';
+      
+      // Create card
+      const card = document.createElement('div');
+      card.className = 'card h-100';
+      card.style.borderLeft = `4px solid var(--bs-${cardColor})`;
+      
+      // Format prices for display
+      function formatPrice(price) {
+        return price !== null && price !== undefined ? `$${price.toFixed(2)}` : 'N/A';
+      }
+      
+      // Create card content
+      card.innerHTML = `
+        <div class="card-header">
+          <h5 class="mb-0 d-flex align-items-center">
+            <span class="badge bg-${cardColor} me-2">${ticker.symbol}</span>
+            Trading Setup
+          </h5>
+        </div>
+        <div class="card-body">
+          <div id="chart-${ticker.symbol}" class="chart-container">
+            <div class="d-flex justify-content-center align-items-center h-100">
+              <div class="text-center">
+                <div class="spinner-border text-primary mb-3" role="status">
+                  <span class="visually-hidden">Loading chart data...</span>
+                </div>
+                <p>Loading chart data for ${ticker.symbol}...</p>
+              </div>
+            </div>
+          </div>
+          <div id="${ticker.symbol}-tooltip" class="small text-muted text-center mb-3"></div>
+          
+          <div class="row mt-3">
+            <div class="col-md-6">
+              <div class="alert alert-danger mb-2 p-2">
+                <small><strong>Breakdown Level:</strong> ${formatPrice(ticker.price_levels.conservative_breakdown)}</small>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="alert alert-success mb-2 p-2">
+                <small><strong>Breakout Level:</strong> ${formatPrice(ticker.price_levels.conservative_breakout)}</small>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="alert alert-warning mb-2 p-2">
+                <small><strong>Rejection Near:</strong> ${formatPrice(ticker.price_levels.rejection)}</small>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="alert alert-info mb-2 p-2">
+                <small><strong>Bounce From:</strong> ${formatPrice(ticker.price_levels.bounce)}</small>
+              </div>
+            </div>
+          </div>
+          
+          ${ticker.note ? `<div class="alert alert-secondary p-2 mt-2"><small>${ticker.note}</small></div>` : ''}
+        </div>
+        <div class="card-footer d-flex justify-content-end">
+          <button class="btn btn-sm btn-outline-${cardColor}" onclick="refreshChart('${ticker.symbol}')">
+            <i class="bi bi-arrow-clockwise"></i> Refresh Chart
+          </button>
+        </div>
+      `;
+      
+      // Store price levels as data attributes for chart rendering
+      for (const [key, value] of Object.entries(ticker.price_levels)) {
+        if (value !== null) {
+          card.dataset[key] = value;
+        }
+      }
+      card.dataset.ticker = ticker.symbol;
+      
+      // Add the card to the container
+      cardCol.appendChild(card);
+      cardsRow.appendChild(cardCol);
+      
+      // Queue chart initialization
+      setTimeout(() => {
+        // Try to fetch and render candlestick data
+        fetchMarketData(ticker.symbol)
+          .then(data => {
+            if (data && data.candles && data.candles.length > 0) {
+              renderCandlestickChart(ticker.symbol, data.candles, ticker.price_levels);
+            } else {
+              // Generate synthetic chart data based on price levels
+              generateSyntheticChart(ticker.symbol, ticker.price_levels);
+            }
+          })
+          .catch(error => {
+            console.error(`Error fetching chart data for ${ticker.symbol}:`, error);
+            // Generate synthetic chart data on error
+            generateSyntheticChart(ticker.symbol, ticker.price_levels);
+          });
+      }, 100);
+    });
+    
+    container.appendChild(cardsRow);
+  }
+  
+  // Generate synthetic chart if real data isn't available
+  function generateSyntheticChart(ticker, priceLevels) {
+    const chartContainer = document.getElementById(`chart-${ticker}`);
+    if (!chartContainer) return;
+    
+    // Get center price (average of rejection and bounce)
+    let centerPrice = 0;
+    let prices = [];
+    
+    Object.values(priceLevels).forEach(value => {
+      if (value !== null && value !== undefined) {
+        prices.push(value);
+      }
+    });
+    
+    if (prices.length > 0) {
+      centerPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    } else {
+      // Default center price if no levels are provided
+      centerPrice = 100;
+    }
+    
+    // Create basic price levels visualization
+    const data = [];
+    
+    // Add price level lines
+    const times = Array.from({length: 20}, (_, i) => {
+      const date = new Date();
+      date.setMinutes(date.getMinutes() - (20 - i) * 15);
+      return date;
+    });
+    
+    // Add each price level as a horizontal line
+    if (priceLevels.rejection !== null) {
+      data.push({
+        x: times,
+        y: Array(times.length).fill(priceLevels.rejection),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Rejection',
+        line: { color: '#ff9800', width: 2, dash: 'dash' }
+      });
+    }
+    
+    if (priceLevels.aggressive_breakdown !== null) {
+      data.push({
+        x: times,
+        y: Array(times.length).fill(priceLevels.aggressive_breakdown),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Aggressive Breakdown',
+        line: { color: '#e53935', width: 2, dash: 'dash' }
+      });
+    }
+    
+    if (priceLevels.conservative_breakdown !== null) {
+      data.push({
+        x: times,
+        y: Array(times.length).fill(priceLevels.conservative_breakdown),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Conservative Breakdown',
+        line: { color: '#c62828', width: 2, dash: 'dash' }
+      });
+    }
+    
+    if (priceLevels.aggressive_breakout !== null) {
+      data.push({
+        x: times,
+        y: Array(times.length).fill(priceLevels.aggressive_breakout),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Aggressive Breakout',
+        line: { color: '#43a047', width: 2, dash: 'dash' }
+      });
+    }
+    
+    if (priceLevels.conservative_breakout !== null) {
+      data.push({
+        x: times,
+        y: Array(times.length).fill(priceLevels.conservative_breakout),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Conservative Breakout',
+        line: { color: '#2e7d32', width: 2, dash: 'dash' }
+      });
+    }
+    
+    if (priceLevels.bounce !== null) {
+      data.push({
+        x: times,
+        y: Array(times.length).fill(priceLevels.bounce),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Bounce',
+        line: { color: '#29b6f6', width: 2, dash: 'dash' }
+      });
+    }
+    
+    // Layout configuration
+    const layout = {
+      title: `${ticker} - Price Levels`,
+      height: 300,
+      margin: {l: 50, r: 20, t: 40, b: 40},
+      xaxis: {
+        rangeslider: {visible: false},
+        type: 'date',
+        title: 'Time'
+      },
+      yaxis: {
+        title: 'Price ($)',
+        autorange: false,
+        range: [
+          Math.min(...prices) * 0.98,
+          Math.max(...prices) * 1.02
+        ]
+      },
+      legend: {
+        orientation: 'h',
+        y: -0.2
+      },
+      template: 'plotly_dark',
+      showlegend: true
+    };
+    
+    // Config options
+    const config = {
+      responsive: true,
+      displayModeBar: false
+    };
+    
+    // Create the chart
+    Plotly.newPlot(`chart-${ticker}`, data, layout, config);
+    
+    // Add note about data source
+    const tooltipEl = document.getElementById(`${ticker}-tooltip`);
+    if (tooltipEl) {
+      tooltipEl.innerHTML = 'Showing price levels. Connect to market data for candles.';
+    }
   }
 </script>
 
