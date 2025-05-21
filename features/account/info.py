@@ -64,7 +64,7 @@ class AccountInfoService:
                 'cash': float(account.cash),
                 'portfolio_value': float(account.portfolio_value),
                 'buying_power': float(account.buying_power),
-                'position_market_value': float(account.position_market_value),
+                'portfolio_value': float(account.position_market_value),
                 'pattern_day_trader': account.pattern_day_trader,
                 'trading_blocked': account.trading_blocked,
                 'transfers_blocked': account.transfers_blocked,
