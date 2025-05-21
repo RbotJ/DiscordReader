@@ -75,21 +75,20 @@ class OrderExecutor:
                     'timestamp': datetime.now().isoformat()
                 }
                 
-                # Publish order event to database events system
-                if self.db_events:
-                    try:
-                        event = {
-                            'event_type': 'order_created',
-                            'order_id': order_id,
-                            'symbol': symbol,
-                            'side': side,
-                            'quantity': quantity,
-                            'order_type': 'market',
-                            'properties': order_properties
-                        }
-                        publish_event('events:orders', event)
-                    except Exception as e:
-                        logger.warning(f"Error publishing order event to database: {e}")
+                # Publish order event to event system
+                try:
+                    event = {
+                        'event_type': 'order_created',
+                        'order_id': order_id,
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': quantity,
+                        'order_type': 'market',
+                        'properties': order_properties
+                    }
+                    publish_event('events:orders', event)
+                except Exception as e:
+                    logger.warning(f"Error publishing order event: {e}")
                 
             return order
         except Exception as e:
@@ -149,10 +148,10 @@ class OrderExecutor:
                     'timestamp': datetime.now().isoformat()
                 }
                 
-                # Publish order event to PostgreSQL event system
+                # Publish order event to event system
                 try:
                     event = {
-                        'event': 'order_created',
+                        'event_type': 'order_created',
                         'order_id': order_id,
                         'symbol': symbol,
                         'side': side,
@@ -162,9 +161,9 @@ class OrderExecutor:
                         'time_in_force': time_in_force,
                         'properties': order_properties
                     }
-                    publish_event('orders', event)
+                    publish_event('events:orders', event)
                 except Exception as e:
-                    logger.warning(f"Error publishing order event to PostgreSQL: {e}")
+                    logger.warning(f"Error publishing order event: {e}")
                 
             return order
         except Exception as e:

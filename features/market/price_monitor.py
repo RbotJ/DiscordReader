@@ -1,3 +1,4 @@
+
 """
 Price Monitor Module
 
@@ -10,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Dict, List, Set, Any, Optional
 
-from common.events import publish_event, EventChannels, update_price_cache, get_price_from_cache, clear_price_cache
+from common.events import publish_event, EventChannels, update_price_cache, get_price_from_cache
 from features.alpaca.client import get_latest_quote, alpaca_market_client
 
 # Configure logger
@@ -20,9 +21,6 @@ logger = logging.getLogger(__name__)
 _monitor_thread = None
 _thread_running = False
 _monitored_symbols: Set[str] = set()
-
-# In-memory cache for quick access during processing
-_local_price_cache: Dict[str, Dict[str, Any]] = {}
 
 def init_price_monitor() -> bool:
     """Initialize the price monitor."""
@@ -76,7 +74,7 @@ def _price_monitor_thread() -> None:
                     if not quote:
                         continue
 
-                    timestamp = datetime.now().isoformat()
+                    timestamp = datetime.now()
                     bid_price = quote.get('bid_price')
                     ask_price = quote.get('ask_price')
 
@@ -85,29 +83,23 @@ def _price_monitor_thread() -> None:
                     else:
                         price = quote.get('last_price', 0)
 
-                    if (symbol in _local_price_cache and 
-                        abs(_local_price_cache[symbol].get('price', 0) - price) < 0.0001):
-                        continue
+                    # Update price cache
+                    update_price_cache(symbol, price, timestamp)
 
-                    _local_price_cache[symbol] = {
-                        'price': price,
-                        'timestamp': timestamp
-                    }
-
-                    update_price_cache(symbol, price)
-
+                    # Publish price update event
                     price_update = {
                         'ticker': symbol,
                         'price': price,
                         'bid_price': bid_price,
                         'ask_price': ask_price,
-                        'timestamp': timestamp,
+                        'timestamp': timestamp.isoformat(),
                         'event_type': 'price_update',
                         'status': 'active'
                     }
 
                     publish_event(f"price:{symbol}", price_update)
                     publish_event(EventChannels.MARKET_PRICE_UPDATE, price_update)
+
                 except Exception as e:
                     logger.error(f"Error getting quote for {symbol}: {e}")
 
@@ -157,11 +149,6 @@ def remove_symbol(symbol: str) -> bool:
     try:
         if symbol.upper() in _monitored_symbols:
             _monitored_symbols.remove(symbol.upper())
-
-        if symbol.upper() in _local_price_cache:
-            del _local_price_cache[symbol.upper()]
-
-        clear_price_cache(symbol.upper())
 
         unwatch_event = {
             'ticker': symbol.upper(),
