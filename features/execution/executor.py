@@ -149,23 +149,22 @@ class OrderExecutor:
                     'timestamp': datetime.now().isoformat()
                 }
                 
-                # Publish order event to Redis
-                if self.redis:
-                    try:
-                        event = {
-                            'event': 'order_created',
-                            'order_id': order_id,
-                            'symbol': symbol,
-                            'side': side,
-                            'quantity': quantity,
-                            'order_type': 'limit',
-                            'limit_price': limit_price,
-                            'time_in_force': time_in_force,
-                            'properties': order_properties
-                        }
-                        self.redis.publish('events:orders', json.dumps(event))
-                    except Exception as e:
-                        logger.warning(f"Error publishing order event to Redis: {e}")
+                # Publish order event to PostgreSQL event system
+                try:
+                    event = {
+                        'event': 'order_created',
+                        'order_id': order_id,
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': quantity,
+                        'order_type': 'limit',
+                        'limit_price': limit_price,
+                        'time_in_force': time_in_force,
+                        'properties': order_properties
+                    }
+                    publish_event('orders', event)
+                except Exception as e:
+                    logger.warning(f"Error publishing order event to PostgreSQL: {e}")
                 
             return order
         except Exception as e:
@@ -252,16 +251,15 @@ class OrderExecutor:
                     'timestamp': datetime.now().isoformat()
                 }
                 
-                # Publish bracket order event to Redis
-                if self.redis:
-                    try:
-                        event = {
-                            'event': 'bracket_order_created',
-                            'bracket_details': bracket_details
-                        }
-                        self.redis.publish('events:orders', json.dumps(event))
-                    except Exception as e:
-                        logger.warning(f"Error publishing bracket order event to Redis: {e}")
+                # Publish bracket order event to PostgreSQL event system
+                try:
+                    event = {
+                        'event': 'bracket_order_created',
+                        'bracket_details': bracket_details
+                    }
+                    publish_event('orders', event)
+                except Exception as e:
+                    logger.warning(f"Error publishing bracket order event to PostgreSQL: {e}")
                 
             return entry_order
         except Exception as e:
@@ -332,16 +330,15 @@ class OrderExecutor:
                 if order_id in self.pending_orders:
                     del self.pending_orders[order_id]
                     
-                # Publish order canceled event to Redis
-                if self.redis:
-                    try:
-                        event = {
-                            'event': 'order_canceled',
-                            'order_id': order_id
-                        }
-                        self.redis.publish('events:orders', json.dumps(event))
-                    except Exception as e:
-                        logger.warning(f"Error publishing order canceled event to Redis: {e}")
+                # Publish order canceled event to PostgreSQL event system
+                try:
+                    event = {
+                        'event': 'order_canceled',
+                        'order_id': order_id
+                    }
+                    publish_event('orders', event)
+                except Exception as e:
+                    logger.warning(f"Error publishing order canceled event to PostgreSQL: {e}")
                 
             return result
         except Exception as e:
