@@ -552,7 +552,19 @@ def clear_price_cache() -> bool:
     _price_cache.clear()
     return True
 
-def get_status():
+def get_status() -> Dict[str, Any]:
+    """
+    Get the status of the event system.
+    
+    Returns:
+        Dictionary with status information
+    """
+    return {
+        'connected': _db_engine is not None,
+        'running': _running,
+        'last_check': datetime.now().isoformat(),
+        'message_counts': _message_counters
+    }
     """
     Get the status of the event system.
     
