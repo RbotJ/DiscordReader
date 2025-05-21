@@ -15,7 +15,7 @@ from app import db
 from common.models import TradeSetupMessage
 from common.db_models import SetupModel, TickerSetupModel, SignalModel, BiasModel
 from common.event_constants import EventType
-from common.redis_utils import publish_event
+from common.events import publish_event
 
 logger = logging.getLogger(__name__)
 

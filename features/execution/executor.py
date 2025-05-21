@@ -15,7 +15,7 @@ from features.alpaca.client import (
     submit_market_order, submit_limit_order, cancel_order,
     get_orders, get_open_orders, get_account_info
 )
-from common.redis_utils import get_redis_client
+from common.events import publish_event
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class OrderExecutor:
     
     def __init__(self):
         """Initialize the order executor."""
-        self.redis = get_redis_client()
+        self.db_events = True  # Flag to indicate we're using DB events instead of Redis
         self.pending_orders = {}  # Track orders in progress
         self.filled_orders = {}   # Track orders that have been filled
         
