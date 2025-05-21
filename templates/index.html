@@ -43,6 +43,43 @@
             </div>
         </div>
         
+        <!-- Today's Date and Active Tickers Section -->
+        <div class="row mt-5">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h2 class="card-title mb-0">Today: {{ today }}</h2>
+                    </div>
+                    <div class="card-body">
+                        <h3>Today's Active Tickers</h3>
+                        
+                        {% if tickers %}
+                            <div class="row mt-3">
+                                {% for ticker in tickers %}
+                                <div class="col-md-2 col-sm-4 mb-3">
+                                    <div class="card text-center bg-dark">
+                                        <div class="card-body">
+                                            <h4 class="card-title">${{ ticker }}</h4>
+                                            <a href="/monitor?ticker={{ ticker }}" class="btn btn-sm btn-outline-primary">Monitor</a>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="alert alert-success mt-3">
+                                Found {{ message_count }} trading message(s) from today with {{ tickers|length }} active ticker(s)
+                            </div>
+                        {% else %}
+                            <div class="alert alert-info">
+                                <h4 class="alert-heading">Awaiting Trade Theory</h4>
+                                <p>No trading signals received today. When new signals arrive, they will appear here.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <div class="row mt-5 pt-5">
             <div class="col-md-4 mb-4">
                 <div class="card h-100 stat-card">

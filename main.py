@@ -201,7 +201,49 @@ def register_web_routes(app):
     @app.route('/')
     def index():
         """Main landing page."""
-        return render_template('index.html', title="A+ Trading App")
+        # Get today's date for display
+        from datetime import date
+        today = date.today().strftime('%A, %B %d, %Y')
+        
+        # Get today's tickers from Discord messages
+        import re
+        import json
+        import os
+        
+        MESSAGE_HISTORY_FILE = "discord_message_history.json"
+        todays_tickers = []
+        message_count = 0
+        
+        if os.path.exists(MESSAGE_HISTORY_FILE):
+            try:
+                with open(MESSAGE_HISTORY_FILE, 'r') as f:
+                    messages = json.load(f)
+                
+                # Filter for today's messages
+                today_date = date.today().isoformat()
+                todays_messages = [msg for msg in messages if msg.get("timestamp", "").startswith(today_date)]
+                message_count = len(todays_messages)
+                
+                # Extract tickers using regex
+                ticker_pattern = r'\$([A-Z]{1,5})'
+                ticker_set = set()
+                
+                for message in todays_messages:
+                    content = message.get("content", "")
+                    found_tickers = re.findall(ticker_pattern, content)
+                    ticker_set.update(found_tickers)
+                
+                todays_tickers = list(ticker_set)
+            except Exception as e:
+                app.logger.error(f"Error processing message history: {e}")
+        
+        return render_template(
+            'index.html', 
+            title="A+ Trading App",
+            today=today, 
+            tickers=todays_tickers, 
+            message_count=message_count
+        )
     
     @app.route('/dashboard')
     def dashboard():
