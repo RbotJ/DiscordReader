@@ -7,15 +7,15 @@ The A+ Trading App follows a vertical-slice architecture, organizing code by fea
 ## Architecture Principles
 
 1. **Vertical Slices**: Code is organized by feature rather than technical layer
-2. **Loose Coupling**: Features communicate via events, not direct references
+2. **Loose Coupling**: Features communicate via PostgreSQL events system
 3. **High Cohesion**: Related functionality is kept together
 4. **Single Responsibility**: Each module has a clear, focused purpose
-5. **Event-Driven**: Components communicate via Redis pub/sub for loose coupling
+5. **Event-Driven**: Components communicate via PostgreSQL for reliable event handling
 
 ## Component Structure
 
 ```
-/  
+/
 ├── features/
 │   ├── setups/           # ingestion, parsing, storage
 │   ├── market/           # underlying price subscriptions

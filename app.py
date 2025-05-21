@@ -54,8 +54,7 @@ app_config = {
     "ALPACA_API_KEY": ALPACA_API_KEY,
     "ALPACA_API_SECRET": ALPACA_API_SECRET,
     "ALPACA_API_BASE_URL": ALPACA_API_BASE_URL,
-    "PAPER_TRADING": PAPER_TRADING,
-    "REDIS_URL": redis_url
+    "PAPER_TRADING": PAPER_TRADING
 }
 
 # Add configuration to Flask app
