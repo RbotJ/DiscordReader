@@ -1,8 +1,9 @@
+
 """
 Setup Message Consumer Service
 
 This module provides a background service that consumes Discord setup messages
-from Redis and processes them into structured data for charting and monitoring.
+and processes them into structured data for charting and monitoring.
 """
 import logging
 import threading
@@ -10,18 +11,16 @@ import time
 from typing import Optional
 
 from features.setups.message_consumer import MessageConsumer
+from common.events import subscribe_to_events
+from common.event_constants import DISCORD_SETUP_MESSAGE_CHANNEL
 
-# Configure logger
 logger = logging.getLogger(__name__)
 
-# Global consumer thread reference
 _consumer_thread: Optional[threading.Thread] = None
 _consumer_running: bool = False
 
 def start_message_consumer_service():
-    """
-    Start the Discord message consumer service in a background thread.
-    """
+    """Start the Discord message consumer service in a background thread."""
     global _consumer_thread, _consumer_running
     
     if _consumer_running:
@@ -34,11 +33,12 @@ def start_message_consumer_service():
             logger.info("Starting message consumer worker thread")
             from app import app
             
-            # Set flag to indicate the service is running
             global _consumer_running
             _consumer_running = True
             
-            # Start the consumer with Flask app context (blocking call)
+            # Subscribe to setup messages channel
+            subscribe_to_events(DISCORD_SETUP_MESSAGE_CHANNEL)
+            
             with app.app_context():
                 consumer = MessageConsumer()
                 consumer.start()
@@ -48,11 +48,10 @@ def start_message_consumer_service():
             _consumer_running = False
             logger.info("Message consumer worker thread stopped")
     
-    # Create and start the thread
     _consumer_thread = threading.Thread(
         target=_consumer_worker,
         name="SetupMessageConsumer",
-        daemon=True  # Make thread terminate when main thread exits
+        daemon=True
     )
     _consumer_thread.start()
     
@@ -60,19 +59,15 @@ def start_message_consumer_service():
     return True
 
 def stop_message_consumer_service():
-    """
-    Stop the Discord message consumer service.
-    """
+    """Stop the Discord message consumer service."""
     global _consumer_thread, _consumer_running
     
     if not _consumer_running or not _consumer_thread:
         logger.info("Message consumer service is not running")
         return True
     
-    # Set flag to indicate service should stop
     _consumer_running = False
     
-    # Wait for thread to terminate (with timeout)
     if _consumer_thread:
         _consumer_thread.join(timeout=5.0)
         if _consumer_thread.is_alive():
@@ -84,11 +79,6 @@ def stop_message_consumer_service():
     return True
 
 def is_consumer_running():
-    """
-    Check if the message consumer service is running.
-    
-    Returns:
-        bool: True if the service is running, False otherwise
-    """
+    """Check if the message consumer service is running."""
     global _consumer_running
     return _consumer_running
