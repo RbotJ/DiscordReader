@@ -43,21 +43,9 @@
             </div>
         </div>
         
-        <!-- Today's Date and Active Tickers Section -->
+        <!-- Main Content -->
         <div class="row mt-5">
             <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h2 class="card-title mb-0">Today: {{ today }}</h2>
-                    </div>
-                    <div class="card-body">
-                        <h3>Today's Active Tickers</h3>
-                        
-                        {% if tickers %}
-                            <div class="row mt-3">
-                                {% for ticker in tickers %}
-                                <div class="col-md-2 col-sm-4 mb-3">
-                                    <div class="card text-center bg-dark">
                                         <div class="card-body">
                                             <h4 class="card-title">${{ ticker }}</h4>
                                             <a href="/monitor?ticker={{ ticker }}" class="btn btn-sm btn-outline-primary">Monitor</a>
