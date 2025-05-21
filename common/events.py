@@ -555,35 +555,146 @@ def get_from_cache(key: str) -> Optional[Dict[str, Any]]:
         key: The cache key to retrieve
         
     Returns:
-        Optional[Dict]: The cached data or None if not found or expired
+        Dict with the cached data or None if not found or expired
     """
+    # Create a new session for this operation
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for retrieving cached data")
+        return None
+    
     try:
-        # Use the cache: prefix for all cache entries
-        cache_channel = f"cache:{key}"
+        from common.db_models import CacheEntryModel
         
-        # Get the most recent cache entry for this key
-        events = poll_events(cache_channel, count=1)
+        # Get the cache entry
+        cache_entry = session.query(CacheEntryModel).filter_by(key=key).first()
         
-        if not events or len(events) == 0:
+        # No cache entry found
+        if not cache_entry:
+            session.close()
             return None
-            
-        # Get the event data
-        event = events[0]
         
-        # Check if expired
-        expiry_time_str = event.get('expiry_time')
-        if expiry_time_str:
-            expiry_time = datetime.fromisoformat(expiry_time_str)
-            if datetime.utcnow() > expiry_time:
-                # Cache entry is expired
-                return None
-                
-        # Return the cached data
-        return event.get('data')
+        # Check if the cache entry has expired
+        now = datetime.utcnow()
+        if cache_entry.expires_at and cache_entry.expires_at < now:
+            # Cache has expired, clean it up
+            session.delete(cache_entry)
+            session.commit()
+            session.close()
+            return None
+        
+        # Parse the JSON data
+        if cache_entry.value:
+            data = json.loads(cache_entry.value)
+            session.close()
+            return data
+        
+        session.close()
+        return None
+        
     except Exception as e:
         logger.error(f"Error retrieving cached data for key {key}: {e}")
+        try:
+            session.close()
+        except:
+            pass
         return None
 
+
+
+def delete_from_cache(key: str) -> bool:
+    """
+    Delete an entry from the database cache system.
+    
+    Args:
+        key: The cache key to delete
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    # Create a new session for this operation
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for deleting cached data")
+        return False
+    
+    try:
+        from common.db_models import CacheEntryModel
+        
+        # Get the cache entry
+        cache_entry = session.query(CacheEntryModel).filter_by(key=key).first()
+        
+        # No cache entry found
+        if not cache_entry:
+            session.close()
+            return True  # Already deleted
+        
+        # Delete the cache entry
+        session.delete(cache_entry)
+        session.commit()
+        session.close()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error deleting cached data for key {key}: {e}")
+        try:
+            session.rollback()
+        except:
+            pass
+        try:
+            session.close()
+        except:
+            pass
+        return False
+
+
+def clean_expired_cache() -> int:
+    """
+    Clean up expired cache entries from the database.
+    
+    Returns:
+        int: Number of entries cleaned up
+    """
+    # Create a new session for this operation
+    session = get_session()
+    if not session:
+        logger.error("Could not create database session for cleaning expired cache")
+        return 0
+    
+    try:
+        from common.db_models import CacheEntryModel
+        
+        # Get all expired cache entries
+        now = datetime.utcnow()
+        expired = session.query(CacheEntryModel).filter(
+            CacheEntryModel.expires_at < now
+        ).all()
+        
+        # Delete all expired entries
+        count = 0
+        for entry in expired:
+            session.delete(entry)
+            count += 1
+        
+        # Commit changes
+        session.commit()
+        session.close()
+        return count
+        
+    except Exception as e:
+        logger.error(f"Error cleaning expired cache entries: {e}")
+        try:
+            session.rollback()
+        except:
+            pass
+        try:
+            session.close()
+        except:
+            pass
+        return 0
+
+
+# Price cache functions
 def update_price_cache(ticker: str, price: float, timestamp: Optional[datetime] = None) -> bool:
     """
     Update the price in the cache.
@@ -591,6 +702,44 @@ def update_price_cache(ticker: str, price: float, timestamp: Optional[datetime] 
     Args:
         ticker: The ticker symbol
         price: The current price
+        timestamp: The timestamp of the price update (default: now)
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    # Use ISO format for timestamp
+    if timestamp is None:
+        timestamp = datetime.utcnow()
+        
+    # Cache key for this ticker's price
+    cache_key = f"price:{ticker}"
+    
+    # Price data to cache
+    price_data = {
+        'ticker': ticker,
+        'price': price,
+        'timestamp': timestamp.isoformat() if isinstance(timestamp, datetime) else timestamp
+    }
+    
+    # Cache the price data
+    return cache_data(cache_key, price_data)
+
+
+def get_price_from_cache(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Get the price data from cache.
+    
+    Args:
+        ticker: The ticker symbol
+        
+    Returns:
+        Dict with price data or None if not found
+    """
+    # Cache key for this ticker's price
+    cache_key = f"price:{ticker}"
+    
+    # Get the price data from cache
+    return get_from_cache(cache_key)
         timestamp: Optional timestamp, defaults to now
         
     Returns:
