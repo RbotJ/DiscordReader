@@ -77,7 +77,7 @@ async def fetch_latest_messages(limit: int = 50) -> List[Dict]:
     return messages
 
 def store_message(message: Dict) -> Optional[int]:
-    """Store message in PostgreSQL with validation"""
+    """Store message in PostgreSQL with validation and trigger parsing"""
     if not validate_message(message):
         logger.error(f"Invalid message format: {message}")
         return None
@@ -86,17 +86,22 @@ def store_message(message: Dict) -> Optional[int]:
         setup = SetupModel(
             date=datetime.fromisoformat(message['timestamp']).date(),
             raw_text=message['content'],
-            source='discord'
+            source='discord',
+            parsed=False
         )
 
         db.session.add(setup)
         db.session.commit()
 
-        # Publish event for parser
+        # Publish event for parser 
         publish_event(EventType.MESSAGE_STORED, {
             'message_id': setup.id,
             'timestamp': message['timestamp']
         })
+
+        # Trigger immediate parsing
+        from features.setups.processor import parse_new_setup_messages
+        parse_new_setup_messages()
 
         return setup.id
 
