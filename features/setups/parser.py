@@ -46,78 +46,64 @@ def parse_setup_message(
         return None
         
     try:
-    """
-    Parse a setup message into structured data.
-    
-    This is a functional wrapper around the SetupParser class for backwards compatibility.
-    
-    Args:
-        message_text: Raw setup message text
-        setup_date: Date of the setup message (defaults to today)
-        source: Source of the setup message
+        global _parser
         
-    Returns:
-        TradeSetupDTO: Parsed setup data
-    """
-    global _parser
-    
-    # Initialize parser if needed
-    if _parser is None:
-        _parser = SetupParser()
-    
-    # Use today's date if no date provided
-    if setup_date is None:
-        setup_date = datetime.now().date()
-    
-    # Process the message
-    ticker_sections = _parser.extract_ticker_sections(message_text)
-    ticker_setups = []
-    
-    for ticker, section_text in ticker_sections.items():
-        # Extract signals and bias for this ticker
-        signals = _parser.extract_signals(ticker, section_text)
-        bias = _parser.extract_bias(ticker, section_text)
+        # Initialize parser if needed
+        if _parser is None:
+            _parser = SetupParser()
         
-        # Create ticker setup
-        ticker_setup = TickerSetupDTO(
-            symbol=ticker,
-            text=section_text,
-            signals=signals,
-            bias=bias
-        )
+        # Use today's date if no date provided
+        if setup_date is None:
+            setup_date = datetime.now().date()
         
-        ticker_setups.append(ticker_setup)
-    
-    # Create and return setup message
-    # Ensure setup_date is not None
-    actual_date = setup_date if setup_date is not None else datetime.now().date()
-    
-    # Validate all price levels
-    for setup in ticker_setups:
-        setup.signals = [
-            s for s in setup.signals
-            if validate_price_levels([s.trigger]) and validate_price_levels(list(s.targets))
-        ]
+        # Process the message
+        ticker_sections = _parser.extract_ticker_sections(message_text)
+        ticker_setups = []
         
-        if setup.bias and setup.bias.price:
-            if not validate_price_levels([setup.bias.price]):
-                setup.bias = None
-    
-    # Only return if we have valid setups
-    if any(setup.signals or setup.bias for setup in ticker_setups):
-        return TradeSetupDTO(
-            date=actual_date,
-            raw_text=message_text,
-            source=source,
-            ticker_setups=ticker_setups
-        )
-    
-    logger.warning("No valid price levels found in message")
-    return None
-import logging
-import re
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any, Union, Set, Tuple
+        for ticker, section_text in ticker_sections.items():
+            # Extract signals and bias for this ticker
+            signals = _parser.extract_signals(ticker, section_text)
+            bias = _parser.extract_bias(ticker, section_text)
+            
+            # Create ticker setup
+            ticker_setup = TickerSetupDTO(
+                symbol=ticker,
+                text=section_text,
+                signals=signals,
+                bias=bias
+            )
+            
+            ticker_setups.append(ticker_setup)
+        
+        # Create and return setup message
+        # Ensure setup_date is not None
+        actual_date = setup_date if setup_date is not None else datetime.now().date()
+        
+        # Validate all price levels
+        for setup in ticker_setups:
+            setup.signals = [
+                s for s in setup.signals
+                if validate_price_levels([s.trigger]) and validate_price_levels(list(s.targets))
+            ]
+            
+            if setup.bias and setup.bias.price:
+                if not validate_price_levels([setup.bias.price]):
+                    setup.bias = None
+        
+        # Only return if we have valid setups
+        if any(setup.signals or setup.bias for setup in ticker_setups):
+            return TradeSetupDTO(
+                date=actual_date,
+                raw_text=message_text,
+                source=source,
+                ticker_setups=ticker_setups
+            )
+        
+        logger.warning("No valid price levels found in message")
+        return None
+    except Exception as e:
+        logger.error(f"Error parsing setup message: {e}")
+        return None
 
 from common.schemas import (
     TradeSetupDTO,
