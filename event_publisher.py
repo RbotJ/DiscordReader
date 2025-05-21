@@ -74,15 +74,15 @@ def publish_event(event_type: str, data: Dict[str, Any], channel: str = "events"
             
             # Insert event into event_bus table
             query = text("""
-                INSERT INTO event_bus (event_type, channel, data, created_at)
-                VALUES (:event_type, :channel, :data, NOW())
+                INSERT INTO event_bus (event_type, channel, payload, created_at)
+                VALUES (:event_type, :channel, :payload, NOW())
                 RETURNING id
             """)
             
             result = conn.execute(query, {
                 'event_type': event_type,
                 'channel': channel,
-                'data': json_data
+                'payload': json_data
             })
             
             # Commit the transaction
@@ -122,7 +122,7 @@ def get_events(channel: str = "events", after_id: Optional[int] = None, limit: i
         with engine.connect() as conn:
             if after_id:
                 query = text("""
-                    SELECT id, event_type, channel, data, created_at
+                    SELECT id, event_type, channel, payload, created_at
                     FROM event_bus
                     WHERE channel = :channel AND id > :after_id
                     ORDER BY id ASC
@@ -135,7 +135,7 @@ def get_events(channel: str = "events", after_id: Optional[int] = None, limit: i
                 })
             else:
                 query = text("""
-                    SELECT id, event_type, channel, data, created_at
+                    SELECT id, event_type, channel, payload, created_at
                     FROM event_bus
                     WHERE channel = :channel
                     ORDER BY id ASC
@@ -152,7 +152,7 @@ def get_events(channel: str = "events", after_id: Optional[int] = None, limit: i
                     'id': row[0],
                     'event_type': row[1],
                     'channel': row[2],
-                    'data': json.loads(row[3]),
+                    'data': json.loads(row[3]) if row[3] else {},
                     'created_at': row[4].isoformat() if row[4] else None
                 })
             
