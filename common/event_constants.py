@@ -1,31 +1,13 @@
-"""
-Event Constants Module
+"""Event channel definitions for PostgreSQL-based event system"""
 
-This module defines constants for event channels and types used in PostgreSQL-based event system.
-"""
-
-# Setup event channels
-SETUP_CREATED_CHANNEL = "events:setup:created"
-SETUP_UPDATED_CHANNEL = "events:setup:updated"
-SIGNAL_CREATED_CHANNEL = "events:signal:created"
-SIGNAL_TRIGGERED_CHANNEL = "events:signal:triggered"
-BIAS_CREATED_CHANNEL = "events:bias:created"
-BIAS_FLIPPED_CHANNEL = "events:bias:flipped"
-
-# Discord message channels
-DISCORD_RAW_MESSAGE_CHANNEL = "events:discord:raw_messages"
-DISCORD_SETUP_MESSAGE_CHANNEL = "events:discord:setup_messages"
-
-# Event types
-class EventType:
-    # Setup events
+class EventChannels:
+    """Event channel names"""
     SETUP_CREATED = "setup.created"
-    SETUP_UPDATED = "setup.updated"
-    SIGNAL_CREATED = "signal.created"
     SIGNAL_TRIGGERED = "signal.triggered"
-    BIAS_CREATED = "bias.created"
-    BIAS_FLIPPED = "bias.flipped"
-    
-    # Discord events
-    DISCORD_MESSAGE_RECEIVED = "discord.message.received"
-    DISCORD_SETUP_MESSAGE_RECEIVED = "discord.setup_message.received"
+    TRADE_EXECUTED = "trade.executed"
+    MARKET_PRICE_UPDATE = "market.price_update"
+    NOTIFICATIONS = "notifications"
+    DISCORD_SETUP_MESSAGE = "discord.setup_message"
+    POSITION_UPDATE = "position.update"
+    ORDER_UPDATE = "order.update"
+    DISCORD_BOT_STATUS = "discord.bot_status"

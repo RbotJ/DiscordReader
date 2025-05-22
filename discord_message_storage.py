@@ -10,42 +10,38 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 # Import database utilities
-from db_utils import (store_discord_message, get_latest_message_from_database,
+from db_utils import (get_latest_message_from_database,
                       get_messages_from_database, get_message_stats_from_database)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def save_message(message_data: Dict[str, Any]) -> bool:
-    """
-    Save a Discord message to the database.
-    Only saves authentic messages from Discord with valid ID and timestamp.
-    
-    Args:
-        message_data: Dictionary containing message data
-        
-    Returns:
-        True if successful, False otherwise
-    """
-    # Verify this is an authentic message with required fields
-    message_id = message_data.get('id')
-    timestamp = message_data.get('timestamp')
-    content = message_data.get('content')
-    
-    if not message_id or not timestamp or not content:
-        logger.error("Message missing required fields (id, timestamp, or content)")
+from common.db import db
+from common.db_models import DiscordMessageModel
+from common.events import publish_event, EventChannels
+
+
+def store_message(message_data):
+    """Store Discord message in database"""
+    try:
+        message = DiscordMessageModel(
+            channel_id=message_data['channel_id'],
+            message_id=message_data['message_id'],
+            content=message_data['content'],
+            author=message_data['author'],
+            created_at=datetime.utcnow()
+        )
+        db.session.add(message)
+        db.session.commit()
+
+        # Publish event for other components
+        publish_event(EventChannels.DISCORD_SETUP_MESSAGE, message_data)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to store Discord message: {e}")
+        db.session.rollback()
         return False
-    
-    # Store in database
-    success = store_discord_message(message_data)
-    
-    if success:
-        logger.info(f"Authentic message saved to database: {message_id}")
-    else:
-        logger.error(f"Failed to save message to database: {message_id}")
-    
-    return success
 
 def get_latest_message() -> Optional[Dict[str, Any]]:
     """
@@ -73,7 +69,7 @@ def get_message_history(limit: int = 100) -> List[Dict[str, Any]]:
     
     Args:
         limit: Maximum number of messages to retrieve
-        
+    
     Returns:
         List of message dictionaries, newest first
     """
