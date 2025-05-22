@@ -49,7 +49,6 @@ Event orchestration between components is handled through Redis pub/sub, allowin
 ### Prerequisites
 
 - Python 3.8+
-- Redis server
 - PostgreSQL database
 - Alpaca Paper Trading account with API key and secret
 
@@ -65,9 +64,6 @@ ALPACA_API_BASE_URL=https://paper-api.alpaca.markets
 
 # Database Configuration
 DATABASE_URL=postgresql://username:password@localhost:5432/dbname
-
-# Redis Configuration
-REDIS_URL=redis://localhost:6379/0
 
 # Application Configuration
 SESSION_SECRET=your_secret_key

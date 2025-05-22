@@ -1,0 +1,61 @@
+Consolidation Strategy
+Discord-Related Files
+check_discord_env.py → features/discord/utils/environment.py
+
+Move environment validation functionality to a dedicated utility module
+The existing test_discord_integration.py already provides some similar functionality
+discord_message_stats.py & discord_message_storage.py → features/discord/storage/
+
+Combine these into a unified Discord message handling module
+Remove duplication with existing code in features/discord/message_parser.py
+simple_discord_test.py → features/discord/tests/
+
+Consolidate with existing test files in tests/discord/
+Standardize testing approach with other Discord integration tests
+Database Utilities
+db_utils.py → common/db.py
+
+Merge database connection functions with existing database utilities
+Eliminate redundant code that overlaps with the existing common/db.py
+recreate_db.py & update_schema.py → common/db/schema.py
+
+Create a unified schema management module that handles both recreation and updates
+Standardize the approach to database schema changes
+Setup Data and Parsing
+setup_data_provider.py → features/setups/repository.py
+
+Merge with existing setup repository functionality
+Standardize data access methods with the rest of the application
+ticker_parser.py → features/setups/parser/
+
+Consolidate with existing parser in features/setups/parser.py
+Maintain compatibility with existing parsing functionality
+Asset Management
+convert_logo.py → features/dashboard/utils/assets.py
+Move asset conversion logic to a dedicated utility module
+Standardize asset handling with the rest of the application
+Integration and Testing
+integration_test_webhook.py → tests/integration/
+
+Move to the standard location for integration tests
+Ensure consistency with other test modules
+demo_trade_workflow.py → features/execution/integration/
+
+Consolidate with existing trade workflow demonstrations
+Standardize approach to trade workflow examples
+Event Management
+event_publisher.py → common/events/
+Integrate with existing event handling in common/events.py
+Standardize event publishing across the application
+Market Data
+show_todays_active_tickers.py → features/market/
+Move to the market data module
+Integrate with existing functionality in features/market/api.py
+Implementation Approach
+I recommend tackling this refactoring in phases:
+
+Phase 1: Move files to their new locations without changing functionality
+Phase 2: Integrate functionality with existing modules, removing duplication
+Phase 3: Update imports across the application to use the new consolidated modules
+Phase 4: Add comprehensive tests for the refactored code
+This approach will ensure minimal disruption to the existing application while improving the codebase structure. The error in the workflow logs indicates an import issue with init_db in common/db.py, which further emphasizes the need for this consolidation.
