@@ -63,38 +63,64 @@ def format_timestamp(timestamp_str):
     except:
         return timestamp_str
 
+def get_message_stats():
+    """Get message statistics from database"""
+    try:
+        from common.db_models import DiscordMessageModel
+        from common.database import db
+
+        # Get total message count
+        total_messages = DiscordMessageModel.query.count()
+
+        # Get messages by channel
+        channel_stats = db.session.query(
+            DiscordMessageModel.channel_id,
+            db.func.count(DiscordMessageModel.id)
+        ).group_by(DiscordMessageModel.channel_id).all()
+
+        return {
+            'total_messages': total_messages,
+            'channels': dict(channel_stats)
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting message stats: {e}")
+        return {}
+
 def main():
     """Main dashboard function"""
     st.title("Discord Message Statistics")
-    
+
     # Load data
     message_history = load_message_history()
     latest_message = load_latest_message()
     parsed_setup = load_parsed_setup()
-    
+
     # Summary metrics
     st.header("Message Summary")
-    
+
     cols = st.columns(3)
-    
+
     with cols[0]:
-        st.metric("Total Messages", len(message_history))
-    
+        message_stats = get_message_stats()
+        st.metric("Total Messages", message_stats.get('total_messages', 0))
+
     with cols[1]:
         if latest_message and "timestamp" in latest_message:
             st.metric("Latest Message", format_timestamp(latest_message["timestamp"]))
         else:
             st.metric("Latest Message", "N/A")
-    
+
     with cols[2]:
         if latest_message and "author" in latest_message:
             st.metric("Latest Author", latest_message.get("author", "Unknown"))
         else:
             st.metric("Latest Author", "N/A")
-    
+
     # Latest message content
     st.header("Latest Discord Message")
-    
+
     if latest_message:
         expander = st.expander("View Latest Message Content", expanded=True)
         with expander:
@@ -106,45 +132,45 @@ def main():
                     st.markdown(f"**{key.capitalize()}**: {value}")
     else:
         st.info("No Discord messages found. Awaiting authentic messages from Discord.")
-    
+
     # Latest parsed setup
     st.header("Latest Parsed Trading Setup")
-    
+
     if parsed_setup:
         tab1, tab2 = st.tabs(["Trading Data", "Raw JSON"])
-        
+
         with tab1:
             # Primary ticker and signals
             cols = st.columns(3)
-            
+
             with cols[0]:
                 st.markdown(f"**Primary Ticker**: {parsed_setup.get('primary_ticker', 'N/A')}")
                 st.markdown(f"**Signal Type**: {parsed_setup.get('signal_type', 'N/A')}")
                 st.markdown(f"**Bias**: {parsed_setup.get('bias', 'N/A')}")
-            
+
             with cols[1]:
                 st.markdown("**Tickers:**")
                 for ticker in parsed_setup.get('tickers', []):
                     st.markdown(f"- {ticker}")
-            
+
             with cols[2]:
                 confidence = parsed_setup.get('confidence', 0)
                 st.progress(confidence, text=f"Confidence: {confidence*100:.0f}%")
-            
+
             # Display the raw message
             st.markdown("### Original Message:")
             st.code(parsed_setup.get('raw_message', 'No message available'))
-            
+
             # Ticker-specific data
             st.markdown("### Ticker-Specific Data:")
-            
+
             ticker_data = parsed_setup.get('ticker_specific_data', {})
             if ticker_data:
                 for ticker, data in ticker_data.items():
                     with st.expander(f"{ticker} Details", expanded=ticker == parsed_setup.get('primary_ticker')):
                         st.markdown(f"**Signal**: {data.get('signal_type', 'N/A')}")
                         st.markdown(f"**Bias**: {data.get('bias', 'N/A')}")
-                        
+
                         # Price levels
                         if data.get('support_levels'):
                             st.markdown(f"**Support Levels**: {', '.join([str(x) for x in data['support_levels']])}")
@@ -156,28 +182,28 @@ def main():
                             st.markdown(f"**Stop Levels**: {', '.join([str(x) for x in data['stop_levels']])}")
             else:
                 st.info("No ticker-specific data available")
-        
+
         with tab2:
             st.json(parsed_setup)
     else:
         st.info("No parsed setup data found")
-    
+
     # Message history visualization
     st.header("Message History")
-    
+
     if message_history:
         # Convert to DataFrame for easier manipulation
         df = pd.DataFrame(message_history)
-        
+
         # Extract datetime from timestamp strings
         df['datetime'] = pd.to_datetime(df['timestamp'])
-        
+
         # Sort by datetime
         df = df.sort_values('datetime')
-        
+
         # Add a column for message index (count)
         df['message_index'] = range(1, len(df) + 1)
-        
+
         # Create a timeline visualization
         fig = px.scatter(
             df,
@@ -187,10 +213,10 @@ def main():
             labels={'datetime': 'Time', 'message_index': 'Message Count'},
             title='Discord Message Timeline'
         )
-        
+
         # Increase marker size
         fig.update_traces(marker=dict(size=12))
-        
+
         # Layout improvements
         fig.update_layout(
             height=500,
@@ -198,18 +224,18 @@ def main():
             yaxis_title="Message Count",
             hovermode="closest"
         )
-        
+
         st.plotly_chart(fig, use_container_width=True)
-        
+
         # Show message table
         with st.expander("View Message History Table", expanded=False):
             # Format the datetime column for display
             df['formatted_time'] = df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            
+
             # Select and reorder columns for display
             display_df = df[['message_index', 'formatted_time', 'author', 'channel_name']]
             display_df.columns = ['#', 'Time', 'Author', 'Channel']
-            
+
             st.dataframe(display_df, use_container_width=True)
     else:
         st.info("No message history found. Try generating sample data with `python generate_sample_discord_data.py`")
