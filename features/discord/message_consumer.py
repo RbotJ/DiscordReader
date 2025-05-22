@@ -11,20 +11,22 @@ class MessageConsumer:
         self.last_event_id = 0
 
     def start(self):
-        """Start polling for Discord messages."""
+        """Start polling for Discord setup messages."""
         try:
             logger.info("Starting Discord message consumer")
 
             # Main polling loop
             while self.running:
                 try:
-                    # Poll for new events on the Discord message channel using PostgreSQL
-                    events = poll_events([DISCORD_MESSAGE_CHANNEL], self.last_event_id)
+                    # Query new messages from database
+                    messages = DiscordMessageModel.query.filter(
+                        DiscordMessageModel.id > self.last_event_id
+                    ).order_by(DiscordMessageModel.id.asc()).all()
 
-                    # Process any new events
-                    for event in events:
-                        self._process_event(event)
-                        self.last_event_id = max(self.last_event_id, event['id'])
+                    # Process new messages
+                    for message in messages:
+                        self._process_message(message)
+                        self.last_event_id = message.id
 
                     time.sleep(0.5)
 
