@@ -138,3 +138,31 @@ class TradeSetupMessage:
     date: date
     setups: List[Dict[str, Any]] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.utcnow)
+    
+    
+@dataclass
+class TickerSetup:
+    """Data Transfer Object for ticker setup information with trade details."""
+    ticker: str
+    price_target: Optional[float]
+    setup_type: str
+    direction: str  # "bullish", "bearish", "neutral"
+    confidence: float = 0.5
+    source: str = "discord"
+    timeframe: str = "day"  # "day", "hour", "week"
+    active: bool = True
+    message_ref: Optional[str] = None
+    date: date = field(default_factory=date.today)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    
+    
+@dataclass 
+class Bias:
+    """Data Transfer Object for market bias."""
+    direction: str  # "bullish", "bearish", "neutral" 
+    timeframe: str  # "day", "hour", "week"
+    confidence: float
+    reason: str
+    source: str
+    date: date = field(default_factory=date.today)
+    created_at: datetime = field(default_factory=datetime.utcnow)

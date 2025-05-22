@@ -6,7 +6,7 @@ This module defines the SQLAlchemy models for the trading application.
 import enum
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
-from sqlalchemy import Column, Integer, String, Float, Boolean, Text, JSON, DateTime, Date, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Boolean, Text, JSON, DateTime, Date, ForeignKey, Enum as SQLEnum, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -230,6 +230,8 @@ class TickerSetupModel(db.Model):
     status = Column(String(20), nullable=False, default='active')
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
+    message = relationship("SetupMessageModel", back_populates="ticker_setups")
+    
     def __repr__(self):
         return f"<TickerSetup(id={self.id}, symbol={self.symbol}, category={self.category})>"
         
@@ -271,6 +273,29 @@ class WatchlistModel(db.Model):
     def __repr__(self):
         return f"<Watchlist(id={self.id}, name={self.name}, ticker={self.ticker})>"
         
+class TickerDataModel(db.Model):
+    """Model for storing daily ticker data."""
+    __tablename__ = 'ticker_data'
+    __table_args__ = (
+        UniqueConstraint('ticker', 'date', name='uix_ticker_date'),
+        {'extend_existing': True}
+    )
+    
+    id = Column(Integer, primary_key=True)
+    ticker = Column(String(10), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    open_price = Column(Float, nullable=False)
+    high_price = Column(Float, nullable=False)
+    low_price = Column(Float, nullable=False)
+    close_price = Column(Float, nullable=False)
+    volume = Column(BigInteger, nullable=False)
+    source = Column(String(20), nullable=False, default='alpaca')
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<TickerData(id={self.id}, ticker={self.ticker}, date={self.date}, close={self.close_price})>"
+
+
 class CandleModel(db.Model):
     """Candle model for storing candle pattern detections."""
     __tablename__ = 'candles'
