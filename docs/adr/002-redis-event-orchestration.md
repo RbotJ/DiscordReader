@@ -1,4 +1,5 @@
-# ADR 002: Redis Event Orchestration
+
+# ADR 002: PostgreSQL Event Orchestration
 
 ## Status
 
@@ -18,20 +19,28 @@ We considered several options:
 
 - Direct method calls between features
 - HTTP REST APIs between features
-- Message broker (Redis, RabbitMQ, Kafka)
+- Message brokers (Redis, RabbitMQ, Kafka)
 - Shared database as an event store
 
 ## Decision
 
-We have decided to use **Redis Pub/Sub** for event orchestration between feature slices.
+We have decided to use **PostgreSQL** for event orchestration between feature slices.
 
-Redis Pub/Sub provides a lightweight, in-memory message broker that allows for decoupled communication between components. Each feature can publish events to specific channels, and other features can subscribe to those channels to receive events.
+PostgreSQL provides a robust, persistent event store that allows for decoupled communication between components. Each feature can publish events to the events table, and other features can poll or subscribe to those events through database queries.
 
 Key aspects of our implementation:
 
-1. **Event Channels**: We will define a set of standardized event channels for different types of events (e.g., `setup.received`, `market.price_update`, `signal.triggered`, etc.)
+1. **Event Table**: We store events in a dedicated `events` table with columns for:
+   ```sql
+   CREATE TABLE events (
+     id SERIAL PRIMARY KEY,
+     channel VARCHAR(50) NOT NULL,
+     data JSONB NOT NULL,
+     created_at TIMESTAMP NOT NULL DEFAULT NOW()
+   );
+   ```
 
-2. **Event Format**: Events will be JSON-serialized objects with a standard structure:
+2. **Event Format**: Events are JSON objects stored in the data column with a standard structure:
    ```json
    {
      "event_type": "signal.triggered",
@@ -45,46 +54,46 @@ Key aspects of our implementation:
    }
    ```
 
-3. **Redis Client Wrapper**: We will create a wrapper around the Redis client to standardize event publishing and subscription:
+3. **Event Client**: We use a wrapper around SQLAlchemy to standardize event publishing and subscription:
    ```python
    # Publishing events
-   redis_client.publish("signal.triggered", signal_data)
+   event_client.publish("signal.triggered", signal_data)
    
-   # Subscribing to events
-   redis_client.subscribe(["setup.received", "market.price_update"])
+   # Retrieving events
+   events = event_client.get_latest_events("setup.received")
    ```
 
-4. **Durable Events**: For critical events that need persistence, we will also store them in the database in addition to publishing them via Redis.
+4. **Event Channels**: Events are categorized by channel names stored in the channel column
 
 ## Consequences
 
 Positive:
 
-- **Loose Coupling**: Features are decoupled and can evolve independently
-- **Scalability**: Can easily scale by adding more subscribers to process events
-- **Flexibility**: Easy to add new features by subscribing to relevant events
-- **Testability**: Features can be tested in isolation by mocking events
-- **Performance**: Redis provides high-performance, in-memory messaging
+- **Durability**: Events are automatically persisted and can be replayed
+- **Transactional**: Events can participate in database transactions
+- **Queryable**: Full SQL querying capabilities for event analysis
+- **Simplicity**: Single system for both storage and messaging
+- **Consistency**: ACID properties ensure reliable event delivery
 
 Negative:
 
-- **Eventual Consistency**: The system is eventually consistent rather than immediately consistent
-- **Error Handling**: Need careful error handling for message processing failures
-- **Debugging**: Can be harder to debug event-driven systems
-- **Learning Curve**: Developers need to understand event-driven architecture
+- **Polling Required**: No native pub/sub mechanism
+- **Latency**: Slightly higher latency compared to in-memory systems
+- **Resource Usage**: Database connections needed for event monitoring
+- **Scaling**: Limited by database performance
 
 ## Implementation Details
 
-Our Redis event orchestration will include:
+Our PostgreSQL event system includes:
 
-1. **Common Redis Client**: A shared Redis client wrapper in the `common` directory that handles serialization, connection management, and error handling.
+1. **Event Models**: SQLAlchemy models defining event structure and relationships
 
-2. **Standard Event Schema**: A standardized schema for all events to ensure consistency.
+2. **Event Client**: A client wrapper handling event operations and error cases
 
-3. **Event Documentation**: Clear documentation of all event types, their purpose, and their data structure.
+3. **Event Documentation**: Clear documentation of supported event types
 
-4. **Error Handling**: Robust error handling for event processing, including dead-letter queues for failed events.
+4. **Error Handling**: Robust error handling including event validation
 
-5. **Monitoring**: Monitoring of event queues and processing to detect bottlenecks or failures.
+5. **Monitoring**: Database monitoring for event table performance
 
-This approach will provide a flexible, scalable foundation for communication between our vertical feature slices.
+This approach provides a reliable, persistent foundation for communication between our vertical feature slices while simplifying our infrastructure by removing Redis as a dependency.
