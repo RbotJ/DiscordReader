@@ -1,10 +1,5 @@
 """
-Discord Tests Module
+Discord Integration Tests Package
 
-This module contains tests for the Discord integration.
+Contains tests for Discord integration functionality.
 """
-from features.discord.tests.simple_test import run_simple_test
-
-__all__ = [
-    'run_simple_test'
-]
