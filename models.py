@@ -114,10 +114,11 @@ class SignalLegacy(db.Model):
 Signal = SignalLegacy
 
 
-class Bias(db.Model):
+class BiasLegacy(db.Model):
     """Represents a market bias for a ticker."""
     __tablename__ = 'biases'
     __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'models.BiasLegacy'}
     
     id = Column(Integer, primary_key=True)
     ticker_setup_id = Column(Integer, ForeignKey('ticker_setups.id', ondelete='CASCADE'), nullable=False)
@@ -126,11 +127,13 @@ class Bias(db.Model):
     price = Column(Float, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    # Relationships will be defined after all classes are created
-    bias_flip = relationship("BiasFlip", backref="bias", uselist=False, cascade="all, delete-orphan")
+    # Remove relationship here - will be defined at end of file
     
     def __repr__(self):
-        return f"<Bias direction={self.direction} price={self.price}>"
+        return f"<BiasLegacy direction={self.direction} price={self.price}>"
+        
+# For backward compatibility
+Bias = BiasLegacy
 
 
 class BiasFlip(db.Model):
@@ -156,25 +159,39 @@ SetupMessageLegacy.ticker_setups = relationship(
     cascade="all, delete-orphan"
 )
 
-# Ticker Setup -> Signal relationship 
+# Add backref relationships at the end of the file
+# after all models are defined
+TickerSetupLegacy.signals = relationship(
+    "SignalLegacy",
+    back_populates="ticker_setup"
+)
+
+# Create relationship on the signal side
 SignalLegacy.ticker_setup = relationship(
-    "models.TickerSetupLegacy",
-    foreign_keys="[models.SignalLegacy.ticker_setup_id]",
-    backref="signals"
+    "TickerSetupLegacy",
+    back_populates="signals"
 )
 
-# Ticker Setup -> Bias relationship
-Bias.ticker_setup = relationship(
-    "models.TickerSetupLegacy",
-    foreign_keys="[models.Bias.ticker_setup_id]",
-    backref=backref("bias", uselist=False)
+# Add relationships at the end of the file
+TickerSetupLegacy.bias = relationship(
+    "BiasLegacy",
+    back_populates="ticker_setup",
+    uselist=False
 )
 
-# Bias -> BiasFlip relationship
-Bias.bias_flip = relationship(
-    "models.BiasFlip",
-    foreign_keys="[models.BiasFlip.bias_id]",
-    backref="bias",
+BiasLegacy.ticker_setup = relationship(
+    "TickerSetupLegacy",
+    back_populates="bias"
+)
+
+BiasFlip.bias = relationship(
+    "BiasLegacy",
+    back_populates="bias_flip"
+)
+
+BiasLegacy.bias_flip = relationship(
+    "BiasFlip",
+    back_populates="bias",
     uselist=False,
     cascade="all, delete-orphan"
 )
