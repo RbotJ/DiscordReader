@@ -2,12 +2,25 @@
 """
 Test runner script for A+ Trading App.
 
-This script discovers and runs all tests in the tests directory.
+This script discovers and runs all tests in the tests directory structure.
+Tests are categorized into:
+- Unit tests: tests/unit/
+- Integration tests: tests/integration/
+- API tests: tests/api/
+- Discord tests: tests/discord/
 """
 import unittest
 import sys
 import os
 import importlib.util
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Add the project root to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,25 +31,33 @@ sys.path.insert(0, project_root)
 def check_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     if not spec:
-        print(f"Error: Could not find module {name} at {path}")
+        logger.error(f"Error: Could not find module {name} at {path}")
         return False
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
         return True
     except Exception as e:
-        print(f"Error importing {name}: {e}")
+        logger.error(f"Error importing {name}: {e}")
         return False
 
 def run_tests():
-    """Discover and run all tests."""
-    print("=" * 80)
-    print("Running A+ Trading App Tests")
-    print("=" * 80)
-    print(f"Project root: {project_root}")
+    """
+    Discover and run all tests across test categories.
+    
+    Test categories:
+    - Unit tests (tests/unit/): Tests for individual components in isolation
+    - Integration tests (tests/integration/): Tests for component interactions
+    - API tests (tests/api/): Tests for API endpoints and functionality
+    - Discord tests (tests/discord/): Tests for Discord integration features
+    """
+    logger.info("=" * 80)
+    logger.info("Running A+ Trading App Tests")
+    logger.info("=" * 80)
+    logger.info(f"Project root: {project_root}")
     
     # Check core modules
-    print("\nVerifying modules:")
+    logger.info("\nVerifying modules:")
     core_modules = [
         ("features.setups.parser", os.path.join(project_root, "features/setups/parser.py")),
         ("features.setups.api", os.path.join(project_root, "features/setups/api.py")),
@@ -44,63 +65,81 @@ def run_tests():
     ]
     for name, path in core_modules:
         if os.path.exists(path):
-            print(f"✓ Found {name} at {path}")
+            logger.info(f"✓ Found {name} at {path}")
         else:
-            print(f"✗ Missing {name} at {path}")
+            logger.info(f"✗ Missing {name} at {path}")
     
     # Discover and run tests
     loader = unittest.TestLoader()
     
-    # Run unit tests
-    print("\nRunning Unit Tests:")
-    unit_tests_dir = os.path.join(current_dir, 'unit')
-    unit_tests = loader.discover(start_dir=unit_tests_dir, pattern='test_*.py')
-    unit_result = unittest.TextTestRunner(verbosity=2).run(unit_tests)
+    # Dictionary to store test results for each category
+    results = {}
     
-    # Run integration tests
-    print("\nRunning Integration Tests:")
-    integration_tests_dir = os.path.join(current_dir, 'integration')
+    # Run tests for each category
+    categories = {
+        'Unit': 'unit',
+        'Integration': 'integration',
+        'API': 'api',
+        'Discord': 'discord'
+    }
     
-    # Debug info
-    print(f"Integration tests directory: {integration_tests_dir}")
-    print(f"Directory exists: {os.path.exists(integration_tests_dir)}")
-    print(f"Directory content: {os.listdir(integration_tests_dir)}")
-    
-    try:
-        # Use absolute path and check if it exists
-        abs_integration_dir = os.path.abspath(integration_tests_dir)
-        if not os.path.exists(abs_integration_dir):
-            print(f"Error: Integration tests directory {abs_integration_dir} not found.")
-            integration_result = unittest.TestResult()
-        else:
-            # Manually create suite for integration tests
-            integration_suite = unittest.TestSuite()
-            for test_file in os.listdir(abs_integration_dir):
-                if test_file.startswith('test_') and test_file.endswith('.py'):
-                    module_name = f"tests.integration.{test_file[:-3]}"
-                    try:
-                        module = __import__(module_name, fromlist=['*'])
-                        for name in dir(module):
-                            obj = getattr(module, name)
-                            if isinstance(obj, type) and issubclass(obj, unittest.TestCase) and obj is not unittest.TestCase:
-                                integration_suite.addTests(loader.loadTestsFromTestCase(obj))
-                    except Exception as e:
-                        print(f"Error loading test {module_name}: {e}")
-                        
-            integration_result = unittest.TextTestRunner(verbosity=2).run(integration_suite)
-    except Exception as e:
-        print(f"Failed to run integration tests: {e}")
-        integration_result = unittest.TestResult()
+    for category_name, category_dir in categories.items():
+        logger.info(f"\nRunning {category_name} Tests:")
+        tests_dir = os.path.join(current_dir, category_dir)
+        
+        if not os.path.exists(tests_dir):
+            logger.info(f"No {category_name.lower()} test directory found at {tests_dir}")
+            results[category_name] = unittest.TestResult()
+            continue
+        
+        try:
+            logger.info(f"{category_name} tests directory: {tests_dir}")
+            logger.info(f"Directory content: {os.listdir(tests_dir)}")
+            
+            tests = loader.discover(start_dir=tests_dir, pattern='test_*.py')
+            results[category_name] = unittest.TextTestRunner(verbosity=2).run(tests)
+        except Exception as e:
+            logger.error(f"Failed to run {category_name.lower()} tests: {e}")
+            results[category_name] = unittest.TestResult()
     
     # Summarize results
-    print("\n" + "=" * 80)
-    print(f"Unit Tests: {unit_result.testsRun} run, {len(unit_result.errors)} errors, {len(unit_result.failures)} failures")
-    print(f"Integration Tests: {integration_result.testsRun} run, {len(integration_result.errors)} errors, {len(integration_result.failures)} failures")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("Test Summary")
+    logger.info("=" * 80)
+    
+    total_errors = 0
+    total_failures = 0
+    total_run = 0
+    
+    for category, result in results.items():
+        tests_run = result.testsRun
+        errors = len(result.errors)
+        failures = len(result.failures)
+        total_run += tests_run
+        total_errors += errors
+        total_failures += failures
+        
+        logger.info(f"{category} Tests: {tests_run} run, {errors} errors, {failures} failures")
+        
+        # Log details of errors and failures if any
+        if errors > 0 or failures > 0:
+            logger.info(f"  Details for {category} test issues:")
+            
+            for i, (test, error) in enumerate(result.errors, 1):
+                logger.info(f"  Error {i}: {test}")
+                logger.info(f"  {error}")
+                logger.info("-" * 40)
+                
+            for i, (test, failure) in enumerate(result.failures, 1):
+                logger.info(f"  Failure {i}: {test}")
+                logger.info(f"  {failure}")
+                logger.info("-" * 40)
+    
+    logger.info(f"\nOverall: {total_run} tests run, {total_errors} errors, {total_failures} failures")
+    logger.info("=" * 80)
     
     # Return success if no tests failed
-    return (len(unit_result.errors) + len(unit_result.failures) + 
-            len(integration_result.errors) + len(integration_result.failures)) == 0
+    return total_errors + total_failures == 0
 
 
 if __name__ == '__main__':
