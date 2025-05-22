@@ -4,10 +4,9 @@ Discord Environment Variables Checker
 Utility module to verify that Discord environment variables are properly set.
 """
 import os
-import sys
 import logging
 
-# Configure logging
+# Configure module logger
 logger = logging.getLogger(__name__)
 
 def check_discord_env():
@@ -75,8 +74,13 @@ def main():
     logging.basicConfig(level=logging.INFO, 
                        format='%(asctime)s - %(levelname)s - %(message)s')
     
-    result = check_discord_env()
-    return 0 if result else 1
+    if check_discord_env():
+        logger.info("Discord environment check passed")
+        return 0
+    else:
+        logger.error("Discord environment check failed")
+        return 1
 
 if __name__ == '__main__':
+    import sys
     sys.exit(main())

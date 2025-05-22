@@ -8,8 +8,7 @@ import logging
 from datetime import datetime
 from sqlalchemy import create_engine, text
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logger for this module
 logger = logging.getLogger(__name__)
 
 def get_database_connection():
