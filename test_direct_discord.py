@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 from datetime import datetime
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 async def test_discord_connection(token, channel_id):
     """Test Discord connection and message storage"""
     client = discord.Client(intents=discord.Intents.default())
-    
+
     @client.event
     async def on_ready():
         try:
@@ -29,20 +28,20 @@ async def test_discord_connection(token, channel_id):
                 )
                 db.session.add(db_message)
                 db.session.commit()
-                
+
                 # Publish event
                 publish_event(EventChannels.DISCORD_SETUP_MESSAGE, {
                     "message_id": str(message.id),
                     "content": message.content
                 })
-                
+
                 logger.info(f"Stored and published message: {message.id}")
-                
+
         except Exception as e:
             logger.error(f"Error processing Discord message: {e}")
         finally:
             await client.close()
-    
+
     await client.start(token)
 
 if __name__ == "__main__":

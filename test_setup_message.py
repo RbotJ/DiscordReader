@@ -41,36 +41,40 @@ EXAMPLE_SETUP_MESSAGE = """A+ Trade Setups (Wed, May 15)
    - Aggressive bullish bias above 182.5, flips bearish below 180
 """
 
+from common.events import publish_event, EventChannels
+from common.db import db
+from common.db_models import SetupMessageModel
+
 def test_setup_handler():
     """Test the setup message handler functionality."""
     # Create a minimal Flask application context
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-    
+
     # Import after Flask app creation
     from app import db
     db.init_app(app)
-    
+
     with app.app_context():
         # Import setup handler
         from features.discord.setup_handler import extract_setup_date, handle_discord_setup_message
-        
+
         # Test date extraction
         message_date = datetime.now()
         extracted_date = extract_setup_date(EXAMPLE_SETUP_MESSAGE, message_date)
         logging.info(f"Extracted date: {extracted_date}")
-        
+
         # Test message handling (this would create database entries)
         logging.info("Processing example setup message...")
         result = handle_discord_setup_message(EXAMPLE_SETUP_MESSAGE, message_date)
-        
+
         if result:
             logging.info(f"Successfully processed setup message, ID: {result.id}")
-            
+
             # Log tickers extracted
             ticker_symbols = [ts.symbol for ts in result.ticker_setups]
             logging.info(f"Extracted tickers: {ticker_symbols}")
-            
+
             return True
         else:
             logging.error("Failed to process setup message")
@@ -82,10 +86,10 @@ def main():
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Show verbose output')
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     try:
         success = test_setup_handler()
         return 0 if success else 1
