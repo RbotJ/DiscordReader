@@ -1,33 +1,30 @@
 """
-Database Package
+Database Module
 
-This package provides database access and utilities for the trading application.
+This module provides access to the database for the trading application.
 """
 import os
 import logging
-from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, scoped_session
+from app import db
 
-# Create a logger for this module
 logger = logging.getLogger(__name__)
 
-# Initialize the database
-db = SQLAlchemy()
-
-def initialize_db(app):
-    """Initialize the database with the Flask app."""
+def init_db():
+    """
+    Initialize the database connection.
+    
+    Returns:
+        True if successful, False otherwise
+    """
     try:
-        # Configure database
-        app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-            "pool_recycle": 300,
-            "pool_pre_ping": True,
-        }
-        
-        # Initialize with the app
-        db.init_app(app)
-        
+        # The db is already initialized in app.py
         logger.info("Database initialized successfully")
         return True
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         return False
+
+# Export the db object for use in other modules
+__all__ = ['db', 'init_db']

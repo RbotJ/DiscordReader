@@ -1,31 +1,35 @@
 """
 Event System Constants
 
-This module defines constants for the event system, including channel names.
+This module defines constants used by the event system, including channel names
+and event types.
 """
 
 class EventChannels:
-    """Event channel names used throughout the application."""
+    """Event channel constants used for publishing and subscribing to events."""
     
-    # Discord related events
+    # Discord-related channels
     DISCORD_MESSAGE = "discord.message"
     DISCORD_SETUP = "discord.setup"
     
-    # Trade related events
-    TRADE_EXECUTED = "trade.executed"
-    TRADE_UPDATED = "trade.updated"
-    
-    # Setup related events
+    # Setup-related channels
     SETUP_CREATED = "setup.created"
     SETUP_UPDATED = "setup.updated"
     
-    # Ticker related events
-    TICKER_DATA = "ticker.data"
-    TICKER_PRICE = "ticker.price"
+    # Trade-related channels
+    TRADE_EXECUTED = "trade.executed"
+    TRADE_FILLED = "trade.filled"
+    TRADE_CANCELED = "trade.canceled"
     
-    # Alert related events
+    # Market data channels
+    PRICE_UPDATE = "market.price_update"
+    CANDLE_DETECTED = "market.candle_detected"
+    
+    # Alert channels
     ALERT_TRIGGERED = "alert.triggered"
+    ALERT_CREATED = "alert.created"
     
-    # System events
+    # System channels
     SYSTEM_ERROR = "system.error"
-    SYSTEM_NOTIFICATION = "system.notification"
+    SYSTEM_STARTUP = "system.startup"
+    SYSTEM_SHUTDOWN = "system.shutdown"

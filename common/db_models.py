@@ -1,115 +1,94 @@
 """
 Database Models
 
-This module contains SQLAlchemy models for the trading application's database.
+This module defines the SQLAlchemy models for the trading application.
 """
 import enum
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, JSON, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, JSON, DateTime, Date, ForeignKey, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
 from common.db import db
 
+class DiscordMessageModel(db.Model):
+    """Discord message model for storing messages from Discord."""
+    __tablename__ = 'discord_messages'
+    
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(50), nullable=False, index=True)
+    channel_id = Column(String(50), nullable=False)
+    content = Column(Text, nullable=False)
+    author = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    def __repr__(self):
+        return f"<DiscordMessage(id={self.id}, message_id={self.message_id})>"
+
 class EventModel(db.Model):
-    """Model for storing events in the database."""
+    """Event model for storing events in the event system."""
     __tablename__ = 'events'
     
     id = Column(Integer, primary_key=True)
     channel = Column(String(50), nullable=False, index=True)
-    payload = Column(JSON, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    def to_dict(self):
-        """Convert the model to a dictionary."""
-        return {
-            'id': self.id,
-            'channel': self.channel,
-            'payload': self.payload,
-            'created_at': self.created_at.isoformat() if self.created_at else None
-        }
-
-class DiscordMessageModel(db.Model):
-    """Model for storing Discord messages."""
-    __tablename__ = 'discord_messages'
-    
-    id = Column(Integer, primary_key=True)
-    channel_id = Column(String(50), nullable=False, index=True)
-    message_id = Column(String(50), nullable=False, unique=True)
-    content = Column(Text, nullable=False)
-    author = Column(String(100), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    
-    def to_dict(self):
-        """Convert the model to a dictionary."""
-        return {
-            'id': self.id,
-            'channel_id': self.channel_id,
-            'message_id': self.message_id,
-            'content': self.content,
-            'author': self.author,
-            'created_at': self.created_at.isoformat() if self.created_at else None
-        }
-
-class TradeModel(db.Model):
-    """Model for storing trade data."""
-    __tablename__ = 'trades'
-    
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String(10), nullable=False, index=True)
-    quantity = Column(Float, nullable=False)
-    price = Column(Float, nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
-    status = Column(String(20), nullable=False, default='executed')
-    
-    def to_dict(self):
-        """Convert the model to a dictionary."""
-        return {
-            'id': self.id,
-            'symbol': self.symbol,
-            'quantity': self.quantity,
-            'price': self.price,
-            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
-            'status': self.status
-        }
-
-class TickerModel(db.Model):
-    """Model for storing ticker data."""
-    __tablename__ = 'tickers'
-    
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String(10), nullable=False, index=True, unique=True)
-    name = Column(String(100), nullable=True)
-    last_price = Column(Float, nullable=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    
-    def to_dict(self):
-        """Convert the model to a dictionary."""
-        return {
-            'id': self.id,
-            'symbol': self.symbol,
-            'name': self.name,
-            'last_price': self.last_price,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
-        }
+    def __repr__(self):
+        return f"<Event(id={self.id}, channel={self.channel})>"
 
 class SetupModel(db.Model):
-    """Model for storing trading setups."""
+    """Trading setup model."""
     __tablename__ = 'setups'
     
     id = Column(Integer, primary_key=True)
-    symbol = Column(String(10), nullable=False, index=True)
-    message_id = Column(String(50), nullable=True, index=True)
-    setup_type = Column(String(50), nullable=False)
-    price_level = Column(Float, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ticker = Column(String(10), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    entry_price = Column(Float, nullable=True)
+    stop_price = Column(Float, nullable=True)
+    target_price = Column(Float, nullable=True)
+    direction = Column(String(10), nullable=True)  # 'long' or 'short'
+    status = Column(String(20), nullable=False, default='pending')
+    source = Column(String(20), nullable=False, default='discord')
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    def to_dict(self):
-        """Convert the model to a dictionary."""
-        return {
-            'id': self.id,
-            'symbol': self.symbol,
-            'message_id': self.message_id,
-            'setup_type': self.setup_type,
-            'price_level': self.price_level,
-            'created_at': self.created_at.isoformat() if self.created_at else None
-        }
+    def __repr__(self):
+        return f"<Setup(id={self.id}, ticker={self.ticker}, date={self.date})>"
+
+class SignalModel(db.Model):
+    """Trading signal model."""
+    __tablename__ = 'signals'
+    
+    id = Column(Integer, primary_key=True)
+    setup_id = Column(Integer, ForeignKey('setups.id', ondelete='CASCADE'), nullable=False)
+    type = Column(String(20), nullable=False)  # 'breakout', 'rejection', etc.
+    price = Column(Float, nullable=False)
+    triggered = Column(Boolean, default=False, nullable=False)
+    triggered_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    setup = relationship("SetupModel", backref="signals")
+    
+    def __repr__(self):
+        return f"<Signal(id={self.id}, type={self.type}, price={self.price})>"
+
+class TradeModel(db.Model):
+    """Trade execution model."""
+    __tablename__ = 'trades'
+    
+    id = Column(Integer, primary_key=True)
+    setup_id = Column(Integer, ForeignKey('setups.id'), nullable=True)
+    ticker = Column(String(10), nullable=False, index=True)
+    side = Column(String(10), nullable=False)  # 'buy' or 'sell'
+    quantity = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, default='pending')
+    order_id = Column(String(50), nullable=True)
+    filled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    setup = relationship("SetupModel", backref="trades")
+    
+    def __repr__(self):
+        return f"<Trade(id={self.id}, ticker={self.ticker}, side={self.side})>"
