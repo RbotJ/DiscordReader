@@ -1,24 +1,32 @@
 """
-Discord Module
+Discord Integration Feature
 
-This module provides functionality for interacting with Discord,
-including fetching and parsing messages for trading setups.
+This module handles integration with Discord for retrieving and processing messages.
 """
+import os
+import logging
 
-# Import submodules for easier access
-from features.discord.client import (
-    init_discord_client,
-    shutdown_discord_client,
-    is_discord_available,
-    register_message_handler,
-    unregister_message_handler,
-    fetch_recent_messages
-)
+# Create a logger for this module
+logger = logging.getLogger(__name__)
 
-from features.discord.message_parser import (
-    parse_message,
-    extract_tickers,
-    detect_signal_type,
-    detect_bias,
-    validate_setup
-)
+def init_discord():
+    """
+    Initialize Discord integration by checking environment variables.
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    # Check for required environment variables
+    token = os.environ.get("DISCORD_BOT_TOKEN")
+    channel = os.environ.get("DISCORD_CHANNEL_ID")
+    
+    if not token:
+        logger.error("DISCORD_BOT_TOKEN environment variable not set")
+        return False
+        
+    if not channel:
+        logger.error("DISCORD_CHANNEL_ID environment variable not set")
+        return False
+    
+    logger.info("Discord integration initialized successfully")
+    return True

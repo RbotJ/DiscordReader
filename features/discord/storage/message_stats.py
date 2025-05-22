@@ -1,27 +1,38 @@
 """
-Discord Message Statistics Tool
+Discord Message Statistics
 
-This script displays statistics about stored Discord messages including 
-counts and timestamps. It only uses authentic data received from Discord.
+This module provides functions for retrieving and displaying statistics about
+stored Discord messages including counts and timestamps.
 """
 import json
 import logging
-import os
 from datetime import datetime
 
-# Import our storage module (updated import path)
-from features.discord.storage import message_storage
+# Import from the new module location
+from features.discord.storage.message_storage import get_message_stats, get_latest_message
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Create a logger for this module
 logger = logging.getLogger(__name__)
+
+def get_message_statistics():
+    """
+    Get message statistics.
+    
+    Returns:
+        Dictionary containing message statistics
+    """
+    # Get stats from storage
+    return get_message_stats()
 
 def check_message_stats():
     """
     Check and display message statistics.
+    
+    Returns:
+        Dictionary containing message statistics
     """
     # Get stats from storage
-    stats = message_storage.get_message_stats()
+    stats = get_message_stats()
     
     # Display general stats
     print("=== Discord Message Statistics ===")
@@ -45,16 +56,27 @@ def check_message_stats():
 def display_message_content():
     """
     Display the content of the latest message.
+    
+    Returns:
+        Dictionary containing the latest message or None if not found
     """
-    latest = message_storage.get_latest_message()
+    latest = get_latest_message()
     
     if latest and 'content' in latest:
         print("\n=== Latest Message Content ===")
         print(latest['content'])
+        return latest
     else:
         print("\nNo message content available.")
+        return None
 
-if __name__ == "__main__":
+# Command-line entry point
+def main():
+    """Command-line entry point for displaying message statistics."""
+    # Configure logging for command-line use
+    logging.basicConfig(level=logging.INFO, 
+                       format='%(asctime)s - %(levelname)s - %(message)s')
+    
     # Check storage stats
     stats = check_message_stats()
     
@@ -63,3 +85,7 @@ if __name__ == "__main__":
         display_message_content()
     
     print("\nNote: This tool only displays authentic data received from Discord.")
+    return 0
+
+if __name__ == "__main__":
+    main()

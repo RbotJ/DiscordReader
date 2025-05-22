@@ -1,18 +1,31 @@
 """
-Event Constants
+Event System Constants
 
-Constants for the event system in the trading application.
+This module defines constants for the event system, including channel names.
 """
-from enum import Enum, auto
 
-
-class EventChannels(str, Enum):
-    """Channels for the event system"""
-    DISCORD_SETUP_MESSAGE = "discord_setup_message"
-    SETUP_CREATED = "setup_created"
-    SETUP_UPDATED = "setup_updated"
-    TRADE_EXECUTED = "trade_executed"
-    SIGNAL_TRIGGERED = "signal_triggered"
-    PRICE_ALERT = "price_alert"
-    ERROR_NOTIFICATION = "error_notification"
-    SYSTEM_STATUS = "system_status"
+class EventChannels:
+    """Event channel names used throughout the application."""
+    
+    # Discord related events
+    DISCORD_MESSAGE = "discord.message"
+    DISCORD_SETUP = "discord.setup"
+    
+    # Trade related events
+    TRADE_EXECUTED = "trade.executed"
+    TRADE_UPDATED = "trade.updated"
+    
+    # Setup related events
+    SETUP_CREATED = "setup.created"
+    SETUP_UPDATED = "setup.updated"
+    
+    # Ticker related events
+    TICKER_DATA = "ticker.data"
+    TICKER_PRICE = "ticker.price"
+    
+    # Alert related events
+    ALERT_TRIGGERED = "alert.triggered"
+    
+    # System events
+    SYSTEM_ERROR = "system.error"
+    SYSTEM_NOTIFICATION = "system.notification"

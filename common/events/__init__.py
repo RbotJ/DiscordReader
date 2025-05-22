@@ -1,72 +1,87 @@
 """
-Events Package
+Event System Package
 
-This package provides event management functionality for the trading application.
+This package provides a PostgreSQL-based event system for publishing and subscribing to events.
 """
+import json
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime
+from typing import Dict, Any, Optional, List, Callable
 
-from .constants import EventChannels
 from common.db import db
+from common.db_models import EventModel
 
+# Create a logger for this module
 logger = logging.getLogger(__name__)
 
-def publish_event(channel: str, payload: Dict[str, Any]) -> bool:
-    """
-    Publish an event to the specified channel.
+class EventSystem:
+    """Event system using PostgreSQL for storage and distribution."""
     
-    Args:
-        channel: Event channel to publish to
-        payload: Event payload data
+    @staticmethod
+    def publish_event(channel: str, payload: Dict[str, Any]) -> bool:
+        """
+        Publish an event to a channel.
         
+        Args:
+            channel: The channel to publish to
+            payload: The event payload
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Create and store the event
+            event = EventModel(
+                channel=channel,
+                payload=payload
+            )
+            
+            db.session.add(event)
+            db.session.commit()
+            
+            logger.info(f"Published event to channel '{channel}'")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to publish event: {e}")
+            db.session.rollback()
+            return False
+    
+    @staticmethod
+    def get_events(channel: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get events from a channel.
+        
+        Args:
+            channel: The channel to get events from
+            limit: Maximum number of events to retrieve
+            
+        Returns:
+            List of event dictionaries
+        """
+        try:
+            events = EventModel.query.filter_by(channel=channel).order_by(
+                EventModel.created_at.desc()
+            ).limit(limit).all()
+            
+            return [event.to_dict() for event in events]
+        except Exception as e:
+            logger.error(f"Failed to get events: {e}")
+            return []
+
+def initialize_events() -> bool:
+    """
+    Initialize the event system.
+    
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Save event to database for later retrieval
-        from common.db_models import EventModel
-        
-        event = EventModel(
-            channel=channel,
-            payload=payload,
-            created_at=datetime.utcnow()
-        )
-        db.session.add(event)
-        db.session.commit()
-        
-        logger.info(f"Published event to channel '{channel}'")
+        # Check that we can connect to the database
+        EventModel.query.limit(1).all()
+        logger.info("Event system initialized successfully")
         return True
     except Exception as e:
-        logger.error(f"Error publishing event: {e}")
-        db.session.rollback()
+        logger.error(f"Failed to initialize event system: {e}")
         return False
 
-def initialize_events():
-    """Initialize the event system."""
-    logger.info("Initializing event system...")
-    return True
-
-def get_latest_events(channel: Optional[str] = None, limit: int = 10) -> list:
-    """
-    Get the latest events from the specified channel.
-    
-    Args:
-        channel: Optional channel to filter by
-        limit: Maximum number of events to retrieve
-        
-    Returns:
-        List of events
-    """
-    try:
-        from common.db_models import EventModel
-        
-        query = EventModel.query.order_by(EventModel.created_at.desc())
-        if channel:
-            query = query.filter_by(channel=channel)
-        
-        events = query.limit(limit).all()
-        return [event.to_dict() for event in events]
-    except Exception as e:
-        logger.error(f"Error retrieving events: {e}")
-        return []
+# Export the EventSystem class and initialize_events function
+__all__ = ['EventSystem', 'initialize_events']
