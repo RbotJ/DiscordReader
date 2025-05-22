@@ -1,22 +1,22 @@
-        """
-        Database Utilities
+"""
+Database Utilities
 
-        A module providing a shared SQLAlchemy database instance and common database operations.
-        """
+A module providing a shared SQLAlchemy database instance and common database operations.
+"""
 
-        from flask_sqlalchemy import SQLAlchemy
-        from datetime import datetime
-        import logging
-        from sqlalchemy import text
-        from common.models_db import EventModel
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+import logging
+from sqlalchemy import text
+from common.models_db import EventModel
 
-        # Setup logging
-        logger = logging.getLogger(__name__)
+# Setup logging
+logger = logging.getLogger(__name__)
 
-        # Create a SQLAlchemy instance
-        db = SQLAlchemy()
+# Create a SQLAlchemy instance
+db = SQLAlchemy()
 
-        def initialize_db(app):
+def initialize_db(app):
             """Initialize database with app context"""
             try:
                 db.init_app(app)
