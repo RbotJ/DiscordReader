@@ -1,179 +1,146 @@
 """
 Event System Module
 
-This module provides a centralized event system for the trading application.
-It handles publishing and subscribing to events using the PostgreSQL database
-as the event bus.
+This module provides a unified interface for the event system,
+supporting both old and new code patterns during the transition
+from Redis to PostgreSQL.
 """
 import logging
-import json
-from typing import Dict, Any, Callable, List, Optional
+from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
+import enum
 
 from common.db import db
 from common.db_models import EventModel
-from common.events.constants import EventChannels
+from .compat import (
+    EventClient, 
+    ensure_event_system, 
+    publish_event as _publish_event,
+    get_latest_events
+)
 
 logger = logging.getLogger(__name__)
 
-# Function for initializing the event system - called from main.py
-def initialize_events():
+class EventChannels(enum.Enum):
+    """Enumeration of event channels."""
+    # Core system events
+    SYSTEM = "system"
+    # Discord-related events
+    DISCORD_MESSAGE = "discord:message"
+    DISCORD_SETUP_MESSAGE = "discord:setup_message"
+    # Market data events
+    TICKER_DATA = "market:ticker_data"
+    PRICE_ALERT = "market:price_alert"
+    CANDLE_PATTERN = "market:candle_pattern"
+    # Setup-related events
+    SETUP_CREATED = "setup:created"
+    SETUP_UPDATED = "setup:updated"
+    SETUP_TRIGGERED = "setup:triggered"
+    # Trade-related events
+    TRADE_EXECUTED = "trade:executed"
+    TRADE_FILLED = "trade:filled"
+    TRADE_CANCELED = "trade:canceled"
+
+def initialize_event_system() -> bool:
     """
     Initialize the event system.
     
-    This function should be called once at application startup.
+    Returns:
+        bool: True if successful, False otherwise
     """
     try:
-        EventSystem.initialize()
+        # Ensure database is ready
+        ensure_event_system()
         logger.info("Event system initialized successfully")
         return True
     except Exception as e:
         logger.error(f"Failed to initialize event system: {e}")
         return False
 
-class EventSystem:
-    """
-    Event system for handling application-wide events.
-    
-    This class provides methods for publishing and subscribing to events
-    using the database as the event bus.
-    """
-    
-    _subscribers = {}
-    _initialized = False
-    
-    @classmethod
-    def initialize(cls):
-        """Initialize the event system."""
-        if cls._initialized:
-            return
-            
-        try:
-            # Create event listener
-            cls._initialized = True
-            logger.info("Event system initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize event system: {e}")
-    
-    @classmethod
-    def publish(cls, channel: str, data: Dict[str, Any]) -> bool:
-        """
-        Publish an event to the specified channel.
-        
-        Args:
-            channel: Event channel name
-            data: Event data to publish
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Create event record
-            event = EventModel(
-                channel=channel,
-                data=data
-            )
-            
-            # Store in database
-            db.session.add(event)
-            db.session.commit()
-            
-            logger.info(f"Published event to channel {channel}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to publish event: {e}")
-            db.session.rollback()
-            return False
-    
-    @classmethod
-    def subscribe(cls, channel: str, callback: Callable[[Dict[str, Any]], None]) -> bool:
-        """
-        Subscribe to events on the specified channel.
-        
-        Args:
-            channel: Event channel name
-            callback: Function to call when an event is received
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if channel not in cls._subscribers:
-                cls._subscribers[channel] = []
-                
-            cls._subscribers[channel].append(callback)
-            logger.info(f"Subscribed to channel {channel}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to subscribe to channel {channel}: {e}")
-            return False
-    
-    @classmethod
-    def get_latest_events(cls, channel: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get the latest events from the specified channel.
-        
-        Args:
-            channel: Event channel name
-            limit: Maximum number of events to retrieve
-            
-        Returns:
-            List of event dictionaries, newest first
-        """
-        try:
-            events = EventModel.query.filter_by(channel=channel).order_by(
-                EventModel.created_at.desc()
-            ).limit(limit).all()
-            
-            return [
-                {
-                    'id': event.id,
-                    'channel': event.channel,
-                    'data': event.data,
-                    'created_at': event.created_at.isoformat() if event.created_at else None
-                }
-                for event in events
-            ]
-        except Exception as e:
-            logger.error(f"Failed to get latest events from channel {channel}: {e}")
-            return []
-
-# Export functions for backward compatibility
-def publish_event(channel: str, data: Dict[str, Any]) -> bool:
+def publish_event(channel: EventChannels, data: Dict[str, Any]) -> bool:
     """
     Publish an event to the specified channel.
     
     Args:
-        channel: Event channel name
-        data: Event data to publish
+        channel: The channel to publish to (use EventChannels enum)
+        data: The data to publish
         
     Returns:
-        True if successful, False otherwise
+        bool: True if successful, False otherwise
     """
-    return EventSystem.publish(channel, data)
+    try:
+        if isinstance(channel, EventChannels):
+            channel_name = channel.value
+        else:
+            channel_name = str(channel)
+            
+        return _publish_event(channel_name, data)
+    except Exception as e:
+        logger.error(f"Failed to publish event: {e}")
+        return False
 
-def subscribe_to_events(channel: str, callback: Callable[[Dict[str, Any]], None]) -> bool:
+def store_event(channel: str, data: Dict[str, Any]) -> bool:
     """
-    Subscribe to events on the specified channel.
+    Store an event in the database without publishing.
     
     Args:
-        channel: Event channel name
-        callback: Function to call when an event is received
+        channel: The channel associated with the event
+        data: The event data
         
     Returns:
-        True if successful, False otherwise
+        bool: True if successful, False otherwise
     """
-    return EventSystem.subscribe(channel, callback)
+    try:
+        event = EventModel(
+            channel=channel,
+            data=data,
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(event)
+        db.session.commit()
+        
+        logger.debug(f"Stored event in channel {channel}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to store event: {e}")
+        db.session.rollback()
+        return False
 
-def get_latest_events(channel: str, limit: int = 10) -> List[Dict[str, Any]]:
+def poll_events(channel: str, after_timestamp: Optional[datetime] = None, 
+               limit: int = 100) -> List[Dict[str, Any]]:
     """
-    Get the latest events from the specified channel.
+    Poll for events on the specified channel.
     
     Args:
-        channel: Event channel name
-        limit: Maximum number of events to retrieve
+        channel: The channel to poll
+        after_timestamp: Only return events after this timestamp
+        limit: Maximum number of events to return
         
     Returns:
-        List of event dictionaries, newest first
+        List of events
     """
-    return EventSystem.get_latest_events(channel, limit)
+    try:
+        query = db.session.query(EventModel).filter(
+            EventModel.channel == channel
+        )
+        
+        if after_timestamp:
+            query = query.filter(EventModel.created_at > after_timestamp)
+            
+        events = query.order_by(
+            EventModel.created_at.asc()
+        ).limit(limit).all()
+        
+        result = []
+        for event in events:
+            result.append({
+                'id': event.id,
+                'channel': event.channel,
+                'data': event.data,
+                'created_at': event.created_at
+            })
+        return result
+    except Exception as e:
+        logger.error(f"Failed to poll events: {e}")
+        return []

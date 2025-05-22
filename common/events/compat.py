@@ -6,34 +6,68 @@ from Redis to PostgreSQL. It ensures existing code continues to work while
 we migrate to the new event system architecture.
 """
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
+import json
+import time
+from datetime import datetime
 
-# Configure logging
+from common.db import db
+from common.db_models import EventModel
+
 logger = logging.getLogger(__name__)
 
-# Create a simple client for compatibility
 class EventClient:
     """Simple client for the event system."""
     def __init__(self):
+        """Initialize event client."""
         self.connected = False
-    
+        self.callbacks = {}
+        
     def connect(self):
         """Connect to event system."""
-        self.connected = True
-        return True
-    
+        try:
+            self.connected = True
+            logger.info("EventClient connected to database")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect EventClient: {e}")
+            self.connected = False
+            return False
+            
     def publish(self, channel: str, data: Dict[str, Any]) -> bool:
         """Publish an event to the specified channel."""
-        from common.events import publish_event
-        return publish_event(channel, data)
-    
-    def subscribe(self, channel: str, callback):
+        try:
+            if not self.connected:
+                self.connect()
+                
+            event = EventModel(
+                channel=channel,
+                data=data,
+                created_at=datetime.utcnow()
+            )
+            
+            db.session.add(event)
+            db.session.commit()
+            
+            logger.debug(f"Published event to channel {channel}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to publish event: {e}")
+            db.session.rollback()
+            return False
+            
+    def subscribe(self, channel: str, callback: Callable[[Dict[str, Any]], None]):
         """Subscribe to events on the specified channel."""
-        from common.events import subscribe_to_events
-        return subscribe_to_events(channel, callback)
-
-# Create a singleton instance
-event_client = EventClient()
+        try:
+            if channel not in self.callbacks:
+                self.callbacks[channel] = []
+            
+            self.callbacks[channel].append(callback)
+            logger.info(f"Subscribed to channel {channel}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to subscribe to channel {channel}: {e}")
+            return False
 
 def ensure_event_system() -> bool:
     """
@@ -43,13 +77,55 @@ def ensure_event_system() -> bool:
         bool: True if the event system is ready, False otherwise
     """
     try:
-        # Connect the client
-        if not event_client.connected:
-            event_client.connect()
-            
-        # Initialize the event system
-        from common.events import initialize_events
-        return initialize_events()
+        # Check if the events table exists
+        event_count = db.session.query(EventModel).count()
+        logger.info(f"Event system ready with {event_count} stored events")
+        return True
     except Exception as e:
-        logger.error(f"Failed to ensure event system: {e}")
+        logger.error(f"Event system not ready: {e}")
         return False
+
+def publish_event(channel: str, data: Dict[str, Any]) -> bool:
+    """
+    Publish an event to the specified channel.
+    
+    Args:
+        channel: The channel to publish to
+        data: The data to publish
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    client = EventClient()
+    return client.publish(channel, data)
+
+def get_latest_events(channel: str, limit: int = 10) -> list:
+    """
+    Get the latest events from the specified channel.
+    
+    Args:
+        channel: The channel to get events from
+        limit: Maximum number of events to retrieve
+        
+    Returns:
+        list: List of events, newest first
+    """
+    try:
+        events = db.session.query(EventModel).filter(
+            EventModel.channel == channel
+        ).order_by(
+            EventModel.created_at.desc()
+        ).limit(limit).all()
+        
+        result = []
+        for event in events:
+            result.append({
+                'id': event.id,
+                'channel': event.channel,
+                'data': event.data,
+                'created_at': event.created_at.isoformat() if event.created_at else None
+            })
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get latest events: {e}")
+        return []

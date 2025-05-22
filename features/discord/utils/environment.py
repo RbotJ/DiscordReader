@@ -1,86 +1,149 @@
 """
-Discord Environment Variables Checker
+Discord Environment Validation
 
-Utility module to verify that Discord environment variables are properly set.
+This module provides utility functions for validating Discord environment variables.
 """
 import os
 import logging
+from typing import Dict, List, Tuple, Optional
 
-# Configure module logger
 logger = logging.getLogger(__name__)
 
-def check_discord_env():
+# Required environment variables
+REQUIRED_VARIABLES = [
+    'DISCORD_BOT_TOKEN',
+    'DISCORD_CHANNEL_ID'
+]
+
+# Optional but recommended variables
+OPTIONAL_VARIABLES = [
+    'DISCORD_CHANNEL_BOT_DIALOGUE',
+    'DISCORD_CHANNEL_APLUS_SETUPS',
+    'DISCORD_CHANNEL_TEST_HERE_ONE'
+]
+
+def check_environment() -> Tuple[bool, Dict[str, str]]:
     """
-    Check Discord environment variables.
+    Check Discord environment variables are properly set.
     
     Returns:
-        True if all required variables are set, False otherwise
+        Tuple[bool, Dict[str, str]]: Success status and dictionary of variables
     """
-    # Check bot token
-    token = os.environ.get('DISCORD_BOT_TOKEN')
-    if token:
-        # Show only first 5 characters for security
-        logger.info(f"DISCORD_BOT_TOKEN found: {token[:5]}*** (truncated)")
-    else:
-        logger.error("DISCORD_BOT_TOKEN not found")
-        return False
-        
-    # Check channel IDs
-    bot_channel = os.environ.get('DISCORD_CHANNEL_BOT_DIALOGUE')
-    if bot_channel:
-        logger.info(f"DISCORD_CHANNEL_BOT_DIALOGUE: {bot_channel}")
-    else:
-        logger.warning("DISCORD_CHANNEL_BOT_DIALOGUE not found")
-        
-    setups_channel = os.environ.get('DISCORD_CHANNEL_APLUS_SETUPS')
-    if setups_channel:
-        logger.info(f"DISCORD_CHANNEL_APLUS_SETUPS: {setups_channel}")
-    else:
-        logger.warning("DISCORD_CHANNEL_APLUS_SETUPS not found")
-        
-    test_channel = os.environ.get('DISCORD_CHANNEL_TEST_HERE_ONE')
-    if test_channel:
-        logger.info(f"DISCORD_CHANNEL_TEST_HERE_ONE: {test_channel}")
-    else:
-        logger.warning("DISCORD_CHANNEL_TEST_HERE_ONE not found")
-        
-    # Check values are integers
-    issues = False
+    env_vars = {}
+    success = True
     
-    for name, value in [
-        ('DISCORD_CHANNEL_BOT_DIALOGUE', bot_channel),
-        ('DISCORD_CHANNEL_APLUS_SETUPS', setups_channel),
-        ('DISCORD_CHANNEL_TEST_HERE_ONE', test_channel)
-    ]:
+    # Check required variables
+    for var_name in REQUIRED_VARIABLES:
+        value = os.environ.get(var_name)
         if value:
+            if var_name == 'DISCORD_BOT_TOKEN':
+                # Show only first 5 characters for security
+                logger.info(f"{var_name} found: {value[:5]}*** (truncated)")
+            else:
+                logger.info(f"{var_name} found: {value}")
+            env_vars[var_name] = value
+        else:
+            logger.error(f"{var_name} not found")
+            success = False
+    
+    # Check optional variables
+    for var_name in OPTIONAL_VARIABLES:
+        value = os.environ.get(var_name)
+        if value:
+            logger.info(f"{var_name} found: {value}")
+            env_vars[var_name] = value
+        else:
+            logger.warning(f"{var_name} not found")
+    
+    # Validate channel IDs are integers
+    issues = False
+    for var_name, value in env_vars.items():
+        if 'CHANNEL' in var_name and value:
             try:
                 int(value)
-                logger.info(f"{name} is a valid integer")
+                logger.info(f"{var_name} is a valid integer")
             except ValueError:
-                logger.error(f"{name} is not a valid integer: {value}")
+                logger.error(f"{var_name} is not a valid integer: {value}")
                 issues = True
-                
+    
     if issues:
         logger.error("Issues found with Discord environment variables")
-        return False
-    else:
-        logger.info("All Discord environment variables look good")
-        return True
+        success = False
+    
+    if success:
+        logger.info("All required Discord environment variables look good")
+    
+    return success, env_vars
 
-# Command-line entry point
-def main():
-    """Command-line entry point for checking Discord environment variables."""
-    # Configure logging for command-line use
-    logging.basicConfig(level=logging.INFO, 
+def get_channel_id(channel_type: str = 'default') -> Optional[str]:
+    """
+    Get a Discord channel ID based on type.
+    
+    Args:
+        channel_type: Type of channel to retrieve ('default', 'bot_dialogue', 
+                     'setups', or 'test')
+    
+    Returns:
+        Channel ID or None if not found
+    """
+    if channel_type == 'default':
+        return os.environ.get('DISCORD_CHANNEL_ID')
+    elif channel_type == 'bot_dialogue':
+        return os.environ.get('DISCORD_CHANNEL_BOT_DIALOGUE')
+    elif channel_type == 'setups':
+        return os.environ.get('DISCORD_CHANNEL_APLUS_SETUPS')
+    elif channel_type == 'test':
+        return os.environ.get('DISCORD_CHANNEL_TEST_HERE_ONE')
+    else:
+        logger.error(f"Unknown channel type: {channel_type}")
+        return None
+
+def validate_discord_token() -> bool:
+    """
+    Validate that the Discord bot token is set.
+    
+    Returns:
+        bool: True if token is set, False otherwise
+    """
+    token = os.environ.get('DISCORD_BOT_TOKEN')
+    if not token:
+        logger.error("DISCORD_BOT_TOKEN not found")
+        return False
+    
+    # Basic validation (not empty and has a reasonable length)
+    if len(token) < 20:
+        logger.error("DISCORD_BOT_TOKEN appears to be invalid (too short)")
+        return False
+    
+    return True
+
+def get_all_channel_ids() -> List[str]:
+    """
+    Get all configured Discord channel IDs.
+    
+    Returns:
+        List[str]: List of channel IDs
+    """
+    channels = []
+    for var_name, value in os.environ.items():
+        if var_name.startswith('DISCORD_CHANNEL_') and value:
+            try:
+                # Validate it's an integer
+                int(value)
+                channels.append(value)
+            except ValueError:
+                logger.warning(f"Invalid channel ID for {var_name}: {value}")
+    
+    return channels
+
+if __name__ == "__main__":
+    # Configure logging
+    logging.basicConfig(level=logging.INFO,
                        format='%(asctime)s - %(levelname)s - %(message)s')
     
-    if check_discord_env():
-        logger.info("Discord environment check passed")
-        return 0
-    else:
-        logger.error("Discord environment check failed")
-        return 1
-
-if __name__ == '__main__':
+    # Run environment check
+    success, env_vars = check_environment()
+    
+    # Exit with appropriate status code
     import sys
-    sys.exit(main())
+    sys.exit(0 if success else 1)
