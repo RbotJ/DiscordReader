@@ -1,143 +1,133 @@
 """
-Discord Simple Test Module
+Simple Discord Test Module
 
-This module provides simple test utilities for the Discord integration.
-It allows testing the connection to Discord and sending test messages.
+This module provides simple test functions for the Discord client integration.
 """
-import logging
 import asyncio
-from typing import Dict, Any, Optional
+import logging
+from typing import Dict, List, Any, Optional
 
 from features.discord.client.api import get_discord_client
-from features.discord.utils.environment import validate_discord_env
-from features.discord.storage.messages import store_message
+from features.discord.utils.environment import validate_discord_env, get_channel_id
 
 logger = logging.getLogger(__name__)
 
 async def test_discord_connection() -> bool:
     """
-    Test the connection to Discord.
+    Test the Discord connection.
     
     Returns:
-        bool: True if connected successfully, False otherwise
+        bool: True if connection successful, False otherwise
     """
     try:
-        # Check environment variables
-        if not validate_discord_env():
-            logger.error("Cannot test Discord connection: Environment validation failed")
-            return False
-            
-        # Connect to Discord
         client = get_discord_client()
-        success = await client.connect()
+        connected = await client.connect()
         
-        if success:
-            logger.info("Discord connection test successful")
+        if connected:
+            logger.info("Discord connection successful")
+            await client.disconnect()
             return True
         else:
-            logger.error("Discord connection test failed")
+            logger.error("Failed to connect to Discord")
             return False
     except Exception as e:
-        logger.error(f"Discord connection test failed with error: {e}")
+        logger.error(f"Error testing Discord connection: {e}")
         return False
 
-async def fetch_test_message() -> Optional[Dict[str, Any]]:
+async def fetch_test_message(limit: int = 1) -> List[Dict[str, Any]]:
     """
-    Fetch a test message from Discord.
+    Fetch a test message from the Discord test channel.
     
+    Args:
+        limit: Maximum number of messages to fetch
+        
     Returns:
-        Message dictionary or None if failed
+        List of message dictionaries
     """
     try:
-        # Check environment variables
         if not validate_discord_env():
-            logger.error("Cannot fetch test message: Environment validation failed")
-            return None
+            logger.error("Discord environment variables not properly configured")
+            return []
             
-        # Connect to Discord and fetch message
         client = get_discord_client()
-        if not await client.connect():
-            logger.error("Cannot fetch test message: Connection failed")
-            return None
+        connected = await client.connect()
+        
+        if not connected:
+            logger.error("Failed to connect to Discord")
+            return []
             
-        messages = await client.fetch_messages(channel_type='test', limit=1)
-        if not messages:
-            logger.warning("No test messages found")
-            return None
-            
-        logger.info(f"Fetched test message: {messages[0]['content'][:50]}...")
-        return messages[0]
+        messages = await client.fetch_messages(channel_type='test', limit=limit)
+        
+        await client.disconnect()
+        return messages
     except Exception as e:
-        logger.error(f"Failed to fetch test message: {e}")
-        return None
+        logger.error(f"Error fetching test message: {e}")
+        return []
 
-async def send_test_message(content: str) -> bool:
+async def send_test_message(content: str) -> Optional[Dict[str, Any]]:
     """
-    Send a test message to Discord.
+    Send a test message to the Discord test channel.
     
     Args:
         content: Message content
         
     Returns:
-        bool: True if sent successfully, False otherwise
+        Message dictionary or None if failed
     """
     try:
-        # Check environment variables
         if not validate_discord_env():
-            logger.error("Cannot send test message: Environment validation failed")
-            return False
+            logger.error("Discord environment variables not properly configured")
+            return None
             
-        # Connect to Discord and send message
         client = get_discord_client()
-        if not await client.connect():
-            logger.error("Cannot send test message: Connection failed")
-            return False
+        connected = await client.connect()
+        
+        if not connected:
+            logger.error("Failed to connect to Discord")
+            return None
             
         message = await client.send_message(content, channel_type='test')
-        if not message:
-            logger.error("Failed to send test message")
-            return False
-            
-        # Store message in database
-        store_message(message)
         
-        logger.info(f"Test message sent: {content[:50]}...")
-        return True
+        await client.disconnect()
+        return message
     except Exception as e:
-        logger.error(f"Failed to send test message: {e}")
-        return False
+        logger.error(f"Error sending test message: {e}")
+        return None
 
 def run_simple_test():
-    """Run a simple test of Discord functionality."""
+    """
+    Run a simple test of the Discord integration.
+    
+    Returns:
+        bool: True if all tests passed, False otherwise
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     try:
-        loop = asyncio.get_event_loop()
-        
         # Test connection
-        if not loop.run_until_complete(test_discord_connection()):
+        connection_ok = loop.run_until_complete(test_discord_connection())
+        if not connection_ok:
             logger.error("Discord connection test failed")
             return False
             
-        # Fetch test message
-        message = loop.run_until_complete(fetch_test_message())
-        if not message:
-            logger.warning("Could not fetch test message")
+        # Test fetching messages
+        messages = loop.run_until_complete(fetch_test_message())
+        if not messages:
+            logger.warning("No test messages found")
         else:
-            logger.info(f"Fetched message: {message['content'][:50]}...")
+            logger.info(f"Found {len(messages)} test messages")
             
-        # Send test message
-        test_content = "A+ Trading Discord Test - " + datetime.now().isoformat()
-        sent = loop.run_until_complete(send_test_message(test_content))
-        if not sent:
-            logger.error("Could not send test message")
-            return False
-            
-        logger.info("Discord simple test completed successfully")
+        # Don't test sending messages by default to avoid spam
+        
         return True
     except Exception as e:
-        logger.error(f"Discord simple test failed with error: {e}")
+        logger.error(f"Error running Discord tests: {e}")
         return False
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
-    from datetime import datetime
     logging.basicConfig(level=logging.INFO)
-    run_simple_test()
+    success = run_simple_test()
+    print(f"Discord tests {'passed' if success else 'failed'}")

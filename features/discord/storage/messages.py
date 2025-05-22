@@ -59,7 +59,7 @@ class DiscordMessageModel(Base):
     channel_name = Column(String(100), nullable=True)
     created_at = Column(DateTime, nullable=False)
     attachments = Column(JSON, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    message_metadata = Column(JSON, nullable=True)  # Renamed from metadata as it's reserved
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model to dictionary."""
@@ -72,7 +72,7 @@ class DiscordMessageModel(Base):
             'channel_name': self.channel_name,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'attachments': self.attachments or [],
-            'metadata': self.metadata or {}
+            'metadata': self.message_metadata or {}
         }
 
 def init_db():
@@ -137,7 +137,7 @@ def store_message(message_data: Dict[str, Any]) -> bool:
             channel_name=message_data.get('channel_name', ''),
             created_at=created_at,
             attachments=message_data.get('attachments', []),
-            metadata=message_data.get('metadata', {})
+            message_metadata=message_data.get('metadata', {})
         )
         
         session.add(new_message)
@@ -220,17 +220,15 @@ def get_message_count() -> int:
     Returns:
         int: Count of messages
     """
+    session = None
     try:
         session = get_db_session()
         if not session:
             logger.error("Cannot get message count: Database session not available")
             return 0
             
-        count = session.execute(
-            select(DiscordMessageModel)
-        ).count()
-        
-        return count
+        count = session.query(DiscordMessageModel).count()
+        return count if count is not None else 0
     except Exception as e:
         logger.error(f"Failed to get message count: {e}")
         return 0

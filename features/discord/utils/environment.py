@@ -5,28 +5,21 @@ This module provides utilities for validating and accessing Discord environment 
 """
 import os
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 logger = logging.getLogger(__name__)
 
-# Required environment variables for Discord
-REQUIRED_ENV_VARS = [
+# Required environment variables
+REQUIRED_VARS = [
     'DISCORD_TOKEN',
     'DISCORD_CHANNEL_ID',
     'DISCORD_GUILD_ID'
 ]
 
 # Optional environment variables with defaults
-OPTIONAL_ENV_VARS = {
+OPTIONAL_VARS = {
     'DISCORD_TEST_CHANNEL_ID': None,
     'DISCORD_SETUPS_CHANNEL_ID': None
-}
-
-# Channel type mapping
-CHANNEL_TYPES = {
-    'default': 'DISCORD_CHANNEL_ID',
-    'test': 'DISCORD_TEST_CHANNEL_ID',
-    'setups': 'DISCORD_SETUPS_CHANNEL_ID'
 }
 
 def validate_discord_env() -> bool:
@@ -36,19 +29,18 @@ def validate_discord_env() -> bool:
     Returns:
         bool: True if all required variables are set, False otherwise
     """
-    missing_vars = []
+    missing = []
     
-    for var in REQUIRED_ENV_VARS:
+    for var in REQUIRED_VARS:
         if not os.environ.get(var):
-            missing_vars.append(var)
+            missing.append(var)
             
-    if missing_vars:
-        logger.error(f"Missing required Discord environment variables: {', '.join(missing_vars)}")
+    if missing:
+        logger.error(f"Missing required Discord environment variables: {', '.join(missing)}")
         return False
         
-    logger.info("Discord environment variables validated successfully")
     return True
-    
+
 def validate_discord_token() -> bool:
     """
     Validate that the Discord token is set.
@@ -61,12 +53,8 @@ def validate_discord_token() -> bool:
         logger.error("Discord token not set")
         return False
         
-    # Simple validation - tokens are typically long strings
-    if len(token) < 20:
-        logger.warning("Discord token seems too short, might be invalid")
-        
     return True
-    
+
 def get_discord_token() -> Optional[str]:
     """
     Get the Discord token from environment variables.
@@ -75,7 +63,7 @@ def get_discord_token() -> Optional[str]:
         str: Discord token or None if not set
     """
     return os.environ.get('DISCORD_TOKEN')
-    
+
 def get_channel_id(channel_type: str = 'default') -> Optional[str]:
     """
     Get the channel ID for a specific channel type.
@@ -86,9 +74,16 @@ def get_channel_id(channel_type: str = 'default') -> Optional[str]:
     Returns:
         str: Channel ID or None if not set
     """
-    env_var = CHANNEL_TYPES.get(channel_type, 'DISCORD_CHANNEL_ID')
-    return os.environ.get(env_var)
-    
+    if channel_type == 'default':
+        return os.environ.get('DISCORD_CHANNEL_ID')
+    elif channel_type == 'test':
+        return os.environ.get('DISCORD_TEST_CHANNEL_ID')
+    elif channel_type == 'setups':
+        return os.environ.get('DISCORD_SETUPS_CHANNEL_ID')
+    else:
+        logger.warning(f"Unknown channel type: {channel_type}")
+        return None
+
 def get_guild_id() -> Optional[str]:
     """
     Get the Discord guild ID from environment variables.
@@ -97,7 +92,7 @@ def get_guild_id() -> Optional[str]:
         str: Guild ID or None if not set
     """
     return os.environ.get('DISCORD_GUILD_ID')
-    
+
 def get_environment_status() -> Dict[str, bool]:
     """
     Get the status of all Discord environment variables.
@@ -108,11 +103,11 @@ def get_environment_status() -> Dict[str, bool]:
     status = {}
     
     # Check required variables
-    for var in REQUIRED_ENV_VARS:
+    for var in REQUIRED_VARS:
         status[var] = bool(os.environ.get(var))
         
     # Check optional variables
-    for var in OPTIONAL_ENV_VARS:
+    for var in OPTIONAL_VARS:
         status[var] = bool(os.environ.get(var))
         
     return status
