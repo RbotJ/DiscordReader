@@ -6,7 +6,7 @@ supporting both old and new code patterns during the transition
 from Redis to PostgreSQL.
 """
 import logging
-from typing import Dict, Any, Optional, Callable, List
+from typing import Dict, Any, Optional, Callable, List, Union
 from datetime import datetime
 import enum
 
@@ -144,3 +144,34 @@ def poll_events(channel: str, after_timestamp: Optional[datetime] = None,
     except Exception as e:
         logger.error(f"Failed to poll events: {e}")
         return []
+        
+def get_latest_event_id(channel: Optional[Union[str, EventChannels]] = None) -> int:
+    """
+    Get the latest event ID for a specific channel or across all channels.
+    
+    Args:
+        channel: The specific channel to check, or None for all channels
+        
+    Returns:
+        The latest event ID, or 0 if no events exist
+    """
+    try:
+        query = db.session.query(EventModel.id)
+        
+        if channel:
+            if isinstance(channel, EventChannels):
+                channel_name = channel.value
+            else:
+                channel_name = str(channel)
+                
+            query = query.filter(EventModel.channel == channel_name)
+            
+        # Get the maximum ID
+        latest_id = query.order_by(EventModel.id.desc()).first()
+        
+        if latest_id:
+            return latest_id[0]
+        return 0
+    except Exception as e:
+        logger.error(f"Failed to get latest event ID: {e}")
+        return 0
