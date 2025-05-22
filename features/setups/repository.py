@@ -1,357 +1,183 @@
 """
-Setup Repository Module
+Setup Data Provider
 
-This module provides data access functions for trading setups and signals.
+Provides access to setup data using PostgreSQL database.
 """
+from datetime import datetime
+from typing import Dict, Any, List, Optional
 import logging
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any, Union
-from sqlalchemy.exc import SQLAlchemyError
+import os
+import json
+from features.discord.message_parser import parse_message
 
-from app import db
-from models import (
-    SetupMessage, 
-    TickerSetup, 
-    Signal, 
-    Bias, 
-    BiasFlip,
-    SignalCategoryEnum,
-    AggressivenessEnum,
-    ComparisonTypeEnum,
-    BiasDirectionEnum
-)
-from common.models import (
-    TradeSetupMessage,
-    TickerSetup as DTOTickerSetup,
-    Signal as DTOSignal,
-    Bias as DTOBias,
-    BiasFlip as DTOBiasFlip
-)
-from common.events import cache_data, get_from_cache
+from common.db import db
+from common.db_models import SetupModel
+from common.events import publish_event, EventChannels
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class SetupRepository:
-    """Repository for setup data access operations."""
+# File storage paths
+DISCORD_MESSAGE_FILE = "latest_discord_message.json"
+PARSED_SETUP_FILE = "parsed_setups.json"
 
-    @staticmethod
-    def save_setup_message(setup_message: TradeSetupMessage) -> Optional[int]:
-        """
-        Save a parsed setup message to the database.
+def store_setup(setup_data: Dict[str, Any]) -> bool:
+    """Store setup data in database"""
+    try:
+        setup = SetupModel(
+            setup_id=setup_data.get('discord_id'),
+            ticker=setup_data.get('primary_ticker'),
+            timestamp=datetime.utcnow(),
+            data=setup_data
+        )
+        db.session.add(setup)
+        db.session.commit()
 
-        Args:
-            setup_message: The parsed setup message object
+        # Publish setup event
+        return publish_event(EventChannels.SETUP_CREATED, setup_data)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error storing setup data: {e}")
+        return False
 
-        Returns:
-            Optional[int]: ID of the saved message or None if error
-        """
-        try:
-            # Create DB model for setup message
-            db_message = SetupMessage(
-                date=setup_message.date,
-                raw_text=setup_message.raw_text,
-                source=setup_message.source,
-                created_at=setup_message.created_at or datetime.utcnow()
-            )
+def get_recent_setups(limit: int = 100) -> List[Dict[str, Any]]:
+    """Get recent setups from database"""
+    setups = SetupModel.query.order_by(
+        SetupModel.timestamp.desc()
+    ).limit(limit).all()
+    return [setup.data for setup in setups]
 
-            # Add ticker setups
-            for setup in setup_message.setups:
-                db_ticker_setup = TickerSetup(
-                    symbol=setup.symbol,
-                    text=setup.text
-                )
+def get_setup_by_id(setup_id: str) -> Optional[Dict[str, Any]]:
+    """Get specific setup by ID"""
+    setup = SetupModel.query.filter_by(setup_id=setup_id).first()
+    return setup.data if setup else None
 
-                # Add signals
-                for signal in setup.signals:
-                    db_signal = Signal(
-                        category=SignalCategoryEnum(signal.category.value),
-                        aggressiveness=AggressivenessEnum(signal.aggressiveness.value),
-                        comparison=ComparisonTypeEnum(signal.comparison.value),
-                        trigger=signal.trigger if isinstance(signal.trigger, (int, float)) else list(signal.trigger),
-                        targets=list(signal.targets)
-                    )
-                    db_ticker_setup.signals.append(db_signal)
+def get_latest_discord_message():
+    """Get the latest Discord message from file if it exists."""
+    try:
+        if os.path.exists(DISCORD_MESSAGE_FILE):
+            with open(DISCORD_MESSAGE_FILE, 'r') as f:
+                return json.load(f)
+        return None
+    except Exception as e:
+        logger.error(f"Error reading latest Discord message file: {e}")
+        return None
 
-                # Add bias if present
-                if setup.bias:
-                    db_bias = Bias(
-                        direction=BiasDirectionEnum(setup.bias.direction.value),
-                        condition=ComparisonTypeEnum(setup.bias.condition.value),
-                        price=setup.bias.price
-                    )
+def get_sample_setup():
+    """Return a sample trading setup for demonstration purposes."""
+    return {
+        "datetime": datetime.now().isoformat(),
+        "raw_message": """
+A+ Trade Setups - Thursday May 20
 
-                    # Add bias flip if present
-                    if setup.bias.flip:
-                        db_bias_flip = BiasFlip(
-                            direction=BiasDirectionEnum(setup.bias.flip.direction.value),
-                            price_level=setup.bias.flip.price_level
-                        )
-                        db_bias.bias_flip = db_bias_flip
+$SPY Rejection Near 586
+Bias: Bearish
 
-                    db_ticker_setup.bias = db_bias
+$AAPL Breaking Support
+Support at $182
+Target: $178
+Stop: $185
 
-                db_message.ticker_setups.append(db_ticker_setup)
-
-            # Save to database
-            db.session.add(db_message)
-            db.session.commit()
-
-            logger.info(f"Saved setup message with ID {db_message.id} containing {len(db_message.ticker_setups)} tickers")
-            return db_message.id
-
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logger.error(f"Failed to save setup message: {str(e)}")
-            return None
-
-    @staticmethod
-    def get_setup_by_id(setup_id: int) -> Optional[Dict]:
-        """
-        Get a setup message by ID with all related data.
-
-        Args:
-            setup_id: The ID of the setup message
-
-        Returns:
-            Optional[Dict]: Setup message data as dictionary or None if not found
-        """
-        try:
-            message = SetupMessage.query.get(setup_id)
-            if not message:
-                return None
-
-            result = {
-                'id': message.id,
-                'date': message.date.isoformat(),
-                'source': message.source,
-                'created_at': message.created_at.isoformat(),
-                'ticker_setups': []
+$NVDA Bounce at $920
+Looks strong heading into earnings next week
+        """,
+        "tickers": ["SPY", "AAPL", "NVDA"],
+        "primary_ticker": "SPY",
+        "signal_type": "rejection",
+        "bias": "bearish",
+        "confidence": 0.95,
+        "ticker_specific_data": {
+            "SPY": {
+                "signal_type": "rejection",
+                "bias": "bearish",
+                "detected_prices": [],
+                "support_levels": [],
+                "resistance_levels": [586],
+                "target_levels": [],
+                "stop_levels": [],
+                "text_block": "$SPY Rejection Near 586\nBias: Bearish\n"
+            },
+            "AAPL": {
+                "signal_type": "support",
+                "bias": "bearish",
+                "detected_prices": [],
+                "support_levels": [182],
+                "resistance_levels": [],
+                "target_levels": [178],
+                "stop_levels": [185],
+                "text_block": "$AAPL Breaking Support\nSupport at $182\nTarget: $178\nStop: $185\n"
+            },
+            "NVDA": {
+                "signal_type": "bounce",
+                "bias": "bullish",
+                "detected_prices": [920],
+                "support_levels": [920],
+                "resistance_levels": [],
+                "target_levels": [],
+                "stop_levels": [],
+                "text_block": "$NVDA Bounce at $920\nLooks strong heading into earnings next week\n"
             }
+        }
+    }
 
-            for ticker_setup in message.ticker_setups:
-                setup_data = {
-                    'id': ticker_setup.id,
-                    'symbol': ticker_setup.symbol,
-                    'text': ticker_setup.text,
-                    'signals': [],
-                    'bias': None
-                }
+def update_setup_from_discord():
+    """
+    Update the parsed setup data from the latest Discord message.
+    Returns the parsed setup data.
+    """
+    # Get the latest Discord message
+    discord_message = get_latest_discord_message()
+    
+    if not discord_message:
+        logger.warning("No Discord message found. Using sample setup data.")
+        setup_data = get_sample_setup()
+    else:
+        # Parse the Discord message
+        message_content = discord_message.get('content')
+        setup_data = parse_message(message_content)
+        
+        if not setup_data:
+            logger.warning("Failed to parse Discord message. Using sample setup data.")
+            setup_data = get_sample_setup()
+        else:
+            # Add metadata from Discord
+            setup_data['discord_id'] = discord_message.get('id')
+            setup_data['discord_author'] = discord_message.get('author')
+            setup_data['discord_timestamp'] = discord_message.get('timestamp')
+            setup_data['discord_channel'] = discord_message.get('channel_name')
 
-                # Add signals
-                for signal in ticker_setup.signals:
-                    signal_data = {
-                        'id': signal.id,
-                        'category': signal.category.value,
-                        'aggressiveness': signal.aggressiveness.value,
-                        'comparison': signal.comparison.value,
-                        'trigger': signal.trigger,
-                        'targets': signal.targets
-                    }
-                    setup_data['signals'].append(signal_data)
+            # Store setup data in database
+            store_setup(setup_data)
+    
+    # Save the parsed setup data to file
+    try:
+        with open(PARSED_SETUP_FILE, 'w') as f:
+            json.dump(setup_data, f, indent=2)
+        logger.info(f"Parsed setup data saved to {PARSED_SETUP_FILE}")
+    except Exception as e:
+        logger.error(f"Error saving parsed setup data: {e}")
+    
+    return setup_data
 
-                # Add bias if present
-                if ticker_setup.bias:
-                    bias_data = {
-                        'id': ticker_setup.bias.id,
-                        'direction': ticker_setup.bias.direction.value,
-                        'condition': ticker_setup.bias.condition.value,
-                        'price': ticker_setup.bias.price,
-                        'flip': None
-                    }
+def get_latest_setup():
+    """
+    Get the latest parsed setup data.
+    If the file doesn't exist, create it first.
+    """
+    if not os.path.exists(PARSED_SETUP_FILE):
+        return update_setup_from_discord()
+    
+    try:
+        with open(PARSED_SETUP_FILE, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error reading parsed setup data: {e}")
+        return get_sample_setup()
 
-                    # Add bias flip if present
-                    if ticker_setup.bias.bias_flip:
-                        bias_data['flip'] = {
-                            'id': ticker_setup.bias.bias_flip.id,
-                            'direction': ticker_setup.bias.bias_flip.direction.value,
-                            'price_level': ticker_setup.bias.bias_flip.price_level
-                        }
-
-                    setup_data['bias'] = bias_data
-
-                result['ticker_setups'].append(setup_data)
-
-            return result
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to get setup message: {str(e)}")
-            return None
-
-    @staticmethod
-    def get_recent_setups(limit: int = 10, symbol: Optional[str] = None) -> List[Dict]:
-        """
-        Get recent setup messages with optional filtering by ticker symbol.
-
-        Args:
-            limit: Maximum number of setups to return
-            symbol: Optional ticker symbol to filter by
-
-        Returns:
-            List[Dict]: List of setup messages
-        """
-        try:
-            query = SetupMessage.query.order_by(SetupMessage.created_at.desc())
-
-            if symbol:
-                # Use join to filter by ticker symbol
-                query = query.join(SetupMessage.ticker_setups).filter(TickerSetup.symbol == symbol)
-
-            messages = query.limit(limit).all()
-
-            result = []
-            for message in messages:
-                message_data = {
-                    'id': message.id,
-                    'date': message.date.isoformat(),
-                    'source': message.source,
-                    'created_at': message.created_at.isoformat(),
-                    'ticker_symbols': [ts.symbol for ts in message.ticker_setups]
-                }
-                result.append(message_data)
-
-            return result
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to get recent setups: {str(e)}")
-            return []
-
-    @staticmethod
-    def get_setups_by_date_range(start_date: date, end_date: date, symbol: Optional[str] = None) -> List[Dict]:
-        """
-        Get setup messages within a date range with optional filtering by ticker symbol.
-
-        Args:
-            start_date: Start date (inclusive)
-            end_date: End date (inclusive)
-            symbol: Optional ticker symbol to filter by
-
-        Returns:
-            List[Dict]: List of setup messages
-        """
-        try:
-            query = SetupMessage.query.filter(
-                SetupMessage.date >= start_date,
-                SetupMessage.date <= end_date
-            ).order_by(SetupMessage.date)
-
-            if symbol:
-                # Use join to filter by ticker symbol
-                query = query.join(SetupMessage.ticker_setups).filter(TickerSetup.symbol == symbol)
-
-            messages = query.all()
-
-            result = []
-            for message in messages:
-                message_data = {
-                    'id': message.id,
-                    'date': message.date.isoformat(),
-                    'source': message.source,
-                    'created_at': message.created_at.isoformat(),
-                    'ticker_symbols': [ts.symbol for ts in message.ticker_setups]
-                }
-                result.append(message_data)
-
-            return result
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to get setups by date range: {str(e)}")
-            return []
-
-    @staticmethod
-    def get_setups_by_symbol(symbol: str, limit: int = 10) -> List[Dict]:
-        """
-        Get setup messages for a specific ticker symbol.
-
-        Args:
-            symbol: Ticker symbol to filter by
-            limit: Maximum number of setups to return
-
-        Returns:
-            List[Dict]: List of ticker setups for the specified symbol
-        """
-        try:
-            ticker_setups = (TickerSetup.query
-                .filter(TickerSetup.symbol == symbol)
-                .join(SetupMessage)
-                .order_by(SetupMessage.date.desc())
-                .limit(limit)
-                .all())
-
-            result = []
-            for ts in ticker_setups:
-                setup_data = {
-                    'id': ts.id,
-                    'symbol': ts.symbol,
-                    'message_id': ts.message_id,
-                    'message_date': ts.message.date.isoformat(),
-                    'text': ts.text,
-                    'signals': [],
-                    'bias': None
-                }
-
-                # Add signals
-                for signal in ts.signals:
-                    signal_data = {
-                        'id': signal.id,
-                        'category': signal.category.value,
-                        'aggressiveness': signal.aggressiveness.value,
-                        'comparison': signal.comparison.value,
-                        'trigger': signal.trigger,
-                        'targets': signal.targets
-                    }
-                    setup_data['signals'].append(signal_data)
-
-                # Add bias if present
-                if ts.bias:
-                    bias_data = {
-                        'id': ts.bias.id,
-                        'direction': ts.bias.direction.value,
-                        'condition': ts.bias.condition.value,
-                        'price': ts.bias.price,
-                        'flip': None
-                    }
-
-                    # Add bias flip if present
-                    if ts.bias.bias_flip:
-                        bias_data['flip'] = {
-                            'id': ts.bias.bias_flip.id,
-                            'direction': ts.bias.bias_flip.direction.value,
-                            'price_level': ts.bias.bias_flip.price_level
-                        }
-
-                    setup_data['bias'] = bias_data
-
-                result.append(setup_data)
-
-            return result
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to get setups by symbol {symbol}: {str(e)}")
-            return []
-
-    @staticmethod
-    def delete_setup(setup_id: int) -> bool:
-        """
-        Delete a setup message by ID.
-
-        Args:
-            setup_id: The ID of the setup message to delete
-
-        Returns:
-            bool: True if deleted successfully, False otherwise
-        """
-        try:
-            message = SetupMessage.query.get(setup_id)
-            if not message:
-                return False
-
-            db.session.delete(message)
-            db.session.commit()
-            logger.info(f"Deleted setup message with ID {setup_id}")
-            return True
-
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logger.error(f"Failed to delete setup message: {str(e)}")
-            return False
-```
+if __name__ == "__main__":
+    # Test the module
+    setup = get_latest_setup()
+    print(f"Latest setup: {setup.get('primary_ticker')} - {setup.get('signal_type')}")
+    print(f"Tickers: {', '.join(setup.get('tickers', []))}")
+    print(f"Message:\n{setup.get('raw_message')}")

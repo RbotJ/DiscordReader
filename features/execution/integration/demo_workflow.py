@@ -1,6 +1,11 @@
+"""
+Trade Workflow Demo
+
+This module demonstrates the trade execution workflow using PostgreSQL events.
+"""
 import logging
 from datetime import datetime
-from common.events.publisher import publish_event, EventChannels
+from common.events import publish_event, EventChannels
 from common.db import db
 from common.db_models import TradeModel
 
