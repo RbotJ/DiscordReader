@@ -53,12 +53,19 @@ class SetupMessageLegacy(db.Model):
     __mapper_args__ = {'polymorphic_identity': 'models.SetupMessageLegacy'}
     
     id = Column(Integer, primary_key=True)
-    date = Column(Date, nullable=False)
-    raw_text = Column(Text, nullable=False)
-    source = Column(String(50), nullable=False, default='unknown')
+    date = Column(Date, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    source = Column(String(50), nullable=False, default='discord')
+    message_id = Column(String(50), nullable=True, unique=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    # Relationships - explicitly specify them after both classes are defined
+    # Include relationship directly in the class
+    ticker_setups = relationship(
+        "TickerSetupLegacy", 
+        foreign_keys="[TickerSetupLegacy.message_id]",
+        backref="message", 
+        cascade="all, delete-orphan"
+    )
     
     def __repr__(self):
         return f"<SetupMessageLegacy date={self.date} source={self.source}>"
@@ -82,13 +89,27 @@ class TickerSetupLegacy(db.Model):
     # Add discriminator column for model type
     model_type = Column(String(50), nullable=False, default='legacy')
     
+    # Include relationships directly in the class
+    signals = relationship(
+        "SignalLegacy", 
+        foreign_keys="[SignalLegacy.ticker_setup_id]",
+        backref="ticker_setup", 
+        cascade="all, delete-orphan"
+    )
+    
+    bias = relationship(
+        "BiasLegacy", 
+        foreign_keys="[BiasLegacy.ticker_setup_id]",
+        backref="ticker_setup",
+        uselist=False, 
+        cascade="all, delete-orphan"
+    )
+    
     def __repr__(self):
         return f"<TickerSetupLegacy symbol={self.symbol}>"
         
 # For backward compatibility
 TickerSetup = TickerSetupLegacy
-
-# Relationships will be defined at the end of the file after all models are defined
 
 
 class SignalLegacy(db.Model):
@@ -150,48 +171,76 @@ class BiasFlip(db.Model):
         return f"<BiasFlip direction={self.direction} price={self.price_level}>"
 
 
-# Define relationships at the end of the file to avoid circular dependencies
-# Setup Message -> Ticker Setup relationship
-SetupMessageLegacy.ticker_setups = relationship(
-    "models.TickerSetupLegacy",
-    foreign_keys="[models.TickerSetupLegacy.message_id]",
-    backref="message",
-    cascade="all, delete-orphan"
-)
+# Define relationships directly in the model classes instead of at the end of the file
 
-# Add backref relationships at the end of the file
-# after all models are defined
-TickerSetupLegacy.signals = relationship(
-    "SignalLegacy",
-    back_populates="ticker_setup"
-)
+# Modify the SetupMessageLegacy class to include ticker_setups relationship
+class SetupMessageLegacy(db.Model):
+    """Legacy model for trading setup messages (kept for backward compatibility)"""
+    __tablename__ = 'setup_messages'
+    __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'models.SetupMessageLegacy'}
+    
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    source = Column(String(50), nullable=False, default='discord')
+    message_id = Column(String(50), nullable=True, unique=True, index=True)
+    
+    # Include the relationship directly in the class
+    ticker_setups = relationship("TickerSetupLegacy", backref="message", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<SetupMessageLegacy date={self.date} source={self.source}>"
+        
+# For backward compatibility
+SetupMessage = SetupMessageLegacy
 
-# Create relationship on the signal side
-SignalLegacy.ticker_setup = relationship(
-    "TickerSetupLegacy",
-    back_populates="signals"
-)
 
-# Add relationships at the end of the file
-TickerSetupLegacy.bias = relationship(
-    "BiasLegacy",
-    back_populates="ticker_setup",
-    uselist=False
-)
+class TickerSetupLegacy(db.Model):
+    """Legacy model for trading setup for a specific ticker symbol (kept for backward compatibility)"""
+    __tablename__ = 'ticker_setups'
+    __table_args__ = {'extend_existing': True}
+    # Use fully-qualified module name for SQLAlchemy to distinguish between classes
+    __mapper_args__ = {'polymorphic_identity': 'models.TickerSetupLegacy'}
+    
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    text = Column(Text, nullable=True)
+    message_id = Column(Integer, ForeignKey('setup_messages.id', ondelete='CASCADE'), nullable=False)
+    
+    # Add discriminator column for model type
+    model_type = Column(String(50), nullable=False, default='legacy')
+    
+    # Include relationships directly in the class
+    signals = relationship("SignalLegacy", backref="ticker_setup", cascade="all, delete-orphan")
+    bias = relationship("BiasLegacy", backref="ticker_setup", uselist=False, cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<TickerSetupLegacy symbol={self.symbol}>"
+        
+# For backward compatibility
+TickerSetup = TickerSetupLegacy
 
-BiasLegacy.ticker_setup = relationship(
-    "TickerSetupLegacy",
-    back_populates="bias"
-)
 
-BiasFlip.bias = relationship(
-    "BiasLegacy",
-    back_populates="bias_flip"
-)
-
-BiasLegacy.bias_flip = relationship(
-    "BiasFlip",
-    back_populates="bias",
-    uselist=False,
-    cascade="all, delete-orphan"
-)
+# Modify BiasLegacy class to include bias_flip relationship
+class BiasLegacy(db.Model):
+    """Represents a market bias for a ticker."""
+    __tablename__ = 'biases'
+    __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'models.BiasLegacy'}
+    
+    id = Column(Integer, primary_key=True)
+    ticker_setup_id = Column(Integer, ForeignKey('ticker_setups.id', ondelete='CASCADE'), nullable=False)
+    direction = Column(SQLEnum(BiasDirectionEnum), nullable=False)
+    condition = Column(SQLEnum(ComparisonTypeEnum), nullable=False)
+    price = Column(Float, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Include the relationship directly in the class
+    bias_flip = relationship("BiasFlip", backref="bias", uselist=False, cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<BiasLegacy direction={self.direction} price={self.price}>"
+        
+# For backward compatibility
+Bias = BiasLegacy
