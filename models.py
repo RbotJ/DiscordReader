@@ -76,6 +76,11 @@ class TickerSetupLegacy(db.Model):
     message_id = Column(Integer, ForeignKey('setup_messages.id', ondelete='CASCADE'), nullable=False)
     model_type = Column(String(50), nullable=False, default='legacy')
     
+    # Define relationships within the model class
+    message = relationship("SetupMessageLegacy", back_populates="ticker_setups")
+    signals = relationship("SignalLegacy", back_populates="ticker_setup", cascade="all, delete-orphan")
+    bias = relationship("BiasLegacy", back_populates="ticker_setup", uselist=False, cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<TickerSetupLegacy symbol={self.symbol}>"
 
@@ -142,36 +147,9 @@ class BiasFlip(db.Model):
 # Define relationships after all models are defined to avoid circular dependencies
 # Use explicit primaryjoin expressions to help SQLAlchemy identify the relationships
 
-SetupMessageLegacy.ticker_setups = relationship(
-    "TickerSetupLegacy", 
-    primaryjoin="SetupMessageLegacy.id==TickerSetupLegacy.message_id",
-    backref="message",
-    cascade="all, delete-orphan",
-    lazy="joined"
-)
+# Instead of defining relationships with complex configurations,
+# we'll let SQLAlchemy handle the relationships automatically based on ForeignKey constraints.
+# This is less error-prone than trying to manually specify join conditions.
 
-TickerSetupLegacy.signals = relationship(
-    "SignalLegacy", 
-    primaryjoin="TickerSetupLegacy.id==SignalLegacy.ticker_setup_id",
-    backref="ticker_setup",
-    cascade="all, delete-orphan",
-    lazy="joined"
-)
-
-TickerSetupLegacy.bias = relationship(
-    "BiasLegacy", 
-    primaryjoin="TickerSetupLegacy.id==BiasLegacy.ticker_setup_id",
-    backref="ticker_setup",
-    uselist=False,
-    cascade="all, delete-orphan",
-    lazy="joined"
-)
-
-BiasLegacy.bias_flip = relationship(
-    "BiasFlip", 
-    primaryjoin="BiasLegacy.id==BiasFlip.bias_id",
-    backref="bias",
-    uselist=False,
-    cascade="all, delete-orphan",
-    lazy="joined"
-)
+# Remove all relationship definitions that were defined outside of the models themselves.
+# We'll instead rely on pure SQLAlchemy conventions and let it discover relationships.
