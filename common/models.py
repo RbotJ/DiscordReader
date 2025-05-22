@@ -8,13 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any, Union
 
-# Import the model aliases from the main models.py for backwards compatibility
 from models import (
-    SetupMessageLegacy as SetupMessage,
-    TickerSetupLegacy as TickerSetup,
-    SignalLegacy as Signal,
-    BiasLegacy as Bias,
-    BiasFlip,
     SignalCategoryEnum,
     AggressivenessEnum,
     ComparisonTypeEnum,
