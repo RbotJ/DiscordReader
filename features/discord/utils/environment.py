@@ -111,3 +111,26 @@ def get_environment_status() -> Dict[str, bool]:
         status[var] = bool(os.environ.get(var))
         
     return status
+
+
+def check_environment() -> tuple[bool, Dict[str, bool]]:
+    """
+    Check Discord environment variables and return status.
+    
+    Returns:
+        tuple: (success, status_dict)
+            - success (bool): True if all required variables are set
+            - status_dict (Dict[str, bool]): Dictionary with status of all variables
+    """
+    # Get environment status
+    status = get_environment_status()
+    
+    # Check if all required variables are set
+    success = all(status[var] for var in REQUIRED_VARS)
+    
+    # If not successful, log missing variables
+    if not success:
+        missing = [var for var in REQUIRED_VARS if not status[var]]
+        logger.error(f"Missing required Discord environment variables: {', '.join(missing)}")
+    
+    return success, status

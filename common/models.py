@@ -6,8 +6,20 @@ different components of the application.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Dict, List, Optional, Any, Union
+from typing import Optional, List, Dict, Any, Union
 
+# Import the model aliases from the main models.py for backwards compatibility
+from models import (
+    SetupMessageLegacy as SetupMessage,
+    TickerSetupLegacy as TickerSetup,
+    SignalLegacy as Signal,
+    BiasLegacy as Bias,
+    BiasFlip,
+    SignalCategoryEnum,
+    AggressivenessEnum,
+    ComparisonTypeEnum,
+    BiasDirectionEnum
+)
 
 @dataclass
 class TradeSetupDTO:
@@ -22,9 +34,6 @@ class TradeSetupDTO:
     executed: bool = False
     message_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
-    
-# Alias for backward compatibility
-TickerSetupDTO = TradeSetupDTO
 
 
 @dataclass
@@ -103,8 +112,8 @@ class DiscordMessageDTO:
     is_setup: bool = False
     processed: bool = False
     embed_data: Optional[Dict[str, Any]] = None
-    
-    
+
+
 @dataclass
 class MarketDataDTO:
     """Data Transfer Object for market data information."""
@@ -117,8 +126,8 @@ class MarketDataDTO:
     volume: int
     source: str = "alpaca"
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    
-    
+
+
 @dataclass
 class Signal:
     """Data Transfer Object for trading signals."""
@@ -129,7 +138,7 @@ class Signal:
     reason: Optional[str] = None
     confidence: float = 0.0
     source: str = "system"
-    
+
 
 @dataclass
 class TradeSetupMessage:
@@ -141,8 +150,8 @@ class TradeSetupMessage:
     date: date
     setups: List[Dict[str, Any]] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    
-    
+
+
 @dataclass
 class TickerSetupData:
     """Data Transfer Object for ticker setup information with trade details."""
@@ -157,16 +166,17 @@ class TickerSetupData:
     message_ref: Optional[str] = None
     date: date = field(default_factory=date.today)
     created_at: datetime = field(default_factory=datetime.utcnow)
-    
-    
-@dataclass 
+
+
+@dataclass
 class BiasFlip:
     """Data Transfer Object for bias flip conditions."""
     price_level: Optional[float] = None
     condition: str = "cross"  # "above", "below", "cross"
     message: Optional[str] = None
-    
-@dataclass 
+
+
+@dataclass
 class Bias:
     """Data Transfer Object for market bias."""
     direction: str  # "bullish", "bearish", "neutral" 

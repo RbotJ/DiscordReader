@@ -9,7 +9,6 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc
 from common.db import db
 from common.db_models import SetupModel, TickerSetupModel, SignalModel
-from features.rate_limiter import configure_rate_limits
 from features.setups.service import SetupService
 from features.setups.parser import SetupParser
 
@@ -20,8 +19,7 @@ logger = logging.getLogger(__name__)
 # Configure parser
 parser = SetupParser()
 
-@bp.route('/webhook', methods=['POST'])
-@configure_rate_limits(["50 per day", "10 per hour"]) 
+@bp.route('/webhook', methods=['POST']) 
 def receive_setup_webhook():
     """Receive and process a setup message from webhook."""
     try:

@@ -9,7 +9,8 @@ from features.discord.utils.environment import (
     get_discord_token,
     get_channel_id,
     get_guild_id,
-    get_environment_status
+    get_environment_status,
+    check_environment
 )
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     'get_discord_token',
     'get_channel_id',
     'get_guild_id',
-    'get_environment_status'
+    'get_environment_status',
+    'check_environment'
 ]
