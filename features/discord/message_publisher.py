@@ -1,82 +1,43 @@
-"""
-Discord Message Publisher
 
-This module focuses on publishing Discord messages for consumption by other
-components without exposing direct Discord API dependencies to downstream services.
 """
-import json
+Discord Message Publisher 
+
+Publishes Discord messages to the PostgreSQL event system.
+"""
 import logging
+from typing import Dict, Any
 from datetime import datetime
-from typing import Dict, Any, Optional
 
-from common.events import publish_event
-from common.event_constants import (
-    DISCORD_RAW_MESSAGE_CHANNEL,
-    DISCORD_SETUP_MESSAGE_CHANNEL,
-    EventType
-)
+from common.events import publish_event, EventChannels
+from common.db import db
+from common.db_models import DiscordMessageModel
 
 logger = logging.getLogger(__name__)
 
-def publish_raw_discord_message(message_id: str, content: str, author: str, 
-                              timestamp: datetime, channel_id: str) -> bool:
+def publish_discord_message(message_data: Dict[str, Any]) -> bool:
     """
-    Publish a raw Discord message to the event system.
-    """
-    try:
-        message_data = {
-            "message_id": message_id,
-            "content": content,
-            "author": author,
-            "timestamp": timestamp.isoformat(),
-            "channel_id": channel_id
-        }
-
-        success = publish_event(
-            channel=DISCORD_RAW_MESSAGE_CHANNEL,
-            event_type=EventType.DISCORD_MESSAGE_RECEIVED,
-            data=message_data
-        )
-
-        if success:
-            logger.debug(f"Published Discord message {message_id}")
-        else:
-            logger.warning(f"Failed to publish Discord message {message_id}")
-
-        return success
-
-    except Exception as e:
-        logger.error(f"Error publishing Discord message: {e}")
-        return False
-
-def publish_setup_message(message_id: str, content: str, author: str,
-                         timestamp: datetime, channel_id: str, is_setup: bool = True) -> bool:
-    """
-    Publish a Discord message identified as a trading setup.
+    Publish a Discord message to the event system and store in database.
     """
     try:
-        message_data = {
-            "message_id": message_id,
-            "content": content,
-            "author": author,
-            "timestamp": timestamp.isoformat(),
-            "channel_id": channel_id,
-            "is_setup": is_setup
-        }
-
-        success = publish_event(
-            channel=DISCORD_SETUP_MESSAGE_CHANNEL,
-            event_type=EventType.DISCORD_SETUP_MESSAGE_RECEIVED,
-            data=message_data
+        # Store message in database
+        message = DiscordMessageModel(
+            message_id=message_data.get('id'),
+            content=message_data.get('content'),
+            channel_id=message_data.get('channel_id'),
+            timestamp=datetime.utcnow(),
+            meta_data=message_data
         )
+        db.session.add(message)
+        db.session.commit()
 
-        if success:
-            logger.info(f"Published Discord setup message {message_id}")
-        else:
-            logger.warning(f"Failed to publish Discord setup message {message_id}")
-
-        return success
+        # Publish event
+        return publish_event(EventChannels.DISCORD_SETUP_MESSAGE, {
+            'message_id': message_data.get('id'),
+            'content': message_data.get('content'),
+            'timestamp': datetime.utcnow().isoformat()
+        })
 
     except Exception as e:
-        logger.error(f"Error publishing Discord setup message: {e}")
+        logger.error(f"Failed to publish Discord message: {e}")
+        db.session.rollback()
         return False
