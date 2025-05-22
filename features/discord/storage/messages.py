@@ -1,19 +1,20 @@
 """
-Discord Message Storage and Stats
+Discord Message Storage
 
-This module provides functionality for storing Discord messages
-and retrieving statistics about them from the database.
+This module provides functions for storing and retrieving Discord messages
+from the PostgreSQL database. It maintains a history of messages and provides
+statistics about message volume and timestamps.
 """
 import logging
-import re
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
+import json
 
+from sqlalchemy import desc, func, and_
 from common.db import db
 from common.db_models import DiscordMessageModel
 from common.events import publish_event, EventChannels
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 def store_message(message_data: Dict[str, Any]) -> bool:
@@ -22,13 +23,12 @@ def store_message(message_data: Dict[str, Any]) -> bool:
     
     Args:
         message_data: Dictionary containing message data
-            Required keys: channel_id, message_id, content, author
-            
+        
     Returns:
-        True if successful, False otherwise
+        bool: True if successful, False otherwise
     """
     try:
-        # Create message using keyword arguments
+        # Create message using SQLAlchemy ORM
         message = DiscordMessageModel()
         message.channel_id = message_data['channel_id']
         message.message_id = message_data['message_id']
@@ -39,7 +39,12 @@ def store_message(message_data: Dict[str, Any]) -> bool:
         db.session.commit()
 
         # Publish event for other components
-        publish_event(EventChannels.DISCORD_SETUP_MESSAGE, message_data)
+        publish_event(EventChannels.DISCORD_MESSAGE, {
+            'message_id': message_data['message_id'],
+            'content': message_data['content'],
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
         logger.info(f"Stored Discord message {message_data['message_id']}")
         return True
     except Exception as e:
@@ -59,16 +64,18 @@ def get_latest_message() -> Optional[Dict[str, Any]]:
             DiscordMessageModel.created_at.desc()
         ).first()
         
-        if message:
-            return {
-                'id': message.id,
-                'message_id': message.message_id,
-                'channel_id': message.channel_id,
-                'content': message.content,
-                'author': message.author,
-                'created_at': message.created_at.isoformat() if message.created_at else None
-            }
-        return None
+        if not message:
+            logger.warning("No Discord messages found in database")
+            return None
+            
+        return {
+            'id': message.id,
+            'message_id': message.message_id,
+            'channel_id': message.channel_id,
+            'content': message.content,
+            'author': message.author,
+            'created_at': message.created_at.isoformat() if message.created_at else None
+        }
     except Exception as e:
         logger.error(f"Failed to get latest message: {e}")
         return None
@@ -124,108 +131,46 @@ def get_message_stats() -> Dict[str, Any]:
         Dictionary containing message statistics
     """
     try:
-        # Get count of messages
-        count = get_message_count()
+        total = db.session.query(DiscordMessageModel).count()
         
-        # Get latest message
-        latest = get_latest_message()
+        # Get oldest and newest message timestamps
+        newest = db.session.query(DiscordMessageModel).order_by(
+            DiscordMessageModel.created_at.desc()
+        ).first()
         
-        # Extract tickers from messages
-        ticker_frequency = {}
-        messages = get_message_history(limit=100)
+        oldest = db.session.query(DiscordMessageModel).order_by(
+            DiscordMessageModel.created_at.asc()
+        ).first()
         
-        # Regex for tickers ($ followed by 1-5 uppercase letters)
-        ticker_pattern = r'\$([A-Z]{1,5})'
+        # Get count of messages in the last 24 hours
+        day_ago = datetime.utcnow() - timedelta(days=1)
+        recent_count = db.session.query(DiscordMessageModel).filter(
+            DiscordMessageModel.created_at >= day_ago
+        ).count()
         
-        for message in messages:
-            content = message.get('content', '')
-            found_tickers = re.findall(ticker_pattern, content)
-            
-            for ticker in found_tickers:
-                if ticker in ticker_frequency:
-                    ticker_frequency[ticker] += 1
-                else:
-                    ticker_frequency[ticker] = 1
+        # Count messages by author
+        author_counts = db.session.query(
+            DiscordMessageModel.author, 
+            func.count(DiscordMessageModel.id)
+        ).group_by(
+            DiscordMessageModel.author
+        ).all()
         
-        # Sort by frequency, descending
-        ticker_frequency = dict(sorted(
-            ticker_frequency.items(), 
-            key=lambda item: item[1], 
-            reverse=True
-        ))
+        authors = {author: count for author, count in author_counts}
         
-        # Build stats dictionary
-        stats = {
-            'count': count,
-            'ticker_frequency': ticker_frequency
+        return {
+            'total_messages': total,
+            'newest_message': newest.created_at.isoformat() if newest and newest.created_at else None,
+            'oldest_message': oldest.created_at.isoformat() if oldest and oldest.created_at else None,
+            'last_24h_count': recent_count,
+            'author_counts': authors
         }
-        
-        if latest:
-            stats.update({
-                'latest_id': latest.get('id'),
-                'latest_message_id': latest.get('message_id'),
-                'latest_timestamp': latest.get('created_at'),
-                'latest_author': latest.get('author'),
-                'latest_channel': latest.get('channel_id')
-            })
-            
-        return stats
     except Exception as e:
         logger.error(f"Failed to get message stats: {e}")
-        return {'count': 0}
-
-def display_message_stats():
-    """
-    Display statistics about stored Discord messages.
-    
-    Returns:
-        Dict containing the statistics that were displayed
-    """
-    # Get stats from storage
-    stats = get_message_stats()
-    
-    # Display general stats
-    print("=== Discord Message Statistics ===")
-    print(f"Total messages: {stats['count']}")
-    
-    if stats.get('latest_timestamp'):
-        print(f"Latest message: {stats['latest_timestamp']}")
-        print(f"Latest author: {stats.get('latest_author', 'Unknown')}")
-        print(f"Latest channel: {stats.get('latest_channel', 'Unknown')}")
-    else:
-        print("No messages found in storage.")
-    
-    # Ticker frequency
-    if stats.get('ticker_frequency'):
-        print("\n=== Ticker Frequency ===")
-        for ticker, count in stats['ticker_frequency'].items():
-            print(f"${ticker}: {count} mention(s)")
-    
-    return stats
-
-def display_message_content():
-    """
-    Display the content of the latest message.
-    
-    Returns:
-        The message that was displayed, or None if no message was found
-    """
-    latest = get_latest_message()
-    
-    if latest and 'content' in latest:
-        print("\n=== Latest Message Content ===")
-        print(latest['content'])
-        return latest
-    else:
-        print("\nNo message content available.")
-        return None
-
-if __name__ == "__main__":
-    # Check storage stats
-    stats = display_message_stats()
-    
-    # Show latest message content
-    if stats['count'] > 0:
-        display_message_content()
-    
-    print("\nNote: This tool only displays authentic data received from Discord.")
+        return {
+            'total_messages': 0,
+            'newest_message': None,
+            'oldest_message': None,
+            'last_24h_count': 0,
+            'author_counts': {}
+        }
