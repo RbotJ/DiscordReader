@@ -35,26 +35,26 @@ def test_setup_handler():
    - Bullish bias above 180, bearish below 175"""
 
     logger.info("Testing setup handler with message for today's market")
-    
+
     # Import the handler function
     from features.discord.setup_handler import handle_discord_setup_message
-    
+
     # Process the message
     result = handle_discord_setup_message(test_message, datetime.now())
-    
+
     if result:
         logger.info(f"Successfully processed setup message. ID: {result.id}")
-        
+
         # Log details about the extracted data
         ticker_symbols = [ts.symbol for ts in result.ticker_setups]
         logger.info(f"Extracted tickers: {ticker_symbols}")
-        
+
         signal_count = sum(len(ts.signals) for ts in result.ticker_setups if hasattr(ts, 'signals'))
         logger.info(f"Extracted signals: {signal_count}")
-        
+
         bias_count = sum(1 for ts in result.ticker_setups if hasattr(ts, 'bias') and ts.bias is not None)
         logger.info(f"Extracted biases: {bias_count}")
-        
+
         return True
     else:
         logger.error("Failed to process setup message")
@@ -63,10 +63,10 @@ def test_setup_handler():
 def test_send_status():
     """Test sending a status message."""
     from features.discord.client import send_status_update
-    
+
     logger.info("Testing status update")
     result = send_status_update("🔧 **Test Message**: Testing Discord integration")
-    
+
     logger.info(f"Status update result: {result}")
     return result
 
@@ -76,27 +76,27 @@ def main():
     parser.add_argument('--action', choices=['status', 'setup'], default='setup',
                         help='Action to test: status message or process setup')
     args = parser.parse_args()
-    
+
     logger.info(f"Testing Discord integration: {args.action}")
-    
+
     # Create a minimal Flask application context
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-    
+
     # Import after Flask app creation
     from app import db
     db.init_app(app)
-    
+
     with app.app_context():
         # Import Discord initialization
         from features.discord import initialize_discord
-        
+
         # Initialize Discord
         success = initialize_discord()
         if not success:
             logger.error("Failed to initialize Discord integration")
             return 1
-        
+
         # Test the requested action
         if args.action == 'status':
             result = test_send_status()
@@ -105,7 +105,7 @@ def main():
         else:
             logger.error(f"Unknown action: {args.action}")
             return 1
-        
+
         logger.info(f"Test {'succeeded' if result else 'failed'}")
         return 0 if result else 1
 

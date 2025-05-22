@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
     """
     Publish a setup message created event to the PostgreSQL event system.
-    
+
     Args:
         setup_message: The trade setup message to publish
-        
+
     Returns:
         bool: True if published successfully, False otherwise
     """
@@ -36,26 +36,26 @@ def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
                 "tickers": [setup.symbol for setup in setup_message.setups]
             }
         }
-        
+
         # Prepare event data with event_type
         event_data["event_type"] = EventType.DISCORD_SETUP_MESSAGE_RECEIVED
-        
+
         # Publish to PostgreSQL event system
         success = publish_event(
             SETUP_CREATED_CHANNEL,
             event_data
         )
-        
+
         if not success:
             logger.warning("Database event system not available, using fallback")
             return _publish_to_fallback(setup_message)
-        
+
         # Also publish individual signal events
         for ticker_setup in setup_message.setups:
             _publish_signals_for_ticker(ticker_setup)
-        
+
         return True
-    
+
     except Exception as e:
         logger.error(f"Error publishing setup event: {str(e)}")
         return _publish_to_fallback(setup_message)
@@ -64,7 +64,7 @@ def publish_setup_event(setup_message: TradeSetupMessage) -> bool:
 def _publish_signals_for_ticker(ticker_setup: TickerSetup) -> None:
     """
     Publish signal events for a ticker setup.
-    
+
     Args:
         ticker_setup: The ticker setup to publish signals for
     """
@@ -81,7 +81,7 @@ def _publish_signals_for_ticker(ticker_setup: TickerSetup) -> None:
             },
             "bias": None
         }
-        
+
         # Add bias if present
         if ticker_setup.bias:
             event_data["bias"] = {
@@ -89,10 +89,10 @@ def _publish_signals_for_ticker(ticker_setup: TickerSetup) -> None:
                 "condition": ticker_setup.bias.condition.value,
                 "price": ticker_setup.bias.price
             }
-        
+
         # Prepare event data with event_type
         event_data["event_type"] = EventType.SIGNAL_TRIGGERED
-        
+
         # Publish to PostgreSQL event system
         publish_event(
             SIGNAL_CREATED_CHANNEL,
@@ -104,10 +104,10 @@ def _publish_to_fallback(setup_message: TradeSetupMessage) -> bool:
     """
     Publish to fallback mechanism when database is not available.
     Logs the events that would have been published.
-    
+
     Args:
         setup_message: The trade setup message
-        
+
     Returns:
         bool: True to indicate fallback was used
     """
@@ -115,7 +115,7 @@ def _publish_to_fallback(setup_message: TradeSetupMessage) -> bool:
         f"FALLBACK EVENT: Setup created with {len(setup_message.setups)} tickers: "
         f"{[setup.symbol for setup in setup_message.setups]}"
     )
-    
+
     # Log individual signal events
     for ticker_setup in setup_message.setups:
         for signal in ticker_setup.signals:
@@ -123,5 +123,5 @@ def _publish_to_fallback(setup_message: TradeSetupMessage) -> bool:
                 f"FALLBACK EVENT: Signal created for {ticker_setup.symbol} - "
                 f"{signal.category.value} {signal.comparison.value} {signal.trigger}"
             )
-    
+
     return True

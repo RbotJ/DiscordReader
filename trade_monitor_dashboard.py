@@ -1,10 +1,5 @@
 """
-Trade Monitor Dashboard
-
-This dashboard displays:
-1. Current setup messages
-2. One chart card per active ticker
-3. Real-time trade monitoring
+Updated trade monitor to remove Redis references and use event-based communication.
 """
 import json
 import logging
@@ -31,6 +26,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+from common.events import get_latest_events
+from common.event_constants import EventChannels
 
 def format_currency(value):
     """Format a number as USD currency"""
@@ -104,7 +102,7 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=1)
         dates = pd.date_range(start=start_date, end=end_date, freq="15min")
-        
+
         import numpy as np
         base_price = 100
         if ticker == "SPY":
@@ -113,11 +111,11 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
             base_price = 182
         elif ticker == "NVDA":
             base_price = 920
-        
+
         # Generate realistic price movements
         np.random.seed(42)  # For reproducibility
         close_prices = np.random.normal(0, 1, size=len(dates)).cumsum() * 0.5 + base_price
-        
+
         data = []
         for i, date in enumerate(dates):
             # Create variation for open, high, low based on close
@@ -125,7 +123,7 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
             open_price = close * (1 + np.random.normal(0, 0.002))
             high = max(close, open_price) * (1 + abs(np.random.normal(0, 0.003)))
             low = min(close, open_price) * (1 - abs(np.random.normal(0, 0.003)))
-            
+
             data.append({
                 'timestamp': date.strftime('%Y-%m-%dT%H:%M:%S'),
                 'open': open_price,
@@ -134,18 +132,18 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
                 'close': close,
                 'volume': int(np.random.normal(1000000, 500000))
             })
-    
+
     # Convert data to DataFrame
     if data:
         df = pd.DataFrame(data)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df.sort_values('timestamp', inplace=True)
-        
+
         # Create the figure
         fig = make_subplots(rows=1, cols=1, shared_xaxes=True, 
                           vertical_spacing=0.03, subplot_titles=[f"{ticker} Price Chart"], 
                           row_width=[1])
-        
+
         # Add candlestick chart
         fig.add_trace(go.Candlestick(
             x=df['timestamp'],
@@ -155,7 +153,7 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
             close=df['close'],
             name="Price",
         ))
-        
+
         # Add price levels if provided
         if price_levels:
             for level_type, price in price_levels.items():
@@ -169,7 +167,7 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
                         color = "blue"
                     elif level_type == "stop":
                         color = "purple"
-                    
+
                     fig.add_hline(
                         y=price,
                         line_dash="dash",
@@ -177,7 +175,7 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
                         annotation_text=f"{level_type.capitalize()}: {price}",
                         annotation_position="right"
                     )
-        
+
         # Update layout
         fig.update_layout(
             title=f"{ticker} - 15 Minute Chart",
@@ -187,18 +185,18 @@ def create_candlestick_chart(ticker, data=None, price_levels=None):
             xaxis_rangeslider_visible=False,
             margin=dict(l=50, r=50, t=85, b=50),
         )
-        
+
         return fig
-    
+
     return None
 
 def display_message_card(message):
     """Display a message card with clean formatting"""
     if not message:
         return
-    
+
     st.subheader("Latest Trading Setup")
-    
+
     # Try to get message stats
     message_stats = {}
     try:
@@ -207,20 +205,20 @@ def display_message_card(message):
     except ImportError:
         # If module not available, continue without stats
         pass
-    
+
     with st.container():
         # Add message count and stats at the top
         if message_stats:
             # Create a status row
             stat_cols = st.columns(3)
-            
+
             # Message count
             with stat_cols[0]:
                 st.metric(
                     label="Total Messages", 
                     value=message_stats.get('count', 0)
                 )
-            
+
             # Latest message timestamp
             with stat_cols[1]:
                 latest_time = message_stats.get('latest_timestamp')
@@ -233,27 +231,27 @@ def display_message_card(message):
                         formatted_time = latest_time
                 else:
                     formatted_time = "N/A"
-                
+
                 st.metric(
                     label="Latest Message", 
                     value=formatted_time
                 )
-            
+
             # Latest author
             with stat_cols[2]:
                 st.metric(
                     label="Author", 
                     value=message_stats.get('latest_author', 'N/A')
                 )
-        
+
         # Main message content
         col1, col2 = st.columns([3, 1])
-        
+
         with col1:
             st.markdown(f"**Date:** {message.get('datetime', 'N/A')}")
             st.markdown(f"**Message:**")
             st.markdown(f"```\n{message.get('raw_message', 'No message available')}\n```")
-        
+
         with col2:
             st.markdown(f"**Signal Type:** {message.get('signal_type', 'N/A')}")
             st.markdown(f"**Bias:** {message.get('bias', 'N/A')}")
@@ -261,7 +259,7 @@ def display_message_card(message):
             primary_ticker = message.get('primary_ticker', 'N/A')
             st.markdown(f"**Primary Ticker:** {primary_ticker}")
             st.markdown(f"**Tickers:** {', '.join(message.get('tickers', []))}")
-            
+
             # Add discord info if available
             if message.get('discord_id'):
                 st.markdown("---")
@@ -279,15 +277,15 @@ def display_ticker_chart_card(ticker, message):
     """Display a chart card for a specific ticker"""
     if not ticker or not message:
         return
-    
+
     # Get ticker-specific data from the message
     ticker_data = {}
     if message.get('ticker_specific_data') and ticker in message['ticker_specific_data']:
         ticker_data = message['ticker_specific_data'][ticker]
-    
+
     with st.container():
         col1, col2 = st.columns([3, 1])
-        
+
         with col1:
             # Price levels for this ticker
             price_levels = {
@@ -296,7 +294,7 @@ def display_ticker_chart_card(ticker, message):
                 "target": ticker_data.get('target_levels', []),
                 "stop": ticker_data.get('stop_levels', [])
             }
-            
+
             # Extract the first value from each list or use None
             parsed_price_levels = {}
             for k, v in price_levels.items():
@@ -304,44 +302,44 @@ def display_ticker_chart_card(ticker, message):
                     parsed_price_levels[k] = v[0] 
                 else:
                     parsed_price_levels[k] = None
-            
+
             # Create and display the chart
             fig = create_candlestick_chart(ticker, data=None, price_levels=parsed_price_levels)
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.error(f"Could not create chart for {ticker}")
-        
+
         with col2:
             st.subheader(f"{ticker} Details")
             st.markdown(f"**Signal:** {ticker_data.get('signal_type', 'N/A')}")
             st.markdown(f"**Bias:** {ticker_data.get('bias', 'N/A')}")
-            
+
             # Display price levels
             support_levels = ticker_data.get('support_levels', [])
             if support_levels and isinstance(support_levels, list) and len(support_levels) > 0:
                 st.markdown(f"**Support:** {support_levels[0]}")
             else:
                 st.markdown("**Support:** N/A")
-                
+
             resistance_levels = ticker_data.get('resistance_levels', [])
             if resistance_levels and isinstance(resistance_levels, list) and len(resistance_levels) > 0:
                 st.markdown(f"**Resistance:** {resistance_levels[0]}")
             else:
                 st.markdown("**Resistance:** N/A")
-                
+
             target_levels = ticker_data.get('target_levels', [])
             if target_levels and isinstance(target_levels, list) and len(target_levels) > 0:
                 st.markdown(f"**Target:** {target_levels[0]}")
             else:
                 st.markdown("**Target:** N/A")
-                
+
             stop_levels = ticker_data.get('stop_levels', [])
             if stop_levels and isinstance(stop_levels, list) and len(stop_levels) > 0:
                 st.markdown(f"**Stop:** {stop_levels[0]}")
             else:
                 st.markdown("**Stop:** N/A")
-            
+
             # Add trade status
             trade_status = "No active trade"
             st.markdown(f"**Status:** {trade_status}")
@@ -349,24 +347,24 @@ def display_ticker_chart_card(ticker, message):
 def display_trade_monitor():
     """Display the main trade monitoring dashboard"""
     st.title("A+ Trading Monitor")
-    
+
     # Try to get setup data from our provider
     try:
         import setup_data_provider
         setup_message = setup_data_provider.get_latest_setup()
-        
+
         if not setup_message:
             setup_data_provider.update_setup_from_discord()
             setup_message = setup_data_provider.get_latest_setup()
-        
+
         if not setup_message:
             st.error("Could not retrieve trading setup data.")
-            
+
             # Fallback to sample data from the provider
             setup_message = setup_data_provider.get_sample_setup()
     except Exception as e:
         st.error(f"Error retrieving setup data: {str(e)}")
-        
+
         # If the API is available, try to get data from there
         if api_health_check():
             # Get active setups
@@ -387,24 +385,24 @@ def display_trade_monitor():
             st.error("API is not available. Please check the server status.")
             from setup_data_provider import get_sample_setup
             setup_message = get_sample_setup()
-    
+
     # Display the latest setup message
     display_message_card(setup_message)
-    
+
     # Display charts for each ticker
     st.header("Active Ticker Charts")
     st.markdown("---")
-    
+
     # Get tickers from the setup message
     tickers = setup_message.get('tickers', [])
-    
+
     # Skip ticker 'A' if it exists (likely not a real ticker in this context)
     tickers = [ticker for ticker in tickers if ticker != 'A']
-    
+
     for ticker in tickers:
-        display_ticker_chart_card(ticker, sample_message)
+        display_ticker_chart_card(ticker, setup_message)
         st.markdown("---")
-    
+
     # Get and display active trades
     active_trades = get_active_trades()
     if active_trades:
