@@ -25,13 +25,17 @@ def validate_message(message: Dict) -> bool:
     return all(field in message for field in required_fields)
 
 async def fetch_latest_messages(limit: int = 50) -> List[Dict]:
-    """Fetch latest messages with retries"""
+    """
+    Fetch latest messages with enhanced retries and validation
+    Returns a list of validated message dictionaries
+    """
     if not DISCORD_BOT_TOKEN or not CHANNEL_ID:
         logger.error("Missing Discord configuration")
         return []
 
     messages = []
     retry_attempts = 3
+    retry_delay = 1  # seconds between retries
 
     for attempt in range(retry_attempts):
         try:
@@ -77,9 +81,18 @@ async def fetch_latest_messages(limit: int = 50) -> List[Dict]:
     return messages
 
 def store_message(message: Dict) -> Optional[int]:
-    """Store message in PostgreSQL with validation and trigger parsing"""
+    """
+    Store message in PostgreSQL with enhanced validation and event publishing
+    Returns the stored message ID if successful
+    """
+    # Validate message structure and content
     if not validate_message(message):
         logger.error(f"Invalid message format: {message}")
+        return None
+
+    # Validate message content is not empty
+    if not message.get('content', '').strip():
+        logger.warning("Skipping empty message")
         return None
 
     try:
