@@ -18,7 +18,7 @@ logging.basicConfig(
 
 from flask import Flask, jsonify, render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
-from common.db import db, init_db
+from common.db import db, initialize_db as init_db
 # Import models from the main models.py file
 import models
 
@@ -202,6 +202,14 @@ def register_feature_routes(app):
         logging.info("Strategy routes registered")
     except ImportError as e:
         logging.warning(f"Could not import strategy routes: {e}")
+        
+    # Register dashboard routes
+    try:
+        from features.dashboard.api_routes import register_routes as register_dashboard_routes
+        register_dashboard_routes(app)
+        logging.info("Dashboard routes registered")
+    except ImportError as e:
+        logging.warning(f"Could not import dashboard routes: {e}")
 
 def register_web_routes(app):
     """Register web UI routes."""
