@@ -10,7 +10,7 @@ from sqlalchemy import (
     DateTime, Date, ForeignKey, Text, Enum as SQLEnum,
     JSON
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 import enum
 from common.db import db
 
@@ -44,10 +44,13 @@ class BiasDirectionEnum(enum.Enum):
 
 
 # Database Models
-class SetupMessage(db.Model):
-    """Represents a trading setup message containing one or more ticker setups."""
+# Define models without circular reference issues
+
+class SetupMessageLegacy(db.Model):
+    """Legacy model for trading setup messages (kept for backward compatibility)"""
     __tablename__ = 'setup_messages'
     __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'models.SetupMessageLegacy'}
     
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -55,19 +58,21 @@ class SetupMessage(db.Model):
     source = Column(String(50), nullable=False, default='unknown')
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    # Relationships
-    ticker_setups = relationship("TickerSetup", back_populates="message", cascade="all, delete-orphan")
+    # Relationships - explicitly specify them after both classes are defined
     
     def __repr__(self):
-        return f"<SetupMessage date={self.date} source={self.source}>"
+        return f"<SetupMessageLegacy date={self.date} source={self.source}>"
+        
+# For backward compatibility
+SetupMessage = SetupMessageLegacy
 
 
-class TickerSetup(db.Model):
-    """Represents a trading setup for a specific ticker symbol."""
+class TickerSetupLegacy(db.Model):
+    """Legacy model for trading setup for a specific ticker symbol (kept for backward compatibility)"""
     __tablename__ = 'ticker_setups'
     __table_args__ = {'extend_existing': True}
     # Use fully-qualified module name for SQLAlchemy to distinguish between classes
-    __mapper_args__ = {'polymorphic_identity': 'models.TickerSetup'}
+    __mapper_args__ = {'polymorphic_identity': 'models.TickerSetupLegacy'}
     
     id = Column(Integer, primary_key=True)
     symbol = Column(String(10), nullable=False, index=True)
@@ -75,15 +80,15 @@ class TickerSetup(db.Model):
     message_id = Column(Integer, ForeignKey('setup_messages.id', ondelete='CASCADE'), nullable=False)
     
     # Add discriminator column for model type
-    model_type = Column(String(50), nullable=False, default='main')
-    
-    # Relationships
-    message = relationship("SetupMessage", back_populates="ticker_setups")
-    signals = relationship("Signal", back_populates="ticker_setup", cascade="all, delete-orphan")
-    bias = relationship("Bias", back_populates="ticker_setup", uselist=False, cascade="all, delete-orphan")
+    model_type = Column(String(50), nullable=False, default='legacy')
     
     def __repr__(self):
-        return f"<TickerSetup symbol={self.symbol}>"
+        return f"<TickerSetupLegacy symbol={self.symbol}>"
+        
+# For backward compatibility
+TickerSetup = TickerSetupLegacy
+
+# Relationships will be defined at the end of the file after all models are defined
 
 
 class Signal(db.Model):
@@ -101,9 +106,6 @@ class Signal(db.Model):
     targets = Column(JSON, nullable=False)  # Store as JSON array
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    # Relationships
-    ticker_setup = relationship("TickerSetup", back_populates="signals")
-    
     def __repr__(self):
         return f"<Signal category={self.category} trigger={self.trigger}>"
 
@@ -120,9 +122,8 @@ class Bias(db.Model):
     price = Column(Float, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    # Relationships
-    ticker_setup = relationship("TickerSetup", back_populates="bias")
-    bias_flip = relationship("BiasFlip", back_populates="bias", uselist=False, cascade="all, delete-orphan")
+    # Relationships will be defined after all classes are created
+    bias_flip = relationship("BiasFlip", backref="bias", uselist=False, cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Bias direction={self.direction} price={self.price}>"
@@ -138,8 +139,38 @@ class BiasFlip(db.Model):
     direction = Column(SQLEnum(BiasDirectionEnum), nullable=False)
     price_level = Column(Float, nullable=False)
     
-    # Relationships
-    bias = relationship("Bias", back_populates="bias_flip")
-    
     def __repr__(self):
         return f"<BiasFlip direction={self.direction} price={self.price_level}>"
+
+
+# Define relationships at the end of the file to avoid circular dependencies
+# Setup Message -> Ticker Setup relationship
+SetupMessageLegacy.ticker_setups = relationship(
+    "TickerSetupLegacy",
+    primaryjoin="SetupMessageLegacy.id == TickerSetupLegacy.message_id",
+    backref="message",
+    cascade="all, delete-orphan"
+)
+
+# Ticker Setup -> Signal relationship 
+Signal.ticker_setup = relationship(
+    "TickerSetupLegacy",
+    primaryjoin="Signal.ticker_setup_id == TickerSetupLegacy.id",
+    backref="signals"
+)
+
+# Ticker Setup -> Bias relationship
+Bias.ticker_setup = relationship(
+    "TickerSetupLegacy",
+    primaryjoin="Bias.ticker_setup_id == TickerSetupLegacy.id",
+    backref=backref("bias", uselist=False)
+)
+
+# Bias -> BiasFlip relationship
+Bias.bias_flip = relationship(
+    "BiasFlip",
+    primaryjoin="Bias.id == BiasFlip.bias_id",
+    backref="bias",
+    uselist=False,
+    cascade="all, delete-orphan"
+)
