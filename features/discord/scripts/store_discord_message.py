@@ -13,8 +13,9 @@ from sqlalchemy import create_engine, text
 
 # Import our local modules
 import discord_message_fetcher
-from db_utils import store_discord_message
-from event_publisher import publish_discord_message, publish_discord_setup
+from features.discord.storage.message_storage import store_message, get_message_stats
+from features.discord.storage.message_stats import check_message_stats
+from common.events.publisher import publish_discord_message, publish_discord_setup
 
 # Configure logging
 logging.basicConfig(

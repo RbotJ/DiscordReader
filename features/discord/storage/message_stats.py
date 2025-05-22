@@ -8,8 +8,11 @@ import json
 import logging
 from datetime import datetime
 
-# Import from the new module location
-from features.discord.storage.message_storage import get_message_stats, get_latest_message
+from features.discord.storage.message_storage import (
+    get_message_stats as get_storage_stats,
+    get_latest_message,
+    get_message_history
+)
 
 # Create a logger for this module
 logger = logging.getLogger(__name__)
