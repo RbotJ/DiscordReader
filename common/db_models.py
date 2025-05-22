@@ -288,3 +288,38 @@ class CandleModel(db.Model):
     
     def __repr__(self):
         return f"<Candle(id={self.id}, ticker={self.ticker}, pattern={self.pattern_type}, direction={self.direction})>"
+        
+class NotificationModel(db.Model):
+    """Notification model for storing user notifications."""
+    __tablename__ = 'notifications'
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True)
+    type = Column(String(50), nullable=False)  # 'price_alert', 'setup_triggered', etc.
+    title = Column(String(100), nullable=False)
+    message = Column(Text, nullable=False)
+    details = Column(JSON, nullable=True)
+    is_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Notification(id={self.id}, type={self.type}, title={self.title})>"
+        
+class SetupMessageModel(db.Model):
+    """Setup message model for storing parsed setup messages."""
+    __tablename__ = 'setup_messages'
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(50), nullable=True)
+    source = Column(String(50), nullable=False, default='discord')
+    raw_text = Column(Text, nullable=False)
+    parsed_data = Column(JSON, nullable=True)
+    date = Column(Date, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
+    ticker_setups = relationship("TickerSetupModel", back_populates="message", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<SetupMessage(id={self.id}, date={self.date})>"

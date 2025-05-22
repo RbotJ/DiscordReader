@@ -175,3 +175,79 @@ def get_latest_event_id(channel: Optional[Union[str, EventChannels]] = None) -> 
     except Exception as e:
         logger.error(f"Failed to get latest event ID: {e}")
         return 0
+        
+def cache_data(channel: str, key: str, data: Any) -> bool:
+    """
+    Cache data in the event system for later retrieval.
+    This is useful for storing data that needs to be accessed
+    across multiple components without passing through the database.
+    
+    Args:
+        channel: The channel/category for the cached data
+        key: The unique key to identify the data
+        data: The data to cache
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        cache_channel = f"cache:{channel}"
+        cache_data = {
+            'key': key,
+            'data': data,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        return store_event(cache_channel, cache_data)
+    except Exception as e:
+        logger.error(f"Failed to cache data: {e}")
+        return False
+        
+def get_cached_data(channel: str, key: str = None) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve cached data from the event system.
+    
+    Args:
+        channel: The channel/category for the cached data
+        key: Optional key to retrieve specific data
+        
+    Returns:
+        The cached data or None if not found
+    """
+    try:
+        cache_channel = f"cache:{channel}"
+        events = poll_events(cache_channel, limit=100)
+        
+        if not events:
+            return None
+            
+        if key:
+            # Find the specific key
+            for event in events:
+                if event['data'].get('key') == key:
+                    return event['data'].get('data')
+            return None
+        else:
+            # Return all cached data for this channel
+            result = {}
+            for event in events:
+                cache_key = event['data'].get('key')
+                if cache_key:
+                    result[cache_key] = event['data'].get('data')
+            return result
+    except Exception as e:
+        logger.error(f"Failed to get cached data: {e}")
+        return None
+        
+def get_from_cache(channel: str, key: str) -> Optional[Any]:
+    """
+    Alias for get_cached_data with a specific key.
+    
+    Args:
+        channel: The channel/category for the cached data
+        key: The key to retrieve
+        
+    Returns:
+        The cached data or None if not found
+    """
+    return get_cached_data(channel, key)

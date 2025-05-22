@@ -1,191 +1,250 @@
 """
-Market Historical Data Module
+Market History Provider
 
-This module provides historical market data for charts and analysis.
+This module provides access to historical market data from various sources.
 """
 import logging
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
+from typing import Dict, List, Optional, Any, Union
 
-from features.alpaca.client import get_stock_data_client, get_bars
-from common.events import cache_data, get_from_cache
+import pandas as pd
+from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, OptionBarsRequest
+from alpaca.data.timeframe import TimeFrame
 
-# Configure logger
+from common.db_models import TickerDataModel
+from common.db import db_session
+from features.alpaca.client import get_alpaca_api_key, get_alpaca_api_secret
+
 logger = logging.getLogger(__name__)
 
-def get_recent_candles(ticker: str, timeframe: str = '15Min', limit: int = 100) -> Optional[List[Dict]]:
-    """
-    Get recent candles for a ticker.
+# Global cache for history providers
+_history_providers = {}
 
+class HistoryProvider:
+    """Base class for market data history providers."""
+    
+    def __init__(self, source: str = "alpaca"):
+        """
+        Initialize the history provider.
+        
+        Args:
+            source: The data source to use
+        """
+        self.source = source
+        
+    def get_historical_data(self, ticker: str, 
+                           start_date: Optional[date] = None,
+                           end_date: Optional[date] = None,
+                           timeframe: str = "1Day") -> pd.DataFrame:
+        """
+        Get historical data for a ticker.
+        
+        Args:
+            ticker: The ticker symbol
+            start_date: The start date for data retrieval
+            end_date: The end date for data retrieval
+            timeframe: The timeframe for the data ("1Day", "1Hour", etc.)
+            
+        Returns:
+            DataFrame containing historical data
+        """
+        raise NotImplementedError("Subclasses must implement get_historical_data")
+
+
+class AlpacaHistoryProvider(HistoryProvider):
+    """Alpaca market data history provider."""
+    
+    def __init__(self):
+        """Initialize the Alpaca history provider."""
+        super().__init__(source="alpaca")
+        self._stock_client = None
+        self._option_client = None
+        
+    @property
+    def stock_client(self) -> StockHistoricalDataClient:
+        """Get the Alpaca stock historical data client."""
+        if self._stock_client is None:
+            try:
+                api_key = get_alpaca_api_key()
+                api_secret = get_alpaca_api_secret()
+                self._stock_client = StockHistoricalDataClient(api_key, api_secret)
+            except Exception as e:
+                logger.error(f"Failed to initialize Alpaca stock client: {e}")
+                raise
+        return self._stock_client
+    
+    @property
+    def option_client(self) -> OptionHistoricalDataClient:
+        """Get the Alpaca option historical data client."""
+        if self._option_client is None:
+            try:
+                api_key = get_alpaca_api_key()
+                api_secret = get_alpaca_api_secret()
+                self._option_client = OptionHistoricalDataClient(api_key, api_secret)
+            except Exception as e:
+                logger.error(f"Failed to initialize Alpaca option client: {e}")
+                raise
+        return self._option_client
+        
+    def get_historical_data(self, ticker: str, 
+                           start_date: Optional[date] = None,
+                           end_date: Optional[date] = None,
+                           timeframe: str = "1Day") -> pd.DataFrame:
+        """
+        Get historical data for a ticker from Alpaca.
+        
+        Args:
+            ticker: The ticker symbol
+            start_date: The start date for data retrieval
+            end_date: The end date for data retrieval
+            timeframe: The timeframe for the data ("1Day", "1Hour", etc.)
+            
+        Returns:
+            DataFrame containing historical data
+        """
+        # Default date range if not provided
+        if start_date is None:
+            start_date = date.today() - timedelta(days=30)
+        if end_date is None:
+            end_date = date.today()
+            
+        # Convert dates to datetime
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        end_datetime = datetime.combine(end_date, datetime.max.time())
+        
+        # Map timeframe string to Alpaca TimeFrame
+        timeframe_map = {
+            "1Day": TimeFrame.Day,
+            "1Hour": TimeFrame.Hour,
+            "15Min": TimeFrame.Minute,
+            "5Min": TimeFrame.Minute,
+            "1Min": TimeFrame.Minute
+        }
+        
+        alpaca_timeframe = timeframe_map.get(timeframe, TimeFrame.Day)
+        
+        # Additional parameters for non-day timeframes
+        timeframe_params = {}
+        if timeframe == "15Min":
+            timeframe_params["limit"] = 4 * 6.5 * 5  # ~4 bars per hour, 6.5 trading hours, 5 days
+        elif timeframe == "5Min":
+            timeframe_params["limit"] = 12 * 6.5 * 5  # ~12 bars per hour, 6.5 trading hours, 5 days
+        elif timeframe == "1Min":
+            timeframe_params["limit"] = 60 * 6.5 * 5  # ~60 bars per hour, 6.5 trading hours, 5 days
+        
+        try:
+            # Create the request
+            request = StockBarsRequest(
+                symbol_or_symbols=ticker,
+                timeframe=alpaca_timeframe,
+                start=start_datetime,
+                end=end_datetime,
+                **timeframe_params
+            )
+            
+            # Get the data
+            bars = self.stock_client.get_stock_bars(request)
+            
+            # Convert to DataFrame
+            if bars and ticker in bars:
+                df = bars[ticker].df
+                df.reset_index(inplace=True)
+                df['date'] = df['timestamp'].dt.date
+                return df
+            else:
+                logger.warning(f"No data returned for {ticker}")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"Failed to get historical data for {ticker}: {e}")
+            return pd.DataFrame()
+
+
+class DatabaseHistoryProvider(HistoryProvider):
+    """Database market data history provider."""
+    
+    def __init__(self):
+        """Initialize the database history provider."""
+        super().__init__(source="database")
+        
+    def get_historical_data(self, ticker: str, 
+                           start_date: Optional[date] = None,
+                           end_date: Optional[date] = None,
+                           timeframe: str = "1Day") -> pd.DataFrame:
+        """
+        Get historical data for a ticker from the database.
+        
+        Args:
+            ticker: The ticker symbol
+            start_date: The start date for data retrieval
+            end_date: The end date for data retrieval
+            timeframe: The timeframe for the data (only "1Day" supported)
+            
+        Returns:
+            DataFrame containing historical data
+        """
+        # Database only supports daily data
+        if timeframe != "1Day":
+            logger.warning(f"Database only supports daily data, ignoring timeframe {timeframe}")
+            
+        # Default date range if not provided
+        if start_date is None:
+            start_date = date.today() - timedelta(days=30)
+        if end_date is None:
+            end_date = date.today()
+            
+        try:
+            with db_session() as session:
+                query = session.query(TickerDataModel).filter(
+                    TickerDataModel.ticker == ticker,
+                    TickerDataModel.date >= start_date,
+                    TickerDataModel.date <= end_date
+                ).order_by(TickerDataModel.date)
+                
+                results = query.all()
+                
+                if not results:
+                    logger.warning(f"No data found in database for {ticker}")
+                    return pd.DataFrame()
+                    
+                # Convert to DataFrame
+                data = [{
+                    'date': r.date,
+                    'timestamp': datetime.combine(r.date, datetime.min.time()),
+                    'open': r.open_price,
+                    'high': r.high_price,
+                    'low': r.low_price,
+                    'close': r.close_price,
+                    'volume': r.volume
+                } for r in results]
+                
+                return pd.DataFrame(data)
+                
+        except Exception as e:
+            logger.error(f"Failed to get historical data from database for {ticker}: {e}")
+            return pd.DataFrame()
+
+
+def get_history_provider(source: str = "alpaca") -> HistoryProvider:
+    """
+    Get a market data history provider.
+    
     Args:
-        ticker: Ticker symbol
-        timeframe: Candle timeframe (e.g., '1Min', '5Min', '15Min', '1Hour', '1Day')
-        limit: Maximum number of candles to return
-
+        source: The data source to use
+        
     Returns:
-        List of candle dictionaries or None if data is not available
+        HistoryProvider instance
     """
-    try:
-        # Calculate start and end times
-        end = datetime.now()
-
-        # For daily candles, need more calendar days to get enough trading days
-        if timeframe == '1Day':
-            # Roughly 100 trading days is about 140 calendar days
-            start = end - timedelta(days=limit * 1.4)
+    global _history_providers
+    
+    if source not in _history_providers:
+        if source == "alpaca":
+            _history_providers[source] = AlpacaHistoryProvider()
+        elif source == "database":
+            _history_providers[source] = DatabaseHistoryProvider()
         else:
-            # For intraday candles, factor in trading hours
-            # A trading day is approximately 6.5 hours
-            multiplier = 1  # Multiplier for timeframe conversion
-            if timeframe == '1Min':
-                multiplier = 1/60
-            elif timeframe == '5Min':
-                multiplier = 5/60
-            elif timeframe == '15Min':
-                multiplier = 15/60
-            elif timeframe == '30Min':
-                multiplier = 30/60
-            elif timeframe == '1Hour':
-                multiplier = 1
-
-            trading_hours_needed = limit * multiplier
-            calendar_days_needed = trading_hours_needed / 6.5
-
-            # Add some buffer for holidays, weekends, etc.
-            calendar_days_needed = calendar_days_needed * 1.5
-
-            start = end - timedelta(days=max(1, calendar_days_needed))
-
-        # Get candle data
-        candles = get_bars(
-            ticker,
-            start=start,
-            end=end,
-            timeframe=timeframe,
-            limit=limit
-        )
-
-        if not candles:
-            logger.warning(f"No candle data returned for {ticker} with timeframe {timeframe}")
-            return None
-
-        # Format the candles for use in charts
-        formatted_candles = []
-        for candle in candles:
-            formatted_candles.append({
-                'time': candle.get('timestamp'),
-                'open': candle.get('open'),
-                'high': candle.get('high'),
-                'low': candle.get('low'),
-                'close': candle.get('close'),
-                'volume': candle.get('volume')
-            })
-
-        return formatted_candles
-
-    except Exception as e:
-        logger.error(f"Error getting recent candles for {ticker}: {e}")
-        return None
-
-def get_candles_with_indicators(ticker: str, timeframe: str = '15Min', limit: int = 100) -> Optional[List[Dict]]:
-    """
-    Get recent candles with technical indicators for a ticker.
-
-    Args:
-        ticker: Ticker symbol
-        timeframe: Candle timeframe (e.g., '1Min', '5Min', '15Min', '1Hour', '1Day')
-        limit: Maximum number of candles to return
-
-    Returns:
-        List of candle dictionaries with indicators or None if data is not available
-    """
-    try:
-        # Get raw candles
-        candles = get_recent_candles(ticker, timeframe, limit)
-        if not candles:
-            return None
-
-        # Add indicators
-        for i in range(len(candles)):
-            # Add EMA(9)
-            ema9 = calculate_ema(candles, i, 9)
-            candles[i]['ema9'] = ema9
-
-            # Add EMA(20)
-            ema20 = calculate_ema(candles, i, 20)
-            candles[i]['ema20'] = ema20
-
-            # Add VWAP (intraday only)
-            if timeframe != '1Day':
-                vwap = calculate_vwap(candles, i)
-                candles[i]['vwap'] = vwap
-
-        return candles
-
-    except Exception as e:
-        logger.error(f"Error adding indicators to candles for {ticker}: {e}")
-        return None
-
-def calculate_ema(candles: List[Dict], index: int, period: int) -> Optional[float]:
-    """
-    Calculate Exponential Moving Average.
-
-    Args:
-        candles: List of candle dictionaries
-        index: Current index in the candles list
-        period: EMA period
-
-    Returns:
-        EMA value or None if not enough data
-    """
-    # Need at least 'period' candles before the current one
-    if index < period - 1:
-        return None
-
-    # Simple MA for the first value
-    if index == period - 1:
-        sma = sum(candle['close'] for candle in candles[:period]) / period
-        return sma
-
-    # Get previous EMA
-    prev_ema = candles[index - 1].get('ema' + str(period))
-    if prev_ema is None:
-        return None
-
-    # Calculate multiplier
-    multiplier = 2 / (period + 1)
-
-    # Calculate EMA
-    ema = (candles[index]['close'] - prev_ema) * multiplier + prev_ema
-
-    return ema
-
-def calculate_vwap(candles: List[Dict], index: int) -> Optional[float]:
-    """
-    Calculate Volume-Weighted Average Price.
-
-    Args:
-        candles: List of candle dictionaries
-        index: Current index in the candles list
-
-    Returns:
-        VWAP value or None if not enough data
-    """
-    # Need at least 1 candle
-    if index < 0:
-        return None
-
-    # For simplicity, calculate VWAP for the day so far
-    # In a real system, you would reset VWAP at market open
-
-    # Get candles for today
-    today_candles = candles[:index + 1]
-
-    # Calculate sum of price * volume and sum of volume
-    sum_pv = sum((c['high'] + c['low'] + c['close']) / 3 * c['volume'] for c in today_candles)
-    sum_v = sum(c['volume'] for c in today_candles)
-
-    if sum_v == 0:
-        return None
-
-    return sum_pv / sum_v
+            logger.error(f"Unknown history provider source: {source}")
+            raise ValueError(f"Unknown history provider source: {source}")
+            
+    return _history_providers[source]

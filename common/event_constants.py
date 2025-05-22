@@ -50,6 +50,26 @@ class EventChannels(enum.Enum):
     TRADE_EXECUTED = TRADE_EXECUTED_CHANNEL
     TRADE_FILLED = TRADE_FILLED_CHANNEL
     TRADE_CANCELED = TRADE_CANCELED_CHANNEL
+    
+# Event types for categorizing events
+class EventType(enum.Enum):
+    """Enumeration of event types."""
+    # System events
+    SYSTEM = "system"
+    # Discord events
+    DISCORD = "discord"
+    # Market data events
+    MARKET_DATA = "market_data"
+    # Setup events
+    SETUP = "setup"
+    # Trading events
+    TRADE = "trade"
+    # Alert events
+    ALERT = "alert"
+    # Notification events
+    NOTIFICATION = "notification"
+    # Cache events
+    CACHE = "cache"
 
 # Mapping between enum and channel names for backwards compatibility
 class EventChannelMap:
