@@ -37,8 +37,8 @@ def create_app():
     initialize_db(app)
     
     # Initialize PostgreSQL-based event system
-    from common.events import initialize_events
-    success = initialize_events()
+    from common.events import initialize_event_system
+    success = initialize_event_system()
     if success:
         logging.info("PostgreSQL event system initialized")
     else:

@@ -28,13 +28,13 @@ def store_message(message_data: Dict[str, Any]) -> bool:
         True if successful, False otherwise
     """
     try:
-        message = DiscordMessageModel(
-            channel_id=message_data['channel_id'],
-            message_id=message_data['message_id'],
-            content=message_data['content'],
-            author=message_data.get('author', 'Unknown'),
-            created_at=datetime.utcnow()
-        )
+        # Create message using keyword arguments
+        message = DiscordMessageModel()
+        message.channel_id = message_data['channel_id']
+        message.message_id = message_data['message_id']
+        message.content = message_data['content']
+        message.author = message_data.get('author', 'Unknown')
+        message.created_at = datetime.utcnow()
         db.session.add(message)
         db.session.commit()
 
