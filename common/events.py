@@ -166,3 +166,38 @@ def initialize_events() -> bool:
     except Exception as e:
         logger.error(f"Failed to initialize event system: {e}")
         return False
+
+def delete_from_cache(key: str) -> bool:
+    """
+    Delete an item from the cache.
+    
+    Args:
+        key: The key to delete
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        cache_entry = CacheModel.query.get(key)
+        if cache_entry:
+            db.session.delete(cache_entry)
+            db.session.commit()
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Failed to delete from cache: {e}")
+        db.session.rollback()
+        return False
+
+def poll_events(channel: str, since_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Poll for events on a specific channel.
+    
+    Args:
+        channel: The channel to poll
+        since_id: Only get events with ID greater than since_id
+        
+    Returns:
+        List of events
+    """
+    return get_latest_events(channel, since_id)
