@@ -9,7 +9,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Callable
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
@@ -19,6 +19,11 @@ from common.db import db
 from common.event_constants import EventChannels
 
 logger = logging.getLogger(__name__)
+
+# Dict of event subscribers: channel -> list of callback functions
+_event_subscribers = {}
+# Flag to indicate if event system is initialized
+_event_system_initialized = False
 
 class EventModel(db.Model):
     __tablename__ = 'events'
@@ -102,3 +107,62 @@ def clear_expired_cache() -> None:
     except Exception as e:
         logger.error(f"Failed to clear expired cache: {e}")
         db.session.rollback()
+
+def subscribe_to_events(channel: str, callback: Callable[[Dict[str, Any]], None]) -> bool:
+    """
+    Subscribe to events on a specific channel.
+    
+    Args:
+        channel: The channel to subscribe to
+        callback: Function to call when an event is received
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    global _event_subscribers
+    
+    if channel not in _event_subscribers:
+        _event_subscribers[channel] = []
+    
+    _event_subscribers[channel].append(callback)
+    logger.info(f"Subscribed to events on channel: {channel}")
+    return True
+
+def unsubscribe_from_events(channel: str, callback: Callable[[Dict[str, Any]], None]) -> bool:
+    """
+    Unsubscribe from events on a specific channel.
+    
+    Args:
+        channel: The channel to unsubscribe from
+        callback: The callback function to remove
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    global _event_subscribers
+    
+    if channel in _event_subscribers and callback in _event_subscribers[channel]:
+        _event_subscribers[channel].remove(callback)
+        logger.info(f"Unsubscribed from events on channel: {channel}")
+        return True
+    
+    return False
+
+def initialize_events() -> bool:
+    """
+    Initialize the event system.
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    global _event_system_initialized
+    
+    try:
+        logger.info("Initializing event system...")
+        # Set up background thread for polling events
+        _event_system_initialized = True
+        logger.info("Event system initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize event system: {e}")
+        return False
