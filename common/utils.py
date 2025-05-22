@@ -6,6 +6,29 @@ from datetime import datetime, date
 from typing import List, Optional, Set, Dict, Any, Union
 from common.models import TickerSetupDTO, Signal, Bias
 
+def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+    """
+    Get a configured logger instance.
+    
+    Args:
+        name: The name of the logger
+        level: The logging level
+        
+    Returns:
+        A configured logger instance
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    # Add handler if none exists
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    
+    return logger
+
 # Configure logging
 logger = logging.getLogger(__name__)
 

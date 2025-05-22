@@ -5,9 +5,10 @@ This module provides access to the database for the trading application.
 """
 import os
 import logging
+import contextlib
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -54,5 +55,28 @@ def initialize_db(app=None):
         logger.error(f"Failed to initialize database: {e}")
         return False
 
+@contextlib.contextmanager
+def db_session():
+    """
+    Context manager for database sessions.
+    
+    Yields:
+        Session: SQLAlchemy session instance
+        
+    Example:
+        with db_session() as session:
+            results = session.query(MyModel).all()
+    """
+    session = db.session
+    try:
+        yield session
+        session.commit()
+    except Exception as e:
+        logger.error(f"Database session error: {e}")
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
 # Export the db object for use in other modules
-__all__ = ['db', 'initialize_db', 'Base']
+__all__ = ['db', 'initialize_db', 'Base', 'db_session']

@@ -12,6 +12,7 @@ import enum
 
 from common.db import db
 from common.db_models import EventModel
+from common.event_constants import EventType, EventChannels
 from .compat import (
     EventClient, 
     ensure_event_system, 

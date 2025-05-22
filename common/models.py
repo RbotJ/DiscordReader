@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any, Union
 
 
 @dataclass
-class TickerSetupDTO:
+class TradeSetupDTO:
     """Data Transfer Object for ticker setup information."""
     ticker: str
     date: date 
@@ -22,6 +22,9 @@ class TickerSetupDTO:
     executed: bool = False
     message_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
+    
+# Alias for backward compatibility
+TickerSetupDTO = TradeSetupDTO
 
 
 @dataclass
@@ -141,7 +144,7 @@ class TradeSetupMessage:
     
     
 @dataclass
-class TickerSetup:
+class TickerSetupData:
     """Data Transfer Object for ticker setup information with trade details."""
     ticker: str
     price_target: Optional[float]
@@ -157,6 +160,13 @@ class TickerSetup:
     
     
 @dataclass 
+class BiasFlip:
+    """Data Transfer Object for bias flip conditions."""
+    price_level: Optional[float] = None
+    condition: str = "cross"  # "above", "below", "cross"
+    message: Optional[str] = None
+    
+@dataclass 
 class Bias:
     """Data Transfer Object for market bias."""
     direction: str  # "bullish", "bearish", "neutral" 
@@ -164,5 +174,7 @@ class Bias:
     confidence: float
     reason: str
     source: str
+    price: Optional[float] = None
+    flip: Optional[BiasFlip] = None
     date: date = field(default_factory=date.today)
     created_at: datetime = field(default_factory=datetime.utcnow)

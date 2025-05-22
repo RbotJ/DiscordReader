@@ -230,10 +230,11 @@ class TickerSetupModel(db.Model):
     status = Column(String(20), nullable=False, default='active')
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    message = relationship("SetupMessageModel", back_populates="ticker_setups")
+    # Explicitly use qualified class name in relationship to avoid ambiguities
+    message = relationship("common.db_models.SetupMessageModel", back_populates="ticker_setups", foreign_keys=[setup_message_id])
     
     def __repr__(self):
-        return f"<TickerSetup(id={self.id}, symbol={self.symbol}, category={self.category})>"
+        return f"<TickerSetupModel(id={self.id}, symbol={self.symbol}, category={self.category})>"
         
 class PositionModel(db.Model):
     """Position model for tracking open positions."""
@@ -344,7 +345,11 @@ class SetupMessageModel(db.Model):
     date = Column(Date, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
-    ticker_setups = relationship("TickerSetupModel", back_populates="message", cascade="all, delete-orphan")
+    # Use fully qualified class name for relationship
+    ticker_setups = relationship("common.db_models.TickerSetupModel", 
+                               back_populates="message", 
+                               cascade="all, delete-orphan",
+                               foreign_keys="[common.db_models.TickerSetupModel.setup_message_id]")
     
     def __repr__(self):
-        return f"<SetupMessage(id={self.id}, date={self.date})>"
+        return f"<SetupMessageModel(id={self.id}, date={self.date})>"

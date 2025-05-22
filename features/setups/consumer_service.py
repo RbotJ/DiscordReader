@@ -12,6 +12,7 @@ from typing import Optional
 from features.setups.message_consumer import MessageConsumer
 from common.events import EventChannels
 from common.event_compat import event_client, subscribe_to_events, publish_event
+from common.event_constants import DISCORD_SETUP_MESSAGE_CHANNEL
 
 logger = logging.getLogger(__name__)
 
