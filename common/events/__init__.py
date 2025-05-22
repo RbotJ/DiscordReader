@@ -91,11 +91,11 @@ def store_event(channel: str, data: Dict[str, Any]) -> bool:
         bool: True if successful, False otherwise
     """
     try:
-        event = EventModel(
-            channel=channel,
-            data=data,
-            created_at=datetime.utcnow()
-        )
+        # Create event manually to avoid constructor issues
+        event = EventModel()
+        event.channel = channel
+        event.data = data
+        event.created_at = datetime.utcnow()
         
         db.session.add(event)
         db.session.commit()

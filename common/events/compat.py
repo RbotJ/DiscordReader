@@ -40,11 +40,11 @@ class EventClient:
             if not self.connected:
                 self.connect()
                 
-            event = EventModel(
-                channel=channel,
-                data=data,
-                created_at=datetime.utcnow()
-            )
+            # Create event manually to avoid constructor issues
+            event = EventModel()
+            event.channel = channel
+            event.data = data
+            event.created_at = datetime.utcnow()
             
             db.session.add(event)
             db.session.commit()
@@ -129,3 +129,6 @@ def get_latest_events(channel: str, limit: int = 10) -> list:
     except Exception as e:
         logger.error(f"Failed to get latest events: {e}")
         return []
+        
+# Export event_client for backward compatibility with existing code
+event_client = EventClient()
