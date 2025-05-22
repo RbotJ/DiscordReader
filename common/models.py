@@ -1,23 +1,43 @@
 """
-Common Models and Data Transfer Objects (DTOs)
+models.py
 
-This module defines common data structures and DTOs used across
-different components of the application.
+Pydantic schemas and DTOs for the A+ Trading App.
+Use these for serialization, validation, and agent-friendly task context.
 """
+
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
+import enum
 
-from models import (
-    SignalCategoryEnum,
-    AggressivenessEnum,
-    ComparisonTypeEnum,
-    BiasDirectionEnum
-)
+# --- Enum Definitions (match SQLAlchemy for consistency) ---
+class SignalCategoryEnum(str, enum.Enum):
+    BREAKOUT = "breakout"
+    BREAKDOWN = "breakdown"
+    REJECTION = "rejection"
+    BOUNCE = "bounce"
 
+class AggressivenessEnum(str, enum.Enum):
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    AGGRESSIVE = "aggressive"
+    CONSERVATIVE = "conservative"
+
+class ComparisonTypeEnum(str, enum.Enum):
+    ABOVE = "above"
+    BELOW = "below"
+    NEAR = "near"
+    RANGE = "range"
+
+class BiasDirectionEnum(str, enum.Enum):
+    BULLISH = "bullish"
+    BEARISH = "bearish"
+
+# --- Data Transfer Objects (DTOs) ---
 @dataclass
 class TradeSetupDTO:
-    """Data Transfer Object for ticker setup information."""
     ticker: str
     date: date 
     price: Optional[float] = None
@@ -29,10 +49,8 @@ class TradeSetupDTO:
     message_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class TradeSignalDTO:
-    """Data Transfer Object for trade signal information."""
     ticker: str
     date: date
     signal_type: str  # "buy", "sell", "hold"
@@ -48,23 +66,19 @@ class TradeSignalDTO:
     executed: bool = False
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class CandlePatternDTO:
-    """Data Transfer Object for candle pattern information."""
     ticker: str
     date: date
-    pattern_type: str  # "engulfing", "doji", etc.
-    direction: str  # "bullish", "bearish"
+    pattern_type: str
+    direction: str
     price: float
     volume: float
     strength: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class PriceAlertDTO:
-    """Data Transfer Object for price alert information."""
     ticker: str
     target_price: float
     alert_type: str  # "above", "below", "cross"
@@ -72,10 +86,8 @@ class PriceAlertDTO:
     triggered_at: Optional[datetime] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class TradeDTO:
-    """Data Transfer Object for trade information."""
     ticker: str
     order_type: str  # "market", "limit", "stop", "stop_limit"
     side: str  # "buy", "sell"
@@ -83,21 +95,19 @@ class TradeDTO:
     price: Optional[float] = None
     limit_price: Optional[float] = None
     stop_price: Optional[float] = None
-    time_in_force: str = "day"  # "day", "gtc", "ioc", "fok"
+    time_in_force: str = "day"
     extended_hours: bool = False
     client_order_id: Optional[str] = None
     setup_id: Optional[int] = None
     signal_id: Optional[int] = None
-    status: str = "new"  # "new", "filled", "partially_filled", "canceled", "rejected"
+    status: str = "new"
     filled_quantity: int = 0
     filled_price: Optional[float] = None
     filled_at: Optional[datetime] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class DiscordMessageDTO:
-    """Data Transfer Object for Discord message information."""
     message_id: str
     channel_id: str
     author_id: str
@@ -107,36 +117,8 @@ class DiscordMessageDTO:
     processed: bool = False
     embed_data: Optional[Dict[str, Any]] = None
 
-
-@dataclass
-class MarketDataDTO:
-    """Data Transfer Object for market data information."""
-    ticker: str
-    date: date
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int
-    source: str = "alpaca"
-    timestamp: datetime = field(default_factory=datetime.utcnow)
-
-
-@dataclass
-class Signal:
-    """Data Transfer Object for trading signals."""
-    ticker: str
-    side: str  # "buy", "sell"
-    timestamp: datetime
-    price: Optional[float] = None
-    reason: Optional[str] = None
-    confidence: float = 0.0
-    source: str = "system"
-
-
 @dataclass
 class TradeSetupMessage:
-    """Data Transfer Object for trade setup messages."""
     message_id: str
     content: str
     author: str
@@ -145,36 +127,31 @@ class TradeSetupMessage:
     setups: List[Dict[str, Any]] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class TickerSetupData:
-    """Data Transfer Object for ticker setup information with trade details."""
     ticker: str
     price_target: Optional[float]
     setup_type: str
-    direction: str  # "bullish", "bearish", "neutral"
+    direction: str
     confidence: float = 0.5
     source: str = "discord"
-    timeframe: str = "day"  # "day", "hour", "week"
+    timeframe: str = "day"
     active: bool = True
     message_ref: Optional[str] = None
     date: date = field(default_factory=date.today)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-
 @dataclass
 class BiasFlip:
-    """Data Transfer Object for bias flip conditions."""
+    direction: Optional[BiasDirectionEnum] = None
     price_level: Optional[float] = None
-    condition: str = "cross"  # "above", "below", "cross"
+    condition: str = "cross"
     message: Optional[str] = None
-
 
 @dataclass
 class Bias:
-    """Data Transfer Object for market bias."""
-    direction: str  # "bullish", "bearish", "neutral" 
-    timeframe: str  # "day", "hour", "week"
+    direction: str
+    timeframe: str
     confidence: float
     reason: str
     source: str
@@ -182,3 +159,13 @@ class Bias:
     flip: Optional[BiasFlip] = None
     date: date = field(default_factory=date.today)
     created_at: datetime = field(default_factory=datetime.utcnow)
+
+@dataclass
+class Signal:
+    ticker: str
+    side: str
+    timestamp: datetime
+    price: Optional[float] = None
+    reason: Optional[str] = None
+    confidence: float = 0.0
+    source: str = "system"

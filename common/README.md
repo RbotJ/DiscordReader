@@ -1,75 +1,80 @@
 # Common Components
 
-This directory contains shared components and utilities used across multiple features.
+This directory contains shared components and utilities used across multiple features in a vertical-slice architecture.
 
 ## Purpose
 
-The common components serve as the foundation for the application, providing:
+The `common/` module centralizes reusable logic, schemas, models, and helpers to ensure consistency across the application. It supports:
 
-1. Data models and schema definitions
-2. Utility functions for common operations
-3. Redis client for event orchestration
-4. Shared configuration and constants
+1. SQLAlchemy models for persistent entities
+2. Dataclasses for DTOs and structured data exchange
+3. Utility functions for logging, config, parsing, and formatting
+4. Constants and enums for type-safe control flow
+5. PostgreSQL-based event logging (no Redis)
 
 ## Components
 
 ### `models.py`
+- Dataclasses for DTOs used in services and APIs
+- Enums for typed data and trade classification
 
-- Pydantic models for data validation and serialization
-- Enums for typed data consistency
-- BaseModel extensions for common functionality
-- Type annotations for improved code quality
+### `models_db.py`
+- SQLAlchemy models for all core entities (setups, signals, trades, market data, etc.)
+- Relationships and constraints for PostgreSQL schema
 
-### `redis_utils.py`
-
-- Redis client wrapper for Pub/Sub operations
-- JSON serialization helpers for complex objects
-- Channel management for event orchestration
-- Utility methods for common Redis operations
+### `db.py`
+- Singleton SQLAlchemy instance and initialization logic
+- Raw query helper and DB connection checks
+- PostgreSQL event logger (`publish_event`, `execute_query`)
 
 ### `utils.py`
-
-- Configuration loading and environment management
-- Date and time formatting utilities
-- Currency and number formatting functions
 - Logging setup and helpers
-- Risk/reward calculation utilities
+- Configuration loader from environment or file
+- Price parsing and currency formatting
+- Risk/reward calculator
+- Unique ID generator for trade orders
+- Setup level extraction for signal monitoring
 
 ### `constants.py`
+- Market hours, position limits, risk defaults
+- Core enums like `SignalState`, `TradeDirection`, `Timeframe`
 
-- Channel names for Redis pub/sub
-- Event type definitions
-- Application-wide configuration defaults
-- Status codes and error messages
+### `event_channels.py`
+- Flat constants for PostgreSQL event channel tagging
+
+### `event_compat.py`
+- Streamlined interface for writing and querying events (used in logging/audit context)
 
 ## Usage
 
-These common components are imported by the feature modules to provide consistent functionality across the application. For example:
+These modules are imported by vertical features like `setups/`, `strategy/`, and `execution/` to maintain consistency:
 
 ```python
-from common.models import Signal, TradeOrder, Position
-from common.redis_utils import RedisClient
-from common.utils import format_currency, calculate_risk_reward, log_trade_execution
+from common.models import TradeSetupDTO, Signal, Bias
+from common.models_db import SetupMessageModel, TradeModel
+from common.utils import calculate_risk_reward, log_trade_execution
+from common.db import publish_event
 ```
 
 ## Dependencies
 
-- Pydantic for data modeling and validation
-- Redis for Pub/Sub and caching
-- JSON for serialization
-- Typing for type annotations
+- SQLAlchemy for ORM and database transactions
+- Python dataclasses and enums for modeling
+- JSON for serialization and audit logs
+- Logging module for consistent output
+- `os` and `uuid` for environment and ID generation
 
 ## Testing
 
-Tests for these common components focus on:
-- Model validation logic
-- Redis client functionality
-- Utility function correctness
-- Serialization/deserialization accuracy
+Test coverage includes:
+- DTO validation logic and enum integrity
+- SQLAlchemy model relationships and constraints
+- Utility function correctness and edge cases
+- Event logging via PostgreSQL
 
-```
+```text
 tests/
 ├── test_models.py
-├── test_redis_utils.py
-└── test_utils.py
-```
+├── test_models_db.py
+├── test_utils.py
+└── test_event_logging.py
