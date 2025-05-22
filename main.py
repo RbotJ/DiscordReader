@@ -29,13 +29,25 @@ def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
     
-    # Configure app secret key
+    # Configure app secret key and other settings
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
-    
+
+    # Configure Alpaca API credentials
+    app.config.update({
+        "ALPACA_API_KEY": os.environ.get("ALPACA_API_KEY", ""),
+        "ALPACA_API_SECRET": os.environ.get("ALPACA_API_SECRET", ""),
+        "ALPACA_API_BASE_URL": os.environ.get("ALPACA_API_BASE_URL", "https://paper-api.alpaca.markets"),
+        "PAPER_TRADING": True
+    })
+
+    # Check if Alpaca API credentials are set
+    if not app.config["ALPACA_API_KEY"] or not app.config["ALPACA_API_SECRET"]:
+        logging.warning("Alpaca API credentials not set. Some features may not work.")
+
     # Initialize database
     from common.db import initialize_db
     initialize_db(app)
-    
+
     # Initialize PostgreSQL-based event system
     from common.events import initialize_event_system
     success = initialize_event_system()
