@@ -104,7 +104,7 @@ def run_sync_operation(coroutine):
     finally:
         loop.close()
         
-def init():
+def init_discord():
     """Initialize Discord integration synchronously."""
     return run_sync_operation(initialize_discord())
     
