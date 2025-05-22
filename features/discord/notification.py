@@ -19,6 +19,10 @@ from features.setups.models import (
 
 logger = logging.getLogger(__name__)
 
+from common.events import publish_event, get_latest_events
+from common.event_constants import EventChannels
+from common.db import db
+
 def format_signal_notification(signal: Signal) -> str:
     """
     Format a signal notification message.
@@ -221,10 +225,6 @@ def notify_error(error_type: str, details: str, test_mode: bool = False) -> bool
     except Exception as e:
         logger.error(f"Error sending error notification: {e}")
         return False
-
-from common.events import publish_event, EventChannels
-from common.event_compat import event_client
-from common.db import db
 
 class NotificationManager:
     pass

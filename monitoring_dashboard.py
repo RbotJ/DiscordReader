@@ -78,14 +78,14 @@ def create_candlestick_chart(ticker, candles, signals=None):
     """Create a candlestick chart with signals"""
     if not candles:
         return None
-        
+
     # Convert to DataFrame
     df = pd.DataFrame(candles)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
-    
+
     # Create figure
     fig = go.Figure()
-    
+
     # Add candlestick chart
     fig.add_trace(go.Candlestick(
         x=df["timestamp"],
@@ -95,7 +95,7 @@ def create_candlestick_chart(ticker, candles, signals=None):
         close=df["close"],
         name="Price"
     ))
-    
+
     # Add volume as a bar chart
     if "volume" in df.columns:
         fig.add_trace(go.Bar(
@@ -105,7 +105,7 @@ def create_candlestick_chart(ticker, candles, signals=None):
             marker_color="rgba(128, 128, 128, 0.5)",
             yaxis="y2"
         ))
-    
+
     # Add signals if available
     if signals:
         for signal in signals:
@@ -124,7 +124,7 @@ def create_candlestick_chart(ticker, candles, signals=None):
                             dash="dash",
                         ),
                     )
-                    
+
                     # Add annotation
                     fig.add_annotation(
                         x=df["timestamp"].max(),
@@ -137,7 +137,7 @@ def create_candlestick_chart(ticker, candles, signals=None):
                         ),
                         xshift=10
                     )
-    
+
     # Set layout
     fig.update_layout(
         title=f"{ticker} Price Chart",
@@ -152,7 +152,7 @@ def create_candlestick_chart(ticker, candles, signals=None):
             showgrid=False
         )
     )
-    
+
     return fig
 
 def main():
@@ -160,56 +160,56 @@ def main():
     # Sidebar
     st.sidebar.title("A+ Trading Monitor")
     st.sidebar.markdown("Monitor trade setups and signals")
-    
+
     # Refresh button
     if st.sidebar.button("Refresh Data"):
         st.rerun()
-    
+
     # Get available tickers
     tickers = fetch_tickers()
-    
+
     if not tickers:
         st.warning("No tickers available. Please check the API connection.")
         if st.button("Try Again"):
             st.rerun()
         return
-    
+
     # Select ticker
     selected_ticker = st.sidebar.selectbox("Select Ticker", tickers)
-    
+
     # Select timeframe
     timeframe = st.sidebar.selectbox("Timeframe", DEFAULT_TIMEFRAMES)
-    
+
     # Get candle data and signals
     candles = fetch_candle_data(selected_ticker, timeframe=timeframe, limit=DEFAULT_PERIOD)
     signals = fetch_signals(selected_ticker)
-    
+
     # Main area
     st.title(f"{selected_ticker} Trading Monitor")
-    
+
     # Price and signal metrics
     col1, col2, col3, col4 = st.columns(4)
-    
+
     # Get latest price
     latest_price = None
     if candles:
         latest_price = candles[-1]["close"]
-        
+
     with col1:
         st.metric("Current Price", format_currency(latest_price) if latest_price else "N/A")
-    
+
     # Signal summary
     active_signals = [s for s in signals if s.get("status") == "active"]
     with col2:
         st.metric("Active Signals", len(active_signals))
-    
+
     # Display day change
     day_change = None
     day_change_pct = None
     if len(candles) >= 2:
         day_change = candles[-1]["close"] - candles[-2]["close"]
         day_change_pct = (day_change / candles[-2]["close"]) * 100
-        
+
     with col3:
         st.metric(
             "Day Change", 
@@ -217,7 +217,7 @@ def main():
             format_percent(day_change_pct) if day_change_pct is not None else "N/A",
             delta_color="normal"
         )
-    
+
     # Candlestick chart
     st.subheader("Price Chart")
     chart = create_candlestick_chart(selected_ticker, candles, signals)
@@ -225,7 +225,7 @@ def main():
         st.plotly_chart(chart, use_container_width=True)
     else:
         st.warning(f"No candle data available for {selected_ticker}")
-    
+
     # Active signals
     st.subheader("Active Trading Signals")
     if active_signals:
@@ -234,7 +234,7 @@ def main():
                 st.json(signal)
     else:
         st.info(f"No active trading signals for {selected_ticker}")
-    
+
     # Recent setups
     st.subheader("Recent Trading Setups")
     setups = fetch_api_data("setups", params={"limit": 5})
@@ -244,6 +244,6 @@ def main():
                 st.json(setup)
     else:
         st.info("No recent trading setups available")
-    
+
 if __name__ == "__main__":
     main()
