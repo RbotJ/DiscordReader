@@ -1,0 +1,60 @@
+check_discord_env.py:
+Should move to -> features/discord/utils/
+Overlaps with features/discord/test_utils.py
+Purpose: Environment validation for Discord integration
+convert_logo.py:
+Should move to -> features/dashboard/utils/
+No direct overlaps, but should be part of dashboard asset management
+Purpose: Asset conversion utility
+db_utils.py:
+Should move to -> common/
+Overlaps significantly with common/db.py
+Purpose: Database utilities that should be consolidated
+demo_trade_workflow.py:
+Should move to -> features/execution/integration/
+Overlaps with features/execution/integration/trade_workflow.py
+Purpose: Trade workflow demonstration
+discord_message_stats.py and discord_message_storage.py:
+Should move to -> features/discord/storage/
+Overlaps with features/discord/message_parser.py and message_consumer.py
+Purpose: Discord message handling utilities
+event_publisher.py:
+Should move to -> common/events/
+Overlaps with event handling in common/events.py
+Purpose: Event publishing functionality
+integration_test_webhook.py:
+Should move to -> tests/integration/
+Overlaps with tests/integration/test_api.py
+Purpose: Webhook integration testing
+recreate_db.py:
+Should move to -> common/db/
+Overlaps with common/db.py
+Purpose: Database schema management
+setup_data_provider.py:
+Should move to -> features/setups/
+Overlaps with features/setups/repository.py and service.py
+Purpose: Setup data access
+show_todays_active_tickers.py:
+Should move to -> features/market/
+Overlaps with features/market/api.py
+Purpose: Active ticker display
+simple_discord_test.py:
+Should move to -> features/discord/tests/
+Overlaps with tests/discord/test_simple_discord.py
+Purpose: Discord integration testing
+store_discord_message.py:
+Should move to -> features/discord/storage/
+Overlaps with features/discord/message_storage.py
+Purpose: Discord message persistence
+ticker_parser.py:
+Should move to -> features/setups/parser/
+Overlaps with features/setups/parser.py and enhanced_parser.py
+Purpose: Ticker parsing logic
+today_tickers_api.py:
+Should move to -> features/market/api/
+Overlaps with features/market/api_routes.py
+Purpose: Ticker API endpoints
+update_schema.py:
+Should move to -> common/db/
+Overlaps with common/db.py and recreate_db.py
+Purpose: Schema updates
