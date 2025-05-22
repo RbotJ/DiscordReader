@@ -1,64 +1,46 @@
-import os
-import asyncio
+import discord
 import logging
 from datetime import datetime
-import discord
 from common.events import publish_event, EventChannels
 from common.db import db
+from common.db_models import DiscordChannelModel
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class ChannelMonitor(discord.Client):
-    async def on_ready(self):
-        logger.info(f'{self.user} has connected to Discord!')
-
-        # Get target channel
-        channel_id = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
-        channel = self.get_channel(channel_id)
-
-        if not channel:
-            logger.error(f"Could not find channel {channel_id}")
-            return
-
+class TestDiscordClient(discord.Client):
+    async def test_channel(self, channel_id):
         try:
-            # Fetch recent messages
-            async for message in channel.history(limit=10):
-                event_data = {
-                    'event_type': 'discord_message',
-                    'message_id': str(message.id),
-                    'content': message.content,
-                    'author': str(message.author),
-                    'timestamp': message.created_at.isoformat()
-                }
+            channel = self.get_channel(int(channel_id))
+            if not channel:
+                logger.error("Channel not found")
+                return False
 
-                # Publish event
-                publish_event(EventChannels.DISCORD_MESSAGE_RECEIVED, event_data)
+            # Store channel info
+            db_channel = DiscordChannelModel(
+                channel_id=str(channel_id),
+                name=channel.name,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(db_channel)
+            db.session.commit()
 
-                logger.info(f"Published message: {message.id}")
+            logger.info(f"Successfully tested channel: {channel.name}")
+            return True
 
         except Exception as e:
-            logger.error(f"Error fetching messages: {e}")
-        finally:
-            await self.close()
+            logger.error(f"Channel test failed: {e}")
+            return False
 
-async def main():
-    # Get Discord token
-    token = os.getenv('DISCORD_BOT_TOKEN')
-    if not token:
-        logger.error("No Discord bot token found")
-        return
+async def run_test(token, channel_id):
+    client = TestDiscordClient(intents=discord.Intents.default())
+    await client.start(token)
+    await client.test_channel(channel_id)
+    await client.close()
 
-    # Create client
-    intents = discord.Intents.default()
-    intents.message_content = True
-    client = ChannelMonitor(intents=intents)
-
-    try:
-        await client.start(token)
-    except Exception as e:
-        logger.error(f"Error running Discord client: {e}")
-
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    import os
+    import asyncio
+    token = os.getenv("DISCORD_TOKEN")
+    channel_id = os.getenv("DISCORD_CHANNEL_ID")
+    asyncio.run(run_test(token, channel_id))
