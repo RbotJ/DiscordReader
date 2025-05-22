@@ -4,51 +4,42 @@ Database Utilities
 A module providing a shared SQLAlchemy database instance and common database operations.
 """
 
-import os
-import logging
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
+from datetime import datetime
+import logging
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
-# Create a base class for declarative model definitions
-class Base(DeclarativeBase):
-    pass
-
 # Create a SQLAlchemy instance
-db = SQLAlchemy(model_class=Base)
+db = SQLAlchemy()
 
-def init_db(app):
-    """
-    Initialize the database with the Flask application.
-    
-    Args:
-        app: Flask application instance
-        
-    Returns:
-        bool: True if database was initialized successfully, False otherwise
-    """
+def initialize_db(app):
+    """Initialize database with app context"""
     try:
-        # Configure database URI
-        app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-            "pool_recycle": 300,
-            "pool_pre_ping": True,
-        }
-        
-        # Initialize the database
         db.init_app(app)
-        
-        # Create all tables if they don't exist
         with app.app_context():
             db.create_all()
-            logger.info("Database initialized successfully")
-            
+        logger.info("Database initialized successfully")
         return True
     except Exception as e:
-        logger.error(f"Error initializing database: {e}")
+        logger.error(f"Failed to initialize database: {e}")
+        return False
+
+def publish_event(event_type: str, payload: dict):
+    """Publish event to database"""
+    from common.models import Event
+    try:
+        event = Event(
+            type=event_type,
+            payload=payload,
+            created_at=datetime.utcnow()
+        )
+        db.session.add(event)
+        db.session.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to publish event: {e}")
         return False
 
 def execute_query(query, params=None, fetch_one=False):
