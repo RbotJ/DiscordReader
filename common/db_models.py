@@ -15,6 +15,7 @@ from common.db import db
 class DiscordMessageModel(db.Model):
     """Discord message model for storing messages from Discord."""
     __tablename__ = 'discord_messages'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     message_id = Column(String(50), nullable=False, index=True)
@@ -29,6 +30,7 @@ class DiscordMessageModel(db.Model):
 class EventModel(db.Model):
     """Event model for storing events in the event system."""
     __tablename__ = 'events'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     channel = Column(String(50), nullable=False, index=True)
@@ -41,6 +43,7 @@ class EventModel(db.Model):
 class SetupModel(db.Model):
     """Trading setup model."""
     __tablename__ = 'setups'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     ticker = Column(String(10), nullable=False, index=True)
@@ -59,6 +62,7 @@ class SetupModel(db.Model):
 class SignalModel(db.Model):
     """Trading signal model."""
     __tablename__ = 'signals'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     setup_id = Column(Integer, ForeignKey('setups.id', ondelete='CASCADE'), nullable=False)
@@ -76,6 +80,7 @@ class SignalModel(db.Model):
 class TradeModel(db.Model):
     """Trade execution model."""
     __tablename__ = 'trades'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True)
     setup_id = Column(Integer, ForeignKey('setups.id'), nullable=True)

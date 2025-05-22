@@ -1,23 +1,31 @@
 """
-Database Schema Management
+Database Schema Management Module
 
-This module provides functions for managing the database schema, including
-creating, dropping, and updating tables.
+This module provides utilities for managing the database schema,
+including creation, updates, and migrations.
 """
+import logging
 import os
 import sys
-import logging
 from sqlalchemy import text
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Import our Flask app and database
-from main import app, db
+# Get the app and db objects
+from app import app, db
+from common.db_models import *
 
 def recreate_schema():
-    """Drop and recreate all database tables."""
+    """
+    Drop and recreate all database tables.
+    
+    This is a destructive operation that will delete all data.
+    Use with caution in production environments.
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     with app.app_context():
         try:
             # Drop all tables with CASCADE option using raw SQL
@@ -41,29 +49,33 @@ def recreate_schema():
             logger.info("All tables created successfully!")
             
             logger.info("Database schema recreation completed successfully!")
+            return True
         except Exception as e:
             logger.error(f"Error recreating schema: {str(e)}")
             db.session.rollback()
-            raise
+            return False
 
 def update_schema():
-    """Update the database schema to match our models."""
+    """
+    Update the database schema to match our models.
+    
+    This performs a non-destructive update to the database schema,
+    adding new tables and columns but preserving existing data.
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     with app.app_context():
-        connection = db.engine.connect()
         try:
-            # Check if text column exists in ticker_setups table
+            connection = db.engine.connect()
+            
+            # Check for specific tables and columns that might need updates
+            # Example: Add 'text' column to ticker_setups table if it doesn't exist
             text_result = connection.execute(text(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name = 'ticker_setups' AND column_name = 'text'"))
             text_column_exists = text_result.fetchone() is not None
 
-            # Check if message_id column exists in ticker_setups table
-            message_id_result = connection.execute(text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'ticker_setups' AND column_name = 'message_id'"))
-            message_id_column_exists = message_id_result.fetchone() is not None
-
-            # Add text column if it doesn't exist
             if not text_column_exists:
                 logger.info("Adding 'text' column to ticker_setups table...")
                 connection.execute(text(
@@ -72,29 +84,97 @@ def update_schema():
                 logger.info("'text' column added successfully!")
             else:
                 logger.info("'text' column already exists in ticker_setups table.")
+                
+            # Check if message_id column exists in ticker_setups table
+            message_id_result = connection.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'ticker_setups' AND column_name = 'message_id'"))
+            message_id_column_exists = message_id_result.fetchone() is not None
 
-            # Add message_id column if it doesn't exist
             if not message_id_column_exists:
                 logger.info("Adding 'message_id' column to ticker_setups table...")
                 connection.execute(text(
-                    "ALTER TABLE ticker_setups ADD COLUMN message_id INTEGER NOT NULL DEFAULT 0"))
-                connection.execute(text(
-                    "ALTER TABLE ticker_setups ADD CONSTRAINT fk_ticker_setups_message_id FOREIGN KEY (message_id) REFERENCES setup_messages (id) ON DELETE CASCADE"))
+                    "ALTER TABLE ticker_setups ADD COLUMN message_id INTEGER REFERENCES setup_messages(id)"))
                 connection.commit()
-                logger.info("'message_id' column and foreign key constraint added successfully!")
+                logger.info("'message_id' column added successfully!")
             else:
                 logger.info("'message_id' column already exists in ticker_setups table.")
-
-            logger.info("Schema update completed successfully!")
-
+            
+            # Use SQLAlchemy's create_all to add any missing tables
+            # This won't modify existing tables
+            db.create_all()
+            logger.info("Schema update completed successfully")
+            return True
+            
         except Exception as e:
-            connection.rollback()
-            logger.error(f"Error updating schema: {str(e)}")
-            raise
-        finally:
-            connection.close()
+            logger.error(f"Error updating schema: {e}")
+            db.session.rollback()
+            return False
+
+def check_schema():
+    """
+    Check the database schema for consistency with our models.
+    
+    Returns:
+        bool: True if schema is consistent, False otherwise
+    """
+    with app.app_context():
+        try:
+            # Check if required tables exist
+            connection = db.engine.connect()
+            tables = db.inspect(db.engine).get_table_names()
+            
+            required_tables = [
+                'setup_messages',
+                'ticker_setups',
+                'signals',
+                'biases',
+                'bias_flips',
+                'discord_messages',
+                'events'
+            ]
+            
+            missing_tables = [table for table in required_tables if table not in tables]
+            
+            if missing_tables:
+                logger.warning(f"Missing tables: {', '.join(missing_tables)}")
+                return False
+                
+            logger.info("Database schema check passed")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking schema: {e}")
+            return False
 
 if __name__ == "__main__":
-    # Call recreate_schema() or update_schema() depending on the use case
-    # recreate_schema()  # This will drop all tables and recreate them
-    update_schema()  # This will update existing tables
+    # Handle command-line arguments
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Database Schema Management Tool")
+    parser.add_argument('action', choices=['recreate', 'update', 'check'], 
+                        help='Action to perform: recreate (drop and recreate all tables), update (update schema), or check (check schema)')
+    
+    args = parser.parse_args()
+    
+    if args.action == 'recreate':
+        if recreate_schema():
+            print("Schema recreation successful")
+            sys.exit(0)
+        else:
+            print("Schema recreation failed")
+            sys.exit(1)
+    elif args.action == 'update':
+        if update_schema():
+            print("Schema update successful")
+            sys.exit(0)
+        else:
+            print("Schema update failed")
+            sys.exit(1)
+    elif args.action == 'check':
+        if check_schema():
+            print("Schema check passed")
+            sys.exit(0)
+        else:
+            print("Schema check failed")
+            sys.exit(1)

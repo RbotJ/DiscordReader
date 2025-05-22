@@ -18,7 +18,7 @@ logging.basicConfig(
 
 from flask import Flask, jsonify, render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
-from common.db import db, initialize_db as init_db
+from common.db import db
 # Import models from the main models.py file
 import models
 
@@ -33,7 +33,8 @@ def create_app():
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
     
     # Initialize database
-    init_db(app)
+    from common.db import initialize_db
+    initialize_db(app)
     
     # Initialize PostgreSQL-based event system
     from common.events import initialize_events
