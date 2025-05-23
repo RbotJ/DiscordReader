@@ -1,10 +1,13 @@
 """
 Setup Models Module
 
-This module defines the database models for trading setups, signals, and related entities.
+This module defines both database models and Pydantic schemas for trading setups,
+providing a unified data model for the entire setup feature slice.
 """
 import enum
 from datetime import datetime, date
+from typing import List, Optional, Dict, Any, Union
+from pydantic import BaseModel, Field
 from common.db import db
 
 # Define Enum types - these will be stored as strings in the database
