@@ -44,7 +44,7 @@ def parse_new_setup_messages() -> int:
                 for ticker_setup in setup_dto.ticker_setups:
                     # Create ticker setup record
                     db_ticker = TickerSetupModel(
-                        setup_id=setup_model.id,
+                        setup_message_id=setup_model.id,
                         symbol=ticker_setup.symbol,
                         text=ticker_setup.text,
                         created_at=datetime.utcnow()
