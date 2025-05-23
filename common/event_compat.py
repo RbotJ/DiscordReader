@@ -10,9 +10,25 @@ import warnings
 from typing import Dict, Any
 
 # Import the canonical implementation
-from common.db import publish_event as _canonical_publish_event
+from common.db import publish_event as _canonical_publish_event, get_latest_events
 
 logger = logging.getLogger(__name__)
+
+# Compatibility stubs for deprecated functions
+class EventClient:
+    """Deprecated event client. Use common.db functions directly."""
+    
+    def publish(self, channel: str, data: Dict[str, Any]) -> bool:
+        warnings.warn("EventClient is deprecated. Use common.db.publish_event instead.", DeprecationWarning)
+        return _canonical_publish_event("legacy", data, channel)
+
+# Global instance for backward compatibility
+event_client = EventClient()
+
+def subscribe_to_events(channel: str, callback=None):
+    """Deprecated function for backward compatibility."""
+    warnings.warn("subscribe_to_events is deprecated. Use common.db.get_latest_events instead.", DeprecationWarning)
+    return get_latest_events(channel)
 
 def publish_event(channel: str, data: Dict[str, Any]) -> bool:
     """
