@@ -8,7 +8,6 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import logging
 from sqlalchemy import text
-from common.models_db import EventModel
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 db = SQLAlchemy()
 
 def initialize_db(app):
-    """Initialize database with app context"""
+    """Initialize database with app context."""
     try:
         db.init_app(app)
         with app.app_context():
@@ -31,6 +30,7 @@ def initialize_db(app):
 def publish_event(event_type: str, payload: dict):
     """Publish event to the database."""
     try:
+        from common.models_db import EventModel  # local import to avoid circular dependency
         event = EventModel(
             channel=event_type,
             data=payload,
