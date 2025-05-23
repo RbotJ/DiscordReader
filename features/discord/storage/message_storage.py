@@ -12,8 +12,6 @@ from datetime import datetime
 # Import from common modules
 from common.db import db
 from common.db_models import DiscordMessageModel
-from common.events.publisher import publish_discord_message
-from common.events.constants import EventChannels
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -37,9 +35,6 @@ def store_message(message_data):
         )
         db.session.add(message)
         db.session.commit()
-
-        # Publish event for other components
-        publish_discord_message(message_data)
         return True
     except Exception as e:
         logger.error(f"Failed to store Discord message: {e}")

@@ -12,10 +12,9 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 
 # Import our local modules
-import discord_message_fetcher
+from features.discord.message_fetcher import fetch_latest_messages
 from features.discord.storage.message_storage import store_message, get_message_stats
-from features.discord.storage.message_stats import check_message_stats
-from common.events.publisher import publish_discord_message, publish_discord_setup
+from features.discord.message_publisher import publish_discord_message
 
 # Configure logging
 logging.basicConfig(
@@ -27,14 +26,16 @@ logger = logging.getLogger(__name__)
 async def fetch_and_store_message():
     """Fetch and store a Discord message in the database."""
     # Fetch the message
-    message_data = await discord_message_fetcher.fetch_discord_message()
+    messages = await fetch_latest_messages(limit=1)
     
-    if not message_data:
+    if not messages:
         logger.error("Failed to fetch Discord message")
         return False
     
+    message_data = messages[0]
+    
     # Store the message in the database
-    success = store_discord_message(message_data)
+    success = store_message(message_data)
     
     if not success:
         logger.error("Failed to store Discord message in database")
@@ -48,7 +49,7 @@ async def fetch_and_store_message():
     else:
         logger.warning("Failed to publish Discord message as an event")
     
-    # Check if this is a trading setup message and publish it separately
+    # Check if this is a trading setup message
     # A simple heuristic: look for common trading terms
     content = message_data.get('content', '').lower()
     setup_keywords = ['setup', 'breakout', 'trade', 'long', 'short', 'trigger', 'buy', 'sell', 'entry', 'target']
@@ -56,11 +57,7 @@ async def fetch_and_store_message():
     is_setup = any(keyword in content for keyword in setup_keywords)
     
     if is_setup:
-        setup_success = publish_discord_setup(message_data)
-        if setup_success:
-            logger.info("Published Discord message as a trading setup")
-        else:
-            logger.warning("Failed to publish Discord message as a trading setup")
+        logger.info("Detected trading setup message content")
     
     return success
 
