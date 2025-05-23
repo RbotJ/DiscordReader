@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Messages Monitor - A+ Trading</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">📈 A+ Trading</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/admin/discord/channels">Channels</a>
+                <a class="nav-link active" href="/admin/discord/messages">Messages</a>
+                <a class="nav-link" href="/admin/discord/tickers">Tickers</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1><i class="fas fa-comments"></i> Discord Messages Monitor</h1>
+                <p class="text-muted">Monitor latest Discord messages from A+ setup channels and their processing status.</p>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Messages</h5>
+                        <h3 id="total-messages">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Today's Messages</h5>
+                        <h3 id="today-messages">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Setups</h5>
+                        <h3 id="total-setups">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Messages -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Last 5 Messages from A+ Setups</h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadMessages()">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="messages-container">
+                            <div class="text-center">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Detail Modal -->
+    <div class="modal fade" id="messageModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Message Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="modal-content"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function loadMessages() {
+            try {
+                const response = await fetch('/admin/discord/api/messages/recent');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    displayMessages(data.messages);
+                } else {
+                    showError('Failed to load messages: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading messages: ' + error.message);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/admin/discord/api/stats');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('total-messages').textContent = data.stats.messages.total;
+                    document.getElementById('today-messages').textContent = data.stats.messages.today;
+                    document.getElementById('total-setups').textContent = data.stats.setups.total;
+                } else {
+                    console.error('Failed to load stats:', data.message);
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error.message);
+            }
+        }
+
+        function displayMessages(messages) {
+            const container = document.getElementById('messages-container');
+            
+            if (messages.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No messages found.</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            messages.forEach(message => {
+                const messageCard = document.createElement('div');
+                messageCard.className = 'card mb-3';
+                messageCard.innerHTML = `
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h6 class="card-title">
+                                    <i class="fas fa-user"></i> ${message.author}
+                                    <small class="text-muted">• ${new Date(message.created_at).toLocaleString()}</small>
+                                </h6>
+                                <p class="card-text">${message.content_preview}</p>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <span class="badge bg-primary mb-2">${message.source}</span><br>
+                                <button class="btn btn-sm btn-outline-info" onclick="showMessageDetail('${message.id}', '${escapeHtml(message.full_content)}', '${message.author}', '${message.created_at}')">
+                                    <i class="fas fa-eye"></i> View Full
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(messageCard);
+            });
+        }
+
+        function showMessageDetail(id, content, author, timestamp) {
+            const modalContent = document.getElementById('modal-content');
+            modalContent.innerHTML = `
+                <div class="mb-3">
+                    <strong>Author:</strong> ${author}<br>
+                    <strong>Timestamp:</strong> ${new Date(timestamp).toLocaleString()}<br>
+                    <strong>Message ID:</strong> ${id}
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">Full Message Content</h6>
+                    </div>
+                    <div class="card-body">
+                        <pre style="white-space: pre-wrap;">${content}</pre>
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('messageModal'));
+            modal.show();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/'/g, '&#39;');
+        }
+
+        function showError(message) {
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-danger alert-dismissible fade show';
+            alert.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alert, document.querySelector('.row'));
+        }
+
+        // Auto-refresh every 30 seconds
+        function startAutoRefresh() {
+            setInterval(() => {
+                loadMessages();
+                loadStats();
+            }, 30000);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadMessages();
+            loadStats();
+            startAutoRefresh();
+        });
+    </script>
+</body>
+</html>
