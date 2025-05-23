@@ -1,0 +1,45 @@
+```
+## Automated Template Governance and CI Integration
+
+You are my code assistant. Please implement these features to make our template layer robust and self-maintaining:
+
+1. scripts/generate_template_registry.py  
+   - Recursively scan `templates/` for all `.html` files.  
+   - Parse each file’s header comment block for metadata (`Template:`, `Purpose:`, `Used by:`, `Dependencies:`).  
+   - Produce `templates/README.md` with:  
+     - A table of active templates and their metadata.  
+     - A summary of total templates and any that lack header comments.  
+
+2. scripts/validate_templates.py  
+   - Verify every template:  
+     - Contains a header comment block.  
+     - Extends `base.html`.  
+     - Has a unique filename (no near-duplicates by Levenshtein distance < 3).  
+   - Exit with non-zero status if any check fails, printing clear error messages.
+
+3. .pre-commit-config.yaml  
+   - Add a pre-commit hook that runs `python scripts/validate_templates.py` on staged `.html` files.  
+   - Prevent commits if validation fails.
+
+4. tests/test_templates.py  
+   - Wrap `validate_templates.py` in a pytest test so CI can fail on invalid templates.  
+   - Fail with descriptive assertions for missing headers, bad inheritance, or name collisions.
+
+5. .github/workflows/template-ci.yml  
+   - On every PR or push to `main`, run:  
+     - `python scripts/validate_templates.py`  
+     - `python scripts/generate_template_registry.py`  
+   - Commit any changes to `templates/README.md` back to the branch (optional).
+
+6. Directory scaffolding under `templates/`  
+   - Create subfolders:  
+     - `layouts/` for shared layouts (e.g. `_modal.html`, `_table.html`).  
+     - `setups/` for future setup views.  
+     - `trading/` for future trading views.  
+   - Move any existing bespoke templates into their feature folder.
+
+After implementing, please run the scripts on the current codebase and paste back:
+
+- The updated `templates/README.md`.  
+- Any validation errors or a “All checks passed” confirmation.  
+```
