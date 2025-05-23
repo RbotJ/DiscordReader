@@ -42,14 +42,16 @@ class BiasDirectionEnum(enum.Enum):
 # Database Models
 class SetupMessage(db.Model):
     """Represents a trading setup message containing one or more ticker setups."""
-    __tablename__ = 'setups'
+    __tablename__ = 'setup_messages'
     __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.String(50), nullable=True)  # NEW: Discord message ID
     date = db.Column(db.Date, nullable=False)
     raw_text = db.Column(db.Text, nullable=False)
-    source = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
+    source = db.Column(db.String(50), nullable=True, default='discord')
+    parsed_data = db.Column(db.JSON, nullable=True)  # NEW: Parsed setup data
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships
     ticker_setups = db.relationship("TickerSetup", back_populates="message", cascade="all, delete-orphan")
@@ -64,13 +66,23 @@ class TickerSetup(db.Model):
     __table_args__ = {'extend_existing': True}
     
     id = db.Column(db.Integer, primary_key=True)
-    symbol = db.Column(db.String(10), nullable=False)
+    symbol = db.Column(db.String(10), nullable=False, index=True)
     text = db.Column(db.Text, nullable=True)
-    setup_id = db.Column(db.Integer, db.ForeignKey('setups.id', ondelete='CASCADE'), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=True)
+    setup_message_id = db.Column(db.Integer, db.ForeignKey('setup_messages.id', ondelete='CASCADE'), nullable=True)  # NEW: Updated FK
+    
+    # NEW: Additional setup fields
+    category = db.Column(db.String(50), nullable=True)
+    direction = db.Column(db.String(10), nullable=True)
+    price_level = db.Column(db.Float, nullable=True)
+    target1 = db.Column(db.Float, nullable=True)
+    target2 = db.Column(db.Float, nullable=True)
+    stop_loss = db.Column(db.Float, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='active')
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships
-    message = db.relationship("SetupMessage", foreign_keys=[setup_id], back_populates="ticker_setups")
+    message = db.relationship("SetupMessage", foreign_keys=[setup_message_id], back_populates="ticker_setups")
     signals = db.relationship("Signal", back_populates="ticker_setup", cascade="all, delete-orphan")
     bias = db.relationship("Bias", back_populates="ticker_setup", uselist=False, cascade="all, delete-orphan")
     
