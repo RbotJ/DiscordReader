@@ -104,24 +104,9 @@ def format_percent(value):
 def get_timeframe_bars(symbol, timeframe=TimeFrame.Day, limit=100):
     """Get historical bars for a ticker symbol"""
     try:
-        # If we don't have API credentials yet, return sample data
         if not st.session_state.get('api_key') or not st.session_state.get('api_secret'):
-            add_event('system', f"Using sample data for {symbol}")
-            # Generate sample data for demo purposes
-            dates = pd.date_range(end=datetime.datetime.now(), periods=limit, freq='1min')
-            base_price = 150 + np.random.rand() * 100
-            price_data = base_price + np.cumsum(np.random.randn(limit) * 0.5)
-            volume_data = np.random.randint(100, 10000, size=limit)
-            
-            df = pd.DataFrame({
-                'timestamp': dates,
-                'open': price_data,
-                'high': price_data + np.random.rand(limit) * 0.5,
-                'low': price_data - np.random.rand(limit) * 0.5,
-                'close': price_data,
-                'volume': volume_data
-            })
-            return df
+            add_event('error', "API credentials not configured")
+            return pd.DataFrame()
         
         # Create a historical data client
         historical_client = StockHistoricalDataClient(
@@ -624,35 +609,6 @@ with st.sidebar:
             st.session_state.active_tickers = selected_tickers
     else:
         st.warning("Connect to Alpaca API to load available tickers")
-        
-        # Demo tickers selection when not connected
-        demo_tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA"]
-        selected_demo = st.multiselect(
-            "Select demo tickers to track",
-            options=demo_tickers,
-            default=st.session_state.active_tickers
-        )
-        
-        if selected_demo != st.session_state.active_tickers:
-            st.session_state.active_tickers = selected_demo
-            add_event('system', f"Demo tickers selected: {', '.join(selected_demo)}")
-    
-    # Order entry form
-    st.header("Quick Trade")
-    with st.form("order_form"):
-        order_symbol = st.selectbox("Symbol", options=[""] + st.session_state.active_tickers)
-        order_quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
-        order_side = st.radio("Side", options=["Buy", "Sell"])
-        
-        submit_order = st.form_submit_button("Place Order")
-        
-        if submit_order and order_symbol:
-            side = OrderSide.BUY if order_side == "Buy" else OrderSide.SELL
-            success = place_market_order(order_symbol, order_quantity, side)
-            if success:
-                st.success(f"Order placed: {order_side} {order_quantity} shares of {order_symbol}")
-            else:
-                st.error("Failed to place order. Check logs for details.")
 
 # Main dashboard layout
 st.title("Trading Dashboard")
