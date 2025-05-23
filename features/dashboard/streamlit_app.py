@@ -551,11 +551,11 @@ def refresh_data():
     
     add_event('system', "Data refreshed")
 
-# Sidebar
+# Sidebar with monitoring features
 with st.sidebar:
-    st.title("Trading Dashboard")
+    st.title("A+ Trading Monitor")
     
-    # Load API credentials from Replit secrets
+    # Load API credentials silently
     import os
     api_key = os.getenv('ALPACA_API_KEY')
     api_secret = os.getenv('ALPACA_API_SECRET')
@@ -567,15 +567,41 @@ with st.sidebar:
             init_alpaca_clients()
             start_market_data_stream()
             st.session_state.initialized = True
-    else:
-        st.error("Alpaca API credentials not found in environment variables")
     
-    # Refresh data button
+    # Monitoring sections in expanders
+    with st.expander("Discord Messages", expanded=False):
+        st.subheader("Recent Messages")
+        if st.session_state.events:
+            for event in [e for e in st.session_state.events if e['type'] == 'discord'][:5]:
+                st.text(f"{event['timestamp'].strftime('%H:%M:%S')} - {event['message']}")
+    
+    with st.expander("Trade Setups", expanded=False):
+        st.subheader("Active Setups")
+        if 'signals' in st.session_state:
+            for signal in st.session_state.signals[:5]:
+                st.text(f"{signal.get('symbol')} - {signal.get('category')}")
+    
+    with st.expander("Market Data", expanded=False):
+        st.subheader("Tracked Tickers")
+        selected_tickers = st.multiselect(
+            "Select tickers to track",
+            options=st.session_state.available_tickers,
+            default=st.session_state.active_tickers
+        )
+        
+        # Update subscriptions if selection changed
+        if selected_tickers != st.session_state.active_tickers:
+            for ticker in selected_tickers:
+                if ticker not in st.session_state.active_tickers:
+                    update_ticker_subscription(ticker, subscribe=True)
+            for ticker in st.session_state.active_tickers.copy():
+                if ticker not in selected_tickers:
+                    update_ticker_subscription(ticker, subscribe=False)
+            st.session_state.active_tickers = selected_tickers
+    
+    # Refresh button at bottom of sidebar
     if st.button("Refresh Data"):
         refresh_data()
-    
-    # Ticker selection
-    st.header("Ticker Selection")
     if len(st.session_state.available_tickers) > 0:
         selected_tickers = st.multiselect(
             "Select tickers to track",
