@@ -555,20 +555,20 @@ def refresh_data():
 with st.sidebar:
     st.title("Trading Dashboard")
     
-    # API credentials
-    st.header("Alpaca API Configuration")
-    api_key = st.text_input("API Key", value=st.session_state.get('api_key', ''), type="password")
-    api_secret = st.text_input("API Secret", value=st.session_state.get('api_secret', ''), type="password")
+    # Load API credentials from Replit secrets
+    import os
+    api_key = os.getenv('ALPACA_API_KEY')
+    api_secret = os.getenv('ALPACA_API_SECRET')
     
-    if st.button("Connect"):
-        if api_key and api_secret:
-            st.session_state.api_key = api_key
-            st.session_state.api_secret = api_secret
-            add_event('system', "API credentials saved")
+    if api_key and api_secret:
+        st.session_state.api_key = api_key
+        st.session_state.api_secret = api_secret
+        if not st.session_state.get('initialized'):
             init_alpaca_clients()
             start_market_data_stream()
-        else:
-            st.error("Please enter both API key and secret")
+            st.session_state.initialized = True
+    else:
+        st.error("Alpaca API credentials not found in environment variables")
     
     # Refresh data button
     if st.button("Refresh Data"):
