@@ -1,3 +1,4 @@
+
 # Dashboard Feature
 
 This feature provides a unified dashboard system for the A+ Trading application, following vertical slice architecture principles.
@@ -9,7 +10,6 @@ The dashboard feature is organized into:
 - **components/** - Reusable UI components (charts, tables, forms)
 - **services/** - Business logic for data retrieval and processing
 - **views/** - Different dashboard views for specific use cases
-- **app.py** - Main Streamlit application entry point
 - **api_routes.py** - API endpoints for dashboard data
 
 ## Available Views
@@ -22,8 +22,4 @@ The dashboard feature is organized into:
 
 ## Usage
 
-Start the dashboard with:
-
-```bash
-python -m features.dashboard.app
-```
+The dashboard is served through the main Flask application.
