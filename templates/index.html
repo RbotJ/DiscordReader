@@ -1,35 +1,13 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }} - A+ Trading Platform</title>
-    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/">A+ Trading</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/dashboard">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/recent-setups">Recent Setups</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+<!--
+Template: Main Landing Page
+Purpose: Welcome page and main entry point for the A+ Trading Platform
+Used by: / route, home page functionality
+Dependencies: base.html, Bootstrap components
+-->
+{% extends "base.html" %}
+{% block title %}A+ Trading Platform{% endblock %}
 
+{% block content %}
     <div class="container mt-5">
         <div class="row justify-content-center">
             <div class="col-md-10 text-center">
