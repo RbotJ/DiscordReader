@@ -164,16 +164,17 @@ def get_ticker_activity():
         start_date = end_date - timedelta(days=2)  # Last 3 days including today
         
         # Query ticker setups for the date range
-        ticker_setups = TickerSetupModel.query.join(SetupMessageModel).filter(
-            SetupMessageModel.date >= start_date,
-            SetupMessageModel.date <= end_date
+        # Note: Using existing schema without setup_message_id relationship
+        ticker_setups = TickerSetupModel.query.filter(
+            TickerSetupModel.created_at >= start_date,
+            TickerSetupModel.created_at <= end_date
         ).all()
         
         # Group by date and ticker
         activity_by_date = {}
         
         for setup in ticker_setups:
-            setup_date = setup.message.date.isoformat()
+            setup_date = setup.created_at.date().isoformat()
             ticker = setup.symbol
             
             if setup_date not in activity_by_date:
