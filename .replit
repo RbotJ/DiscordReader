@@ -29,14 +29,7 @@ task = "shell.exec"
 args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
 waitForPort = 5000
 
-[[workflows.workflow]]
-name = "Start Dashboard"
-author = 41003697
-mode = "sequential"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "streamlit run features/dashboard/streamlit_app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false"
 
 [[ports]]
 localPort = 5000
@@ -50,10 +43,4 @@ externalPort = 3003
 localPort = 6379
 externalPort = 3000
 
-[[ports]]
-localPort = 8501
-externalPort = 3001
 
-[[ports]]
-localPort = 8502
-externalPort = 3002
