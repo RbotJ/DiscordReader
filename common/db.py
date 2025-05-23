@@ -30,7 +30,7 @@ def initialize_db(app):
 def publish_event(event_type: str, payload: dict, channel: str = "default"):
     """Publish event to the database using unified events schema."""
     try:
-        from common.models_db import EventModel  # local import to avoid circular dependency
+        from common.events.models import EventModel  # local import to avoid circular dependency
         event = EventModel(
             event_type=event_type,
             channel=channel,

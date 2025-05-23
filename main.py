@@ -137,6 +137,12 @@ app = create_app()
 # Component initialization on startup
 with app.app_context():
     try:
+        # Import all feature models to register them with SQLAlchemy
+        from features.setups.models import *
+        from features.strategy.models import *
+        from features.discord.models import *
+        from common.events.models import *
+        
         # Initialize database tables
         from common.db import db
         db.create_all()

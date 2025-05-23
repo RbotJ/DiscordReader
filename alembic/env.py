@@ -11,7 +11,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.db import db
-from common.models_db import *
+
+# Import all feature models to register them with SQLAlchemy
+from features.setups.models import *
+from features.strategy.models import *
+from features.discord.models import *
+from common.events.models import *
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
