@@ -29,6 +29,15 @@ task = "shell.exec"
 args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
 waitForPort = 5000
 
+[[workflows.workflow]]
+name = "Flask Dashboard"
+author = 41003697
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python -m flask run --host=0.0.0.0 --port=5000"
+
 
 
 [[ports]]
