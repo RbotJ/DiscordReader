@@ -43,7 +43,7 @@ The `common/` module centralizes reusable logic, schemas, models, and helpers to
 - Flat constants for PostgreSQL event channel tagging
 
 ### `event_compat.py`
-- Streamlined interface for writing and querying events (used in logging/audit context)
+- Standardized interface for writing and querying events (used in logging/audit context)
 
 ## Usage
 
