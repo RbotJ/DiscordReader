@@ -87,6 +87,83 @@ def check_bootstrap_consistency():
     
     return issues
 
+def check_duplicate_features():
+    """Check for duplicate routes, templates, and functionality"""
+    issues = []
+    
+    # Check for duplicate routes
+    route_patterns = {}
+    
+    # Scan Python files for route definitions
+    for py_file in Path(".").rglob("*.py"):
+        if "venv" in str(py_file) or "__pycache__" in str(py_file):
+            continue
+            
+        try:
+            with open(py_file, 'r') as f:
+                content = f.read()
+                
+            # Find route decorators
+            routes = re.findall(r'@\w+\.route\(["\']([^"\']+)["\']', content)
+            
+            for route in routes:
+                if route in route_patterns:
+                    route_patterns[route].append(str(py_file))
+                else:
+                    route_patterns[route] = [str(py_file)]
+        except:
+            continue
+    
+    # Report duplicate routes
+    for route, files in route_patterns.items():
+        if len(files) > 1:
+            issues.append(f"Duplicate route '{route}' found in: {', '.join(files)}")
+    
+    # Check for similar template names
+    template_names = []
+    for template_file in Path("templates").rglob("*.html"):
+        template_names.append(template_file.name)
+    
+    # Find potential duplicates (similar names)
+    for i, name1 in enumerate(template_names):
+        for name2 in template_names[i+1:]:
+            # Check for very similar names that might be duplicates
+            if name1 != name2 and (name1.replace('_', '') == name2.replace('-', '') or 
+                                   name1.split('.')[0] in name2 or name2.split('.')[0] in name1):
+                issues.append(f"Potentially duplicate templates: {name1} and {name2}")
+    
+    return issues
+
+def check_existing_functionality():
+    """Scan for existing similar functionality before building new features"""
+    functionality_map = {
+        'dashboard': [],
+        'discord': [],
+        'trading': [],
+        'setup': [],
+        'message': [],
+        'channel': [],
+        'ticker': []
+    }
+    
+    # Scan for existing features
+    for py_file in Path(".").rglob("*.py"):
+        if "venv" in str(py_file) or "__pycache__" in str(py_file):
+            continue
+            
+        file_path = str(py_file).lower()
+        
+        for feature in functionality_map.keys():
+            if feature in file_path:
+                functionality_map[feature].append(str(py_file))
+    
+    issues = []
+    for feature, files in functionality_map.items():
+        if len(files) > 3:  # Threshold for potential duplication
+            issues.append(f"Many {feature}-related files found ({len(files)}): Consider consolidation")
+    
+    return issues
+
 def main():
     """Run all integration checks"""
     print("🔍 Running Integration Checklist...")
@@ -104,6 +181,14 @@ def main():
     # Bootstrap consistency check
     bootstrap_issues = check_bootstrap_consistency()
     all_issues.extend(bootstrap_issues)
+    
+    # Duplicate feature check
+    duplicate_issues = check_duplicate_features()
+    all_issues.extend(duplicate_issues)
+    
+    # Existing functionality check
+    existing_issues = check_existing_functionality()
+    all_issues.extend(existing_issues)
     
     if all_issues:
         print("❌ Integration Issues Found:")
