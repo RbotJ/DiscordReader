@@ -94,11 +94,11 @@ def main():
                 else:
                     print("\nNo ticker setups found in database. Message may still be in processing queue.")
             
-            # Also check the event_bus table
+            # Also check the events table
             with engine.connect() as conn:
                 query = text("""
                     SELECT id, event_type, channel, created_at 
-                    FROM event_bus 
+                    FROM events 
                     ORDER BY id DESC 
                     LIMIT 5
                 """)
