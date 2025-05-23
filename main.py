@@ -1,8 +1,8 @@
 """
 A+ Trading Application Main Module
 
-This is the main entry point for the trading application.
-It configures the Flask application, initializes components,
+This is the main entry point for the Flask-based trading application.
+It configures the application, initializes components,
 and sets up the routes.
 """
 
