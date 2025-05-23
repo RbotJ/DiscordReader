@@ -10,14 +10,14 @@ from sqlalchemy import func, desc
 from common.db import db
 from common.db_models import SetupModel, TickerSetupModel, SignalModel
 from features.setups.service import SetupService
-from features.setups.parser import SetupParser
 
 # Create blueprint
 bp = Blueprint('setups_api', __name__, url_prefix='/api/setups')
 logger = logging.getLogger(__name__)
 
-# Configure parser
-parser = SetupParser()
+def get_setup_service():
+    """Dependency injection for SetupService."""
+    return SetupService()
 
 @bp.route('/webhook', methods=['POST']) 
 def receive_setup_webhook():
@@ -27,7 +27,8 @@ def receive_setup_webhook():
         if not data:
             return jsonify({'error': 'No JSON data provided'}), 400
 
-        success, response = SetupService.process_webhook(
+        service = get_setup_service()
+        success, response = service.process_webhook(
             payload=data,
             signature=request.headers.get('X-Webhook-Signature')
         )
@@ -99,7 +100,8 @@ def get_ticker_setups(symbol):
                 'message': 'Limit must be between 1 and 100'
             }), 400
 
-        setups = SetupService.get_setups_by_symbol(symbol=symbol.upper(), limit=limit)
+        service = get_setup_service()
+        setups = service.get_setups_by_symbol(symbol=symbol.upper(), limit=limit)
         return jsonify({
             'status': 'success',
             'symbol': symbol.upper(),
@@ -117,7 +119,8 @@ def get_ticker_setups(symbol):
 def get_setup_detail(setup_id):
     """Get detailed information for a specific setup."""
     try:
-        setup = SetupService.get_setup_by_id(setup_id)
+        service = get_setup_service()
+        setup = service.get_setup_by_id(setup_id)
         if not setup:
             return jsonify({
                 'status': 'error',

@@ -76,7 +76,7 @@ class SetupService:
             source = payload.get("source", "webhook")
             
             # Parse the setup message
-            setup_message = parse_setup_message(message_text, source=source)
+            setup_message = parse_setup_message(message_text)
             
             # Validate parsed content
             if not setup_message.setups:
