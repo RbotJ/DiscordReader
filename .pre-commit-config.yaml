@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: validate-templates
+        name: Validate Template Files
+        entry: python scripts/validate_templates.py
+        language: system
+        files: \.html$
+        stages: [commit]
+        verbose: true
+        description: "Validates template files for proper structure and documentation"
+        
+      - id: generate-template-registry
+        name: Update Template Registry
+        entry: python scripts/generate_template_registry.py
+        language: system
+        files: templates/.*\.html$
+        stages: [commit]
+        verbose: true
+        description: "Updates templates/README.md with current template inventory"
+        pass_filenames: false

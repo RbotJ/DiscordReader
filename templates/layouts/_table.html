@@ -1,0 +1,106 @@
+<!--
+Template: Data Table Component
+Purpose: Reusable responsive table for displaying structured data with sorting and pagination
+Used by: Discord channels, messages, tickers, setups, and trading views
+Dependencies: base.html, Bootstrap table classes
+-->
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        {% if table_title %}
+        <caption class="caption-top">
+            <h5>{{ table_title }}</h5>
+            {% if table_description %}
+            <small class="text-muted">{{ table_description }}</small>
+            {% endif %}
+        </caption>
+        {% endif %}
+        
+        <thead class="table-dark">
+            <tr>
+                {% for header in table_headers %}
+                <th scope="col" {% if header.sortable %}class="sortable"{% endif %}>
+                    {{ header.label or header }}
+                    {% if header.sortable %}
+                    <i class="bi bi-arrow-down-up ms-1"></i>
+                    {% endif %}
+                </th>
+                {% endfor %}
+                {% if table_actions %}
+                <th scope="col">Actions</th>
+                {% endif %}
+            </tr>
+        </thead>
+        
+        <tbody>
+            {% for row in table_data %}
+            <tr>
+                {% for cell in row %}
+                <td>
+                    {% if cell.type == 'badge' %}
+                    <span class="badge bg-{{ cell.color or 'secondary' }}">{{ cell.value }}</span>
+                    {% elif cell.type == 'link' %}
+                    <a href="{{ cell.url }}" class="text-decoration-none">{{ cell.value }}</a>
+                    {% elif cell.type == 'currency' %}
+                    <span class="font-monospace">${{ "%.2f"|format(cell.value) }}</span>
+                    {% elif cell.type == 'datetime' %}
+                    <span class="text-muted">{{ cell.value.strftime('%m/%d %H:%M') if cell.value else 'N/A' }}</span>
+                    {% else %}
+                    {{ cell.value if cell.value is not none else cell }}
+                    {% endif %}
+                </td>
+                {% endfor %}
+                
+                {% if table_actions %}
+                <td>
+                    {% for action in table_actions %}
+                    {% if action.type == 'edit' %}
+                    <button class="btn btn-sm btn-outline-primary me-1" 
+                            onclick="{{ action.onclick }}">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    {% elif action.type == 'delete' %}
+                    <button class="btn btn-sm btn-outline-danger me-1" 
+                            onclick="{{ action.onclick }}">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    {% elif action.type == 'view' %}
+                    <a href="{{ action.url }}" class="btn btn-sm btn-outline-info me-1">
+                        <i class="bi bi-eye"></i>
+                    </a>
+                    {% endif %}
+                    {% endfor %}
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="{{ table_headers|length + (1 if table_actions else 0) }}" class="text-center text-muted py-4">
+                    <i class="bi bi-inbox display-6"></i>
+                    <div class="mt-2">{{ empty_message or 'No data available' }}</div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if pagination %}
+<nav aria-label="Table pagination">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {{ 'disabled' if pagination.current_page <= 1 else '' }}">
+            <a class="page-link" href="{{ pagination.prev_url or '#' }}">Previous</a>
+        </li>
+        
+        {% for page_num in pagination.page_range %}
+        <li class="page-item {{ 'active' if page_num == pagination.current_page else '' }}">
+            <a class="page-link" href="{{ pagination.page_url(page_num) }}">{{ page_num }}</a>
+        </li>
+        {% endfor %}
+        
+        <li class="page-item {{ 'disabled' if pagination.current_page >= pagination.total_pages else '' }}">
+            <a class="page-link" href="{{ pagination.next_url or '#' }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
