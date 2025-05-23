@@ -14,6 +14,8 @@ import discord
 from discord.ext import tasks
 
 from features.discord.message_parser import parse_message
+from features.discord.channel_sync import sync_channels, get_listening_channels
+from features.discord.storage.message_storage import store_message
 from common.events import publish_event, EventChannels
 from common.db import db
 from common.db_models import NotificationModel
@@ -43,8 +45,48 @@ class TradingDiscordClient(discord.Client):
         logger.info(f'Connected to Discord as {self.user}')
         self.is_ready = True
 
+        # Sync all channels to database
+        await sync_channels(self)
+        
         # Start background task to check for new messages
         self.check_for_messages.start()
+
+    async def on_message(self, message):
+        """Handle incoming messages from Discord."""
+        # Skip messages from the bot itself
+        if message.author == self.user:
+            return
+            
+        # Check if this channel is configured for listening
+        listening_channels = get_listening_channels()
+        channel_ids = [ch.channel_id for ch in listening_channels]
+        
+        if str(message.channel.id) in channel_ids:
+            logger.info(f"Processing message from monitored channel: {message.channel.name}")
+            
+            # Convert Discord message to your existing format
+            message_data = {
+                'id': str(message.id),
+                'content': message.content,
+                'author': str(message.author),
+                'channel_id': str(message.channel.id),
+                'timestamp': message.created_at.isoformat()
+            }
+            
+            # Store message using existing pipeline
+            success = store_message(message_data)
+            
+            if success:
+                logger.info(f"Successfully stored message from {message.channel.name}")
+                
+                # Process message handlers
+                for handler in _message_handlers:
+                    try:
+                        await handler(message_data)
+                    except Exception as e:
+                        logger.error(f"Error in message handler: {e}")
+            else:
+                logger.error(f"Failed to store message from {message.channel.name}")
 
     @tasks.loop(minutes=1)
     async def check_for_messages(self):
