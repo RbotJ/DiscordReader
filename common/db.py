@@ -65,6 +65,21 @@ def execute_query(query, params=None, fetch_one=False):
         db.session.rollback()
         return None
 
+def get_latest_events(channel: str, since_timestamp=None, limit: int = 100):
+    """Query the latest events for a given channel."""
+    try:
+        from common.events.models import EventModel
+        query = db.session.query(EventModel).filter(EventModel.channel == channel)
+        
+        if since_timestamp:
+            query = query.filter(EventModel.created_at > since_timestamp)
+        
+        events = query.order_by(EventModel.created_at.desc()).limit(limit).all()
+        return [{"id": e.id, "event_type": e.event_type, "data": e.data, "created_at": e.created_at} for e in events]
+    except Exception as e:
+        logger.error(f"Failed to get latest events: {e}")
+        return []
+
 def check_database_connection():
     """
     Check if the database connection is working.
