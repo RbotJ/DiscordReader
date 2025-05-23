@@ -93,7 +93,7 @@ def parse_new_setup_messages() -> int:
                 # Publish event
                 try:
                     publish_event('setup.parsed', {
-                        'setup_id': setup_model.id,
+                        'setup_message_id': setup_model.id,
                         'ticker_count': len(setup_dto.ticker_setups),
                         'source': setup_model.source
                     })
