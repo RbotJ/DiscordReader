@@ -65,8 +65,8 @@ def format_signal_notification(signal: Signal) -> str:
         message += f"• Bias: {bias_direction.title()} {bias.condition} {price}\n"
 
         # Add flip information if available
-        if bias.flip_direction and bias.flip_price_level:
-            message += f"• Flip to {bias.flip_direction.title()} below {bias.flip_price_level}\n"
+        if hasattr(bias, 'bias_flip') and bias.bias_flip:
+            message += f"• Flip to {bias.bias_flip.direction.value.title()} below {bias.bias_flip.price_level}\n"
 
     return message
 

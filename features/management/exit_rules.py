@@ -117,7 +117,7 @@ class BiasFlipRule(ExitRule):
             
             # Short position with bullish flip
             if position_side == "short" and bias.flip_direction == "bullish" and current_price >= bias.flip_price_level:
-                return True, f"Bias flipped bullish above {bias.flip_price_level:.2f}"
+                return True, f"Bias flipped bullish above {bias.bias_flip.price_level:.2f}"
         
         return False, ""
 

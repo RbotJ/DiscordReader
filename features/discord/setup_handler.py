@@ -215,8 +215,7 @@ def extract_bias(ticker_text: str) -> Optional[Dict[str, Any]]:
         'direction': bias_match.group(1).lower(),
         'condition': bias_match.group(2).lower(),
         'price': float(bias_match.group(3)),
-        'flip_direction': None,
-        'flip_price_level': None
+        'flip': None
     }
     
     # Look for flip statements
@@ -224,9 +223,10 @@ def extract_bias(ticker_text: str) -> Optional[Dict[str, Any]]:
     flip_match = re.search(flip_pattern, ticker_text, re.IGNORECASE)
     
     if flip_match:
-        bias['flip_direction'] = flip_match.group(1).lower()
-        # For simplicity, we'll ignore the condition and just use the price
-        bias['flip_price_level'] = float(flip_match.group(3))
+        bias['flip'] = {
+            'direction': flip_match.group(1).lower(),
+            'price_level': float(flip_match.group(3))
+        }
     
     return bias
 
