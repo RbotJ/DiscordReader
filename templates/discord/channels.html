@@ -17,38 +17,10 @@ Dependencies: base.html, Bootstrap components, JavaScript fetch API
 
         <!-- Stats Cards -->
         <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body">
-                        <h5 class="card-title">Total Channels</h5>
-                        <h3 id="total-channels">-</h3>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body">
-                        <h5 class="card-title">Listening</h5>
-                        <h3 id="listening-channels">-</h3>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-info text-white">
-                    <div class="card-body">
-                        <h5 class="card-title">Announcing</h5>
-                        <h3 id="announce-channels">-</h3>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-warning text-white">
-                    <div class="card-body">
-                        <h5 class="card-title">Active</h5>
-                        <h3 id="active-channels">-</h3>
-                    </div>
-                </div>
-            </div>
+            {% include "components/_card.html" with card_title="Total Channels", card_color="primary", card_value="-", card_id="total-channels", center=true %}
+            {% include "components/_card.html" with card_title="Listening", card_color="success", card_value="-", card_id="listening-channels", center=true %}
+            {% include "components/_card.html" with card_title="Announcing", card_color="info", card_value="-", card_id="announce-channels", center=true %}
+            {% include "components/_card.html" with card_title="Active", card_color="warning", card_value="-", card_id="active-channels", center=true %}
         </div>
 
         <!-- Channels Table -->
@@ -163,55 +135,8 @@ Dependencies: base.html, Bootstrap components, JavaScript fetch API
                 channels.filter(c => c.is_active).length;
         }
 
-        async function updateChannelConfig(channelId, type, enabled) {
-            try {
-                const response = await fetch('/admin/discord/api/channels/config', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        channel_id: channelId,
-                        type: type,
-                        enabled: enabled
-                    })
-                });
-
-                const data = await response.json();
-                
-                if (data.status === 'success') {
-                    showSuccess(`Channel ${type} setting updated successfully`);
-                    loadChannels();
-                } else {
-                    showError('Failed to update channel: ' + data.message);
-                    location.reload();
-                }
-            } catch (error) {
-                showError('Error updating channel: ' + error.message);
-                location.reload();
-            }
-        }
-
-        function showSuccess(message) {
-            const alert = document.createElement('div');
-            alert.className = 'alert alert-success alert-dismissible fade show';
-            alert.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.querySelector('.container').insertBefore(alert, document.querySelector('.row'));
-            setTimeout(() => alert.remove(), 3000);
-        }
-
-        function showError(message) {
-            const alert = document.createElement('div');
-            alert.className = 'alert alert-danger alert-dismissible fade show';
-            alert.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.querySelector('.container').insertBefore(alert, document.querySelector('.row'));
-        }
+        // Use centralized utility functions from utils.js
+        // updateChannelConfig, showSuccess, and showError are now available globally
 
         document.addEventListener('DOMContentLoaded', loadChannels);
     </script>

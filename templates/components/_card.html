@@ -1,0 +1,40 @@
+<!--
+Template: Stat Card Component
+Purpose: Reusable card component for displaying statistics and metrics
+Used by: Discord admin pages, dashboard views, analytics displays
+Dependencies: Bootstrap card classes
+-->
+<div class="col-md-{{ card_width or '3' }}">
+    <div class="card bg-{{ card_color or 'primary' }} text-white {{ card_class or '' }}">
+        <div class="card-body {{ 'text-center' if center else '' }}">
+            {% if card_icon %}
+            <div class="d-flex align-items-center {{ 'justify-content-center' if center else '' }}">
+                <i class="{{ card_icon }} me-2"></i>
+                <div>
+            {% endif %}
+            
+            <h5 class="card-title {{ 'mb-1' if card_value else 'mb-0' }}">{{ card_title }}</h5>
+            
+            {% if card_value is defined %}
+            <h3 class="mb-0" id="{{ card_id or '' }}">{{ card_value if card_value is not none else '-' }}</h3>
+            {% endif %}
+            
+            {% if card_subtitle %}
+            <small class="opacity-75">{{ card_subtitle }}</small>
+            {% endif %}
+            
+            {% if card_icon %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if card_action %}
+            <div class="mt-2">
+                <a href="{{ card_action.url }}" class="btn btn-outline-light btn-sm">
+                    {{ card_action.text }}
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

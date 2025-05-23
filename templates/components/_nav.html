@@ -1,0 +1,43 @@
+<!--
+Template: Main Navigation Component
+Purpose: Centralized navigation bar with consistent menu structure across all pages
+Used by: base.html, included in all page layouts
+Dependencies: Bootstrap navbar components
+-->
+<nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">
+            <i class="bi bi-graph-up-arrow me-2"></i>
+            A+ Trading
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto mb-2 mb-md-0">
+                <li class="nav-item">
+                    <a class="nav-link" href="/">Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/trading">Trading</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/setups">Setups</a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        Discord
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="/admin/discord/channels">Channels</a></li>
+                        <li><a class="dropdown-item" href="/admin/discord/messages">Messages</a></li>
+                        <li><a class="dropdown-item" href="/admin/discord/tickers">Tickers</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/webhook-tester">Webhook Tester</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>

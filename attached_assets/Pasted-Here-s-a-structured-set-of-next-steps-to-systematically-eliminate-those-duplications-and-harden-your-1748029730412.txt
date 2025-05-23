@@ -1,0 +1,47 @@
+Here’s a structured set of next steps to systematically eliminate those duplications and harden your template layer:
+
+Extract & Include Shared Snippets
+
+Navigation: Pull your site nav markup into a standalone templates/_nav.html and include it from base.html (e.g. {% include " _nav.html" %}). Remove any leftover custom nav in feature templates.
+
+CSS/JS Includes: Move all <link> and <script> tags for Bootstrap, utility libraries, and shared scripts into base.html (or a layouts/head.html/layouts/footer.html include). This guarantees every page loads the same assets exactly once.
+
+Centralize JavaScript Utilities
+
+Create a single static/js/utils.js (or assets/js/common.js) and consolidate functions like showError(), spinner toggles, and AJAX error handlers there.
+
+Remove inline <script> blocks from each template and load utils.js globally in your base layout.
+
+Build Reusable Component Includes (or Macros)
+
+Cards: Define a Jinja include (templates/components/_card.html) or macro that takes parameters (title, value, icon). Swap out the hard-coded card markup in your Discord pages for {% include "components/_card.html" with context %} or {{ card(title, value, icon) }}.
+
+Tables: Replace any bespoke <table> HTML with calls to your existing _table.html component, passing in headers and rows. If needed, extend that component to support row-level callbacks (e.g. click handlers).
+
+Standardize Form Layouts & Validation
+
+Create a templates/components/_form_group.html include or macro for label/input/validation-message patterns.
+
+Centralize any client-side validation scripts (e.g. toggles, fetch submissions) into utils.js and call them via data-attribute hooks (data-form-toggle, data-validate).
+
+Adopt a “Components” Directory & Naming Convention
+
+Organize all shared partials under templates/components/ (or layouts/components/) with a clear prefix (_modal.html, _alert.html, _table.html, _form_group.html).
+
+Enforce that any new UI pattern goes into components/ as either an include or macro.
+
+Automate & Enforce with CI / Code Reviews
+
+Add a linting step (HTMLHint, Prettier) to catch duplicate includes or missing components.
+
+In your CI pipeline or pre-commit hooks, run your validate_templates.py to ensure no new inline CSS/JS or unauthorized duplicate markup gets checked in.
+
+Immediate Actions
+
+Draft _nav.html and migrate all nav markup into it.
+
+Create static/js/utils.js and move your duplicated JS there.
+
+Build a _card.html component and replace one of your stat cards as a proof-of-concept.
+
+From there, you can roll out the same pattern to tables, forms, and the rest of your templates. 
