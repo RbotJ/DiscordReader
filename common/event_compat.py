@@ -1,33 +1,31 @@
+"""
+Event System (PostgreSQL-based) - DEPRECATED
+
+This module is deprecated. Use common.db.publish_event instead.
+Kept for backward compatibility during migration.
+"""
+
+import logging
+import warnings
+from typing import Dict, Any
+
+# Import the canonical implementation
+from common.db import publish_event as _canonical_publish_event
+
+logger = logging.getLogger(__name__)
+
+def publish_event(channel: str, data: Dict[str, Any]) -> bool:
     """
-    Event System (PostgreSQL-based)
-
-    Simplified event publishing for audit/logging purposes only.
-    No subscription or callback logic is retained.
+    DEPRECATED: Use common.db.publish_event instead.
+    
+    This is a compatibility wrapper that redirects to the canonical implementation.
     """
-
-    import logging
-    from typing import Dict, Any, List, Optional
-    from datetime import datetime
-
-    from common.db import db
-    from common.models_db import EventModel
-
-    logger = logging.getLogger(__name__)
-
-    def publish_event(channel: str, data: Dict[str, Any]) -> bool:
-        """Publish an event to the PostgreSQL event log."""
-        try:
-            event = EventModel(
-                channel=channel,
-                data=data,
-                created_at=datetime.utcnow()
-            )
-            with db.session.begin():
-                db.session.add(event)
-            logger.debug(f"Published event to channel '{channel}'")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to publish event: {e}")
+    warnings.warn(
+        "common.event_compat.publish_event is deprecated. Use common.db.publish_event instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return _canonical_publish_event(channel, data)
             return False
 
     def get_latest_events(channel: str, since_timestamp: Optional[datetime] = None, limit: int = 100) -> List[Dict[str, Any]]:

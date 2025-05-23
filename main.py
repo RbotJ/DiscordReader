@@ -23,7 +23,41 @@ logging.basicConfig(
 socketio = SocketIO()
 
 def register_feature_routes(app):
-    """Register feature-specific routes"""
+    """Register feature-specific routes using the new Route Registry"""
+    from common.route_registry import register_feature, bootstrap_routes
+    
+    # Register all feature modules with their route functions
+    try:
+        # Import and register each feature module
+        import features.setups.api as setups_api
+        register_feature('setups', setups_api)
+        
+        import features.market.api as market_api  
+        register_feature('market', market_api)
+        
+        import features.execution.api_routes as execution_api
+        register_feature('execution', execution_api)
+        
+        import features.options.api_routes as options_api
+        register_feature('options', options_api)
+        
+        import features.alpaca.api as alpaca_api
+        register_feature('alpaca', alpaca_api)
+        
+        import features.account.api_routes as account_api
+        register_feature('account', account_api)
+        
+        import features.dashboard.api_routes as dashboard_api
+        register_feature('dashboard', dashboard_api)
+        
+        # Bootstrap all registered routes
+        bootstrap_routes(app)
+        logging.info("All feature routes registered successfully via Route Registry")
+        
+    except Exception as e:
+        logging.error(f"Error registering feature routes: {e}")
+        # Fallback to individual registration if needed
+        logging.warning("Falling back to individual route registration")
     try:
         from features.dashboard import dashboard_bp
         app.register_blueprint(dashboard_bp)

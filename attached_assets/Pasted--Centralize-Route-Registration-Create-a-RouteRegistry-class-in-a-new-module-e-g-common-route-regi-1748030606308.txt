@@ -1,0 +1,60 @@
+. Centralize Route Registration
+Create a RouteRegistry class in a new module (e.g. common/route_registry.py) with methods to register routes on your app object.
+
+Replace every register_routes(app) implementation:
+
+Remove the local register_routes in each feature file.
+
+In each feature’s entrypoint, call RouteRegistry.register(feature_module) instead.
+
+Update your app’s bootstrap to import all feature modules into RouteRegistry, and then call a single RouteRegistry.bootstrap(app) to wire up every route.
+
+Add tests that assert every feature’s endpoints exist on the app, to catch any missing registrations.
+
+2. Unify save_setup_message Logic
+Extract a SetupMessageService in features/setups/services.py with a single save_message(...) method that encapsulates your current four implementations.
+
+Refactor callers (e.g. parsers, webhooks, monitors) to import and call SetupMessageService.save_message instead of their local copy.
+
+Delete the old duplicated functions once all references point to the new service.
+
+Write a suite of unit tests against SetupMessageService to confirm it behaves identically to your previous implementations.
+
+3. Consolidate Parser Utilities
+Move normalize_text, extract_ticker_sections, process_ticker_sections, extract_signal_from_section, and extract_bias_from_section into a single common/parser_utils.py.
+
+Add comprehensive docstrings and type annotations for each function.
+
+Refactor every parser module to import from common/parser_utils instead of defining its own copy.
+
+Remove the duplicated definitions from feature-specific parser files.
+
+Cover edge cases with new parser-unit tests to ensure no behavioral drift.
+
+4. Resolve publish_event Conflict
+Decide on one “source of truth” for publish_event (likely common/events.py).
+
+Deprecate the duplicate in common/event_compat.py (or vice versa):
+
+Mark the old module as deprecated with a warning log.
+
+Redirect its import to the chosen implementation (e.g. from .events import publish_event).
+
+Gradually update all code to import directly from the “master” module.
+
+Remove the deprecated file once no references remain.
+
+5. Tidy Up Common Imports
+Audit your imports: create a linter rule (e.g. ESLint-style for Python or a simple flake8 plugin) to flag any local re-imports of logging, datetime, typing, etc.
+
+Encourage aliasing or grouping in a small common module (e.g. common/std.py) only if it makes sense for your team.
+
+Add an import-sanity test that fails when the same module is imported more than once per file.
+
+Next Steps
+
+Kick off by scaffolding common/route_registry.py and migrating one feature’s register_routes to validate your approach.
+
+Parallelize the parser-utility consolidation with the SetupMessageService work.
+
+Finish by cleaning up publish_event and tightening your import policies via CI hooks.
