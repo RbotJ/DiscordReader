@@ -11,7 +11,7 @@ import json
 from features.discord.message_parser import parse_message
 
 from common.db import db
-from common.db_models import SetupModel
+from common.db_models import SetupMessageModel
 from common.events.publisher import publish_event, EventChannels
 
 # Configure logging
@@ -25,11 +25,13 @@ PARSED_SETUP_FILE = "parsed_setups.json"
 def store_setup(setup_data: Dict[str, Any]) -> bool:
     """Store setup data in database"""
     try:
-        setup = SetupModel(
-            setup_id=setup_data.get('discord_id'),
-            ticker=setup_data.get('primary_ticker'),
-            timestamp=datetime.utcnow(),
-            data=setup_data
+        setup = SetupMessageModel(
+            message_id=setup_data.get('discord_id'),
+            date=setup_data.get('date', datetime.utcnow().date()),
+            raw_text=setup_data.get('raw_text', ''),
+            source=setup_data.get('source', 'discord'),
+            parsed_data=setup_data,
+            created_at=datetime.utcnow()
         )
         db.session.add(setup)
         db.session.commit()
@@ -43,15 +45,15 @@ def store_setup(setup_data: Dict[str, Any]) -> bool:
 
 def get_recent_setups(limit: int = 100) -> List[Dict[str, Any]]:
     """Get recent setups from database"""
-    setups = SetupModel.query.order_by(
-        SetupModel.timestamp.desc()
+    setups = SetupMessageModel.query.order_by(
+        SetupMessageModel.created_at.desc()
     ).limit(limit).all()
-    return [setup.data for setup in setups]
+    return [setup.parsed_data for setup in setups if setup.parsed_data]
 
 def get_setup_by_id(setup_id: str) -> Optional[Dict[str, Any]]:
     """Get specific setup by ID"""
-    setup = SetupModel.query.filter_by(setup_id=setup_id).first()
-    return setup.data if setup else None
+    setup = SetupMessageModel.query.filter_by(message_id=setup_id).first()
+    return setup.parsed_data if setup else None
 
 def get_latest_discord_message():
     """Get the latest Discord message from file if it exists."""
