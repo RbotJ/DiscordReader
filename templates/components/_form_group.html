@@ -1,0 +1,85 @@
+<!--
+Template: Form Group Component
+Purpose: Standardized form input group with label, input, and validation message
+Used by: All forms requiring consistent validation and styling
+Dependencies: Bootstrap form classes
+-->
+<div class="mb-3">
+    {% if field_label %}
+    <label for="{{ field_id or field_name }}" class="form-label">
+        {{ field_label }}
+        {% if field_required %}<span class="text-danger">*</span>{% endif %}
+    </label>
+    {% endif %}
+    
+    {% if field_type == 'textarea' %}
+    <textarea 
+        class="form-control {{ 'is-invalid' if field_error else '' }}" 
+        id="{{ field_id or field_name }}" 
+        name="{{ field_name }}"
+        rows="{{ field_rows or 3 }}"
+        {{ 'required' if field_required else '' }}
+        {{ 'disabled' if field_disabled else '' }}
+        placeholder="{{ field_placeholder or '' }}"
+        {% if field_data_attrs %}{% for attr, value in field_data_attrs.items() %}data-{{ attr }}="{{ value }}"{% endfor %}{% endif %}>{{ field_value or '' }}</textarea>
+    
+    {% elif field_type == 'select' %}
+    <select 
+        class="form-select {{ 'is-invalid' if field_error else '' }}" 
+        id="{{ field_id or field_name }}" 
+        name="{{ field_name }}"
+        {{ 'required' if field_required else '' }}
+        {{ 'disabled' if field_disabled else '' }}
+        {% if field_data_attrs %}{% for attr, value in field_data_attrs.items() %}data-{{ attr }}="{{ value }}"{% endfor %}{% endif %}>
+        {% if field_placeholder %}
+        <option value="">{{ field_placeholder }}</option>
+        {% endif %}
+        {% for option in field_options %}
+        <option value="{{ option.value }}" {{ 'selected' if option.value == field_value else '' }}>
+            {{ option.label or option.value }}
+        </option>
+        {% endfor %}
+    </select>
+    
+    {% elif field_type == 'checkbox' %}
+    <div class="form-check {{ 'form-switch' if field_switch else '' }}">
+        <input 
+            class="form-check-input {{ 'is-invalid' if field_error else '' }}" 
+            type="checkbox" 
+            id="{{ field_id or field_name }}" 
+            name="{{ field_name }}"
+            value="{{ field_value or '1' }}"
+            {{ 'checked' if field_checked else '' }}
+            {{ 'disabled' if field_disabled else '' }}
+            {% if field_data_attrs %}{% for attr, value in field_data_attrs.items() %}data-{{ attr }}="{{ value }}"{% endfor %}{% endif %}>
+        {% if field_label %}
+        <label class="form-check-label" for="{{ field_id or field_name }}">
+            {{ field_label }}
+        </label>
+        {% endif %}
+    </div>
+    
+    {% else %}
+    <input 
+        type="{{ field_type or 'text' }}" 
+        class="form-control {{ 'is-invalid' if field_error else '' }}" 
+        id="{{ field_id or field_name }}" 
+        name="{{ field_name }}"
+        value="{{ field_value or '' }}"
+        {{ 'required' if field_required else '' }}
+        {{ 'disabled' if field_disabled else '' }}
+        placeholder="{{ field_placeholder or '' }}"
+        {% if field_min %}min="{{ field_min }}"{% endif %}
+        {% if field_max %}max="{{ field_max }}"{% endif %}
+        {% if field_step %}step="{{ field_step }}"{% endif %}
+        {% if field_data_attrs %}{% for attr, value in field_data_attrs.items() %}data-{{ attr }}="{{ value }}"{% endfor %}{% endif %}>
+    {% endif %}
+    
+    {% if field_help %}
+    <div class="form-text">{{ field_help }}</div>
+    {% endif %}
+    
+    {% if field_error %}
+    <div class="invalid-feedback">{{ field_error }}</div>
+    {% endif %}
+</div>
