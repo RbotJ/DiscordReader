@@ -22,4 +22,5 @@ dependencies = [
     "pytz>=2025.2",
     "numpy>=2.2.5",
     "pandas>=2.2.3",
+    "alembic>=1.16.1",
 ]
