@@ -26,26 +26,31 @@ def publish_event(channel: str, data: Dict[str, Any]) -> bool:
         stacklevel=2
     )
     return _canonical_publish_event(channel, data)
-            return False
 
-    def get_latest_events(channel: str, since_timestamp: Optional[datetime] = None, limit: int = 100) -> List[Dict[str, Any]]:
-        """Query the latest events for a given channel."""
-        try:
-            query = db.session.query(EventModel).filter(
-                EventModel.channel == channel
-            )
-            if since_timestamp:
-                query = query.filter(EventModel.created_at > since_timestamp)
+def get_latest_events(channel: str, since_timestamp=None, limit: int = 100):
+    """Query the latest events for a given channel."""
+    from datetime import datetime
+    from typing import List, Dict, Any, Optional
+    from common.models_db import EventModel
+    from common.db import db
+    
+    try:
+        query = db.session.query(EventModel).filter(
+            EventModel.channel == channel
+        )
+        if since_timestamp:
+            query = query.filter(EventModel.created_at > since_timestamp)
 
-            events = query.order_by(EventModel.created_at.desc()).limit(limit).all()
-            return [
-                {
-                    'id': e.id,
-                    'channel': e.channel,
-                    'data': e.data,
-                    'created_at': e.created_at
-                } for e in events
-            ]
-        except Exception as e:
-            logger.error(f"Failed to get latest events: {e}")
-            return []
+        events = query.order_by(EventModel.created_at.desc()).limit(limit).all()
+        return [
+            {
+                'id': e.id,
+                'channel': e.channel,
+                'event_type': getattr(e, 'event_type', None),
+                'data': e.data,
+                'created_at': e.created_at
+            } for e in events
+        ]
+    except Exception as e:
+        logger.error(f"Failed to get latest events: {e}")
+        return []

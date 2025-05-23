@@ -27,12 +27,13 @@ def initialize_db(app):
         logger.error(f"Failed to initialize database: {e}")
         return False
 
-def publish_event(event_type: str, payload: dict):
-    """Publish event to the database."""
+def publish_event(event_type: str, payload: dict, channel: str = "default"):
+    """Publish event to the database using unified events schema."""
     try:
         from common.models_db import EventModel  # local import to avoid circular dependency
         event = EventModel(
-            channel=event_type,
+            event_type=event_type,
+            channel=channel,
             data=payload,
             created_at=datetime.utcnow()
         )
