@@ -1,181 +1,51 @@
 <!--
-Template: Discord Message Processing Dashboard
-Purpose: Monitor Discord message ingestion, parsing, and trading setup extraction
-Used by: / route, main dashboard for system monitoring
-Dependencies: base.html, _card.html, _table.html components
+Template: Main Landing Page
+Purpose: Welcome page and main entry point for the A+ Trading Platform
+Used by: / route, home page functionality
+Dependencies: base.html, Bootstrap components
 -->
 {% extends "base.html" %}
-{% block title %}Discord Processing Dashboard - A+ Trading{% endblock %}
+{% block title %}A+ Trading Platform{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-    <div class="row">
-        <div class="col-12">
-            <h1 class="mb-4">
-                <i class="bi bi-discord me-2"></i>
-                Discord Message Processing Dashboard
-            </h1>
-        </div>
-    </div>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-10 text-center">
+                <h1 class="display-4 mb-4">A+ Trading Platform</h1>
+                <p class="lead mb-4">An AI-powered options trading application with Discord integration for real-time signal processing</p>
 
-    <!-- Status Cards Row -->
-    <div class="row mb-4">
-        {% include "components/_card.html" with context %}
-        {% set card_title = "Messages Today" %}
-        {% set card_value = 0 %}
-        {% set card_icon = "bi bi-chat-dots" %}
-        {% set card_color = "primary" %}
-        {% set card_id = "messages-today" %}
-        {% set center = true %}
-        
-        {% include "components/_card.html" with context %}
-        {% set card_title = "Setups Parsed" %}
-        {% set card_value = 0 %}
-        {% set card_icon = "bi bi-bullseye" %}
-        {% set card_color = "success" %}
-        {% set card_id = "setups-parsed" %}
-        {% set center = true %}
-        
-        {% include "components/_card.html" with context %}
-        {% set card_title = "Processing Errors" %}
-        {% set card_value = 0 %}
-        {% set card_icon = "bi bi-exclamation-triangle" %}
-        {% set card_color = "warning" %}
-        {% set card_id = "processing-errors" %}
-        {% set center = true %}
-        
-        {% include "components/_card.html" with context %}
-        {% set card_title = "Active Channels" %}
-        {% set card_value = 0 %}
-        {% set card_icon = "bi bi-hash" %}
-        {% set card_color = "info" %}
-        {% set card_id = "active-channels" %}
-        {% set center = true %}
-    </div>
-
-    <!-- Recent Messages Table -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Recent Discord Messages</h5>
-                </div>
-                <div class="card-body">
-                    {% include "components/_table.html" with context %}
-                    {% set table_headers = [
-                        "Time",
-                        "Channel", 
-                        "Author",
-                        "Content Preview",
-                        "Setups Found",
-                        "Status"
-                    ] %}
-                    {% set table_data = [] %}
-                    {% set empty_message = "No recent Discord messages processed" %}
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center mt-5">
+                    <a href="/dashboard" class="btn btn-primary btn-lg me-md-2">View Dashboard</a>
+                    <a href="/recent-setups" class="btn btn-outline-secondary btn-lg">View Recent Setups</a>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Parsed Setups Table -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Extracted Trading Setups</h5>
-                </div>
-                <div class="card-body">
-                    {% include "components/_table.html" with context %}
-                    {% set table_headers = [
-                        "Ticker",
-                        "Setup Type",
-                        "Price Target",
-                        "Direction", 
-                        "Source Message",
-                        "Parsed At"
-                    ] %}
-                    {% set table_data = [] %}
-                    {% set empty_message = "No trading setups extracted from Discord messages" %}
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- System Health Row -->
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Processing Statistics</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row text-center">
-                        <div class="col-6 mb-3">
-                            <h6 class="text-muted">Success Rate</h6>
-                            <h4 class="text-success" id="success-rate">0%</h4>
-                        </div>
-                        <div class="col-6 mb-3">
-                            <h6 class="text-muted">Avg Parse Time</h6>
-                            <h4 class="text-info" id="parse-time">0ms</h4>
-                        </div>
-                        <div class="col-6">
-                            <h6 class="text-muted">Queue Size</h6>
-                            <h4 class="text-warning" id="queue-size">0</h4>
-                        </div>
-                        <div class="col-6">
-                            <h6 class="text-muted">Last Update</h6>
-                            <h4 class="text-secondary" id="last-update">Never</h4>
-                        </div>
+        <div class="row mt-5 pt-5">
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 stat-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">Signal Detection</h3>
+                        <p class="card-text">Our system processes trading signals from multiple sources, including Discord channels with A+ setup messages.</p>
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Channel Status</h5>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 stat-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">Automated Trading</h3>
+                        <p class="card-text">Execute trades automatically when signals match your predefined criteria using Alpaca paper trading.</p>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div id="channel-status-list">
-                        <p class="text-muted text-center">Loading channel status...</p>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 stat-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">Real-time Monitoring</h3>
+                        <p class="card-text">Monitor your positions, open orders, and trading performance in real-time on our dashboard.</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-// Auto-refresh dashboard data every 30 seconds
-function refreshDashboard() {
-    fetch('/api/discord/stats')
-        .then(response => response.json())
-        .then(data => {
-            // Update stat cards
-            document.getElementById('messages-today').textContent = data.messages_today || 0;
-            document.getElementById('setups-parsed').textContent = data.setups_parsed || 0;
-            document.getElementById('processing-errors').textContent = data.processing_errors || 0;
-            document.getElementById('active-channels').textContent = data.active_channels || 0;
-            
-            // Update processing stats
-            document.getElementById('success-rate').textContent = (data.success_rate || 0) + '%';
-            document.getElementById('parse-time').textContent = (data.avg_parse_time || 0) + 'ms';
-            document.getElementById('queue-size').textContent = data.queue_size || 0;
-            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
-        })
-        .catch(error => {
-            console.error('Error fetching dashboard stats:', error);
-            document.getElementById('last-update').textContent = 'Error';
-        });
-}
-
-// Initial load and set up auto-refresh
-document.addEventListener('DOMContentLoaded', function() {
-    refreshDashboard();
-    setInterval(refreshDashboard, 30000);
-});
-</script>
 {% endblock %}
