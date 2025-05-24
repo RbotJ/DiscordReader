@@ -78,14 +78,6 @@ def register_web_routes(app):
     def index():
         return render_template('index.html')
     
-    @app.route('/trading')
-    def trading():
-        return render_template('trading/index.html')
-    
-    @app.route('/setups')
-    def setups():
-        return render_template('setups/index.html')
-    
     @app.route('/health')
     def health():
         return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
