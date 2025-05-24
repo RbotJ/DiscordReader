@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Trading - A+ Trading{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-graph-up me-2"></i>
+            Live Trading
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Market Data</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="ticker" class="form-label">Ticker Symbol</label>
+                        <input type="text" class="form-control" id="ticker" placeholder="e.g., AAPL, TSLA">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="timeframe" class="form-label">Timeframe</label>
+                        <select class="form-select" id="timeframe">
+                            <option value="1Min">1 Minute</option>
+                            <option value="5Min">5 Minutes</option>
+                            <option value="15Min" selected>15 Minutes</option>
+                            <option value="1Hour">1 Hour</option>
+                            <option value="1Day">1 Day</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="chart-container" style="height: 400px;">
+                    <p class="text-muted text-center pt-5">Enter a ticker symbol to view live market data</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Order Entry</h5>
+            </div>
+            <div class="card-body">
+                <form id="order-form">
+                    <div class="mb-3">
+                        <label for="order-ticker" class="form-label">Symbol</label>
+                        <input type="text" class="form-control" id="order-ticker" placeholder="AAPL">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="order-side" class="form-label">Side</label>
+                        <select class="form-select" id="order-side">
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="order-type" class="form-label">Order Type</label>
+                        <select class="form-select" id="order-type">
+                            <option value="market">Market</option>
+                            <option value="limit">Limit</option>
+                            <option value="stop">Stop</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quantity" class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="quantity" placeholder="100" min="1">
+                    </div>
+                    
+                    <div class="mb-3" id="price-field" style="display: none;">
+                        <label for="price" class="form-label">Price</label>
+                        <input type="number" class="form-control" id="price" placeholder="0.00" step="0.01">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-send me-2"></i>Place Order
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Account Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h6 class="text-muted">Buying Power</h6>
+                        <h4 class="text-success">$0.00</h4>
+                    </div>
+                    <div class="col-6">
+                        <h6 class="text-muted">Portfolio Value</h6>
+                        <h4 class="text-info">$0.00</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Recent Orders</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Quantity</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-table">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted">No recent orders</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Show/hide price field based on order type
+document.getElementById('order-type').addEventListener('change', function() {
+    const priceField = document.getElementById('price-field');
+    priceField.style.display = this.value === 'market' ? 'none' : 'block';
+});
+
+// Handle order form submission
+document.getElementById('order-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    alert('Order functionality requires Alpaca API connection. Please ensure API keys are configured.');
+});
+</script>
+{% endblock %}

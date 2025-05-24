@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Trading Setups - A+ Trading{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-bullseye me-2"></i>
+            Trading Setups
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Active Setups</h5>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addSetupModal">
+                    <i class="bi bi-plus-circle me-1"></i>Add Setup
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Setup Type</th>
+                                <th>Target Price</th>
+                                <th>Direction</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="setups-table">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">No active setups found</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Setup Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-3">
+                    <div class="col-6">
+                        <h6 class="text-muted">Total Setups</h6>
+                        <h4 class="text-primary">0</h4>
+                    </div>
+                    <div class="col-6">
+                        <h6 class="text-muted">Active</h6>
+                        <h4 class="text-success">0</h4>
+                    </div>
+                </div>
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h6 class="text-muted">Triggered</h6>
+                        <h4 class="text-warning">0</h4>
+                    </div>
+                    <div class="col-6">
+                        <h6 class="text-muted">Completed</h6>
+                        <h4 class="text-info">0</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Recent Activity</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item text-center text-muted">
+                        No recent activity
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Setup Modal -->
+<div class="modal fade" id="addSetupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Trading Setup</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="setup-form">
+                    <div class="mb-3">
+                        <label for="setup-ticker" class="form-label">Ticker Symbol</label>
+                        <input type="text" class="form-control" id="setup-ticker" placeholder="AAPL" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="setup-type" class="form-label">Setup Type</label>
+                        <select class="form-select" id="setup-type" required>
+                            <option value="">Select setup type</option>
+                            <option value="breakout">Breakout</option>
+                            <option value="breakdown">Breakdown</option>
+                            <option value="bounce">Bounce</option>
+                            <option value="rejection">Rejection</option>
+                            <option value="support">Support</option>
+                            <option value="resistance">Resistance</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="target-price" class="form-label">Target Price</label>
+                        <input type="number" class="form-control" id="target-price" placeholder="0.00" step="0.01">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="direction" class="form-label">Direction</label>
+                        <select class="form-select" id="direction" required>
+                            <option value="">Select direction</option>
+                            <option value="bullish">Bullish</option>
+                            <option value="bearish">Bearish</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" rows="3" placeholder="Additional context or reasoning..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveSetup()">Save Setup</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function saveSetup() {
+    const form = document.getElementById('setup-form');
+    const formData = new FormData(form);
+    
+    // Collect form data
+    const setupData = {
+        ticker: document.getElementById('setup-ticker').value,
+        setup_type: document.getElementById('setup-type').value,
+        target_price: document.getElementById('target-price').value,
+        direction: document.getElementById('direction').value,
+        notes: document.getElementById('notes').value
+    };
+    
+    // Validate required fields
+    if (!setupData.ticker || !setupData.setup_type || !setupData.direction) {
+        alert('Please fill in all required fields');
+        return;
+    }
+    
+    // For now, just show success message
+    alert('Setup saved successfully! Database connection required for persistence.');
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('addSetupModal'));
+    modal.hide();
+    
+    // Reset form
+    form.reset();
+}
+
+// Load setups when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // This would normally load setups from the database
+    console.log('Loading trading setups...');
+});
+</script>
+{% endblock %}
