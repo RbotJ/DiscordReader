@@ -29,8 +29,12 @@ def register_feature_routes(app):
     # Register all feature modules with their route functions
     try:
         # Import and register each feature module
-        import features.setups.api as setups_api
-        register_feature('setups', setups_api)
+        # Setups functionality now distributed across vertical slices:
+        # - Parsing: features.parsing.api
+        # - Management: features.management.api 
+        # - Dashboard: features.dashboard.api
+        import features.parsing.api as parsing_api
+        register_feature('parsing', parsing_api)
         
         import features.market.api as market_api  
         register_feature('market', market_api)
@@ -138,10 +142,10 @@ app = create_app()
 with app.app_context():
     try:
         # Import all feature models to register them with SQLAlchemy
-        from features.setups.models import *
+        from features.parsing.models import *
         from features.strategy.models import *
-        from features.discord.models import *
         from common.events.models import *
+        # Note: features.discord.models moved to discord_decommission/
         
         # Initialize database tables
         from common.db import db
