@@ -4,14 +4,11 @@ Unit tests for the trade setup parser module.
 import unittest
 from datetime import date
 
-from features.setups.parser import (
-    parse_date,
-    extract_numbers,
-    extract_targets,
-    extract_signals,
-    extract_bias,
-    extract_tickers,
-    parse_setup_message
+from features.parsing.parser import MessageParser
+from common.parser_utils import (
+    normalize_text,
+    extract_ticker_sections,
+    _extract_price_levels
 )
 from common.models import SignalCategory, ComparisonType, Aggressiveness, BiasDirection
 from tests.fixtures.sample_messages import (

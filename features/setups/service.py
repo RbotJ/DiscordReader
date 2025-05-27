@@ -14,9 +14,9 @@ from datetime import datetime, date
 from typing import List, Optional, Dict, Any, Union, Tuple
 
 from common.models import TradeSetupMessage
-from features.setups.parser import parse_setup_message
-from features.setups.repository_adapter import SetupRepositoryAdapter
-from features.setups.event_publisher import publish_setup_event
+from features.parsing.parser import MessageParser
+from features.management.store import SetupStore
+from common.db import publish_event
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -38,7 +38,8 @@ class SetupService:
     
     def __init__(self, repository=None):
         """Initialize the service with optional repository dependency."""
-        self.repository = repository or SetupRepositoryAdapter()
+        self.repository = repository or SetupStore()
+        self.parser = MessageParser()
     
     def process_webhook(self, payload: Dict[str, Any], signature: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
         """
@@ -75,39 +76,49 @@ class SetupService:
             message_text = payload["text"]
             source = payload.get("source", "webhook")
             
-            # Parse the setup message
-            setup_message = parse_setup_message(message_text)
+            # Parse the setup message using new vertical slice parser
+            setup_models = self.parser.parse_message(message_text)
             
             # Validate parsed content
-            if not setup_message.setups:
+            if not setup_models:
                 return False, {
                     "success": False,
                     "error": "No valid trading setups found in message",
                     "code": "NO_SETUPS_FOUND"
                 }
             
-            # Save to database
-            message_id = self.save_setup(setup_message)
-            if not message_id:
+            # Save to database using new repository
+            saved_setups = []
+            for setup_model in setup_models:
+                saved_setup = self.repository.save_setup(setup_model)
+                if saved_setup:
+                    saved_setups.append(saved_setup)
+            
+            if not saved_setups:
                 return False, {
                     "success": False,
-                    "error": "Failed to save setup to database",
+                    "error": "Failed to save setups to database",
                     "code": "SAVE_ERROR"
                 }
             
-            # Publish event for other components
+            # Publish events for other components using new event system
             try:
-                publish_setup_event(setup_message)
+                for setup in saved_setups:
+                    publish_event("setup:created", {
+                        "ticker": setup.ticker,
+                        "setup_type": setup.setup_type,
+                        "source": source
+                    })
             except Exception as e:
-                logger.warning(f"Failed to publish setup event: {e}")
+                logger.warning(f"Failed to publish setup events: {e}")
                 # Don't fail the request if event publishing fails
             
             # Return success response
             return True, {
                 "success": True,
-                "message_id": message_id,
-                "tickers": [setup.symbol for setup in setup_message.setups],
-                "setup_count": len(setup_message.setups)
+                "setups_saved": len(saved_setups),
+                "tickers": [setup.ticker for setup in saved_setups],
+                "setup_count": len(saved_setups)
             }
         
         except Exception as e:
