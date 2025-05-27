@@ -14,10 +14,8 @@ from .models import DiscordMessageModel
 
 logger = logging.getLogger(__name__)
 
-def validate_message(message: Dict) -> bool:
-    """Validate required message fields exist"""
-    required_fields = ['id', 'content', 'author', 'timestamp']
-    return all(field in message for field in required_fields)
+# Import validation from the new centralized location
+from features.ingestion.validator import validate_message
 
 def store_message(message: Dict) -> Optional[int]:
     """

@@ -1,6 +1,6 @@
 
 import unittest
-from features.discord.message_fetcher import validate_message
+from features.ingestion.validator import validate_message
 
 class TestMessageValidation(unittest.TestCase):
     def test_valid_message(self):

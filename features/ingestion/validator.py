@@ -177,6 +177,7 @@ class MessageValidator:
 def validate_message(message: Dict[str, Any]) -> bool:
     """
     Convenience function to validate a single message.
+    Maintains backward compatibility with existing code.
     
     Args:
         message: Message dictionary to validate
@@ -201,3 +202,28 @@ def validate_message_with_errors(message: Dict[str, Any]) -> Tuple[bool, List[st
     """
     validator = MessageValidator()
     return validator.validate_message(message)
+
+
+def validate_basic_message_fields(message: Dict[str, Any]) -> bool:
+    """
+    Basic validation matching the original Discord storage validation.
+    Checks only core required fields: id, content, author, timestamp.
+    
+    Args:
+        message: Message dictionary to validate
+        
+    Returns:
+        bool: True if all required fields exist and are non-empty
+    """
+    required_fields = ['id', 'content', 'author', 'timestamp']
+    
+    # Check all required fields exist
+    if not all(field in message for field in required_fields):
+        return False
+    
+    # Check fields are not empty or None
+    for field in required_fields:
+        if not message[field] or str(message[field]).strip() == "":
+            return False
+    
+    return True
