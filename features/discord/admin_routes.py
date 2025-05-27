@@ -9,7 +9,8 @@ from flask import Blueprint, jsonify, request, render_template
 from sqlalchemy import desc
 
 from common.db import db
-from common.models_db import DiscordChannelModel, SetupMessageModel, TickerSetupModel
+from features.ingestion.models import DiscordMessageModel
+from features.parsing.models import SetupModel
 from features.discord.channel_sync import (
     set_channel_listen, set_channel_announce, 
     get_listening_channels, get_announce_channels

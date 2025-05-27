@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 import asyncio
 import logging
 
-from .service import discord_service
+from features.ingestion.service import ingest_messages
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def fetch_messages():
         
         try:
             results = loop.run_until_complete(
-                discord_service.process_latest_messages(limit)
+                ingest_messages(limit)
             )
         finally:
             loop.close()
