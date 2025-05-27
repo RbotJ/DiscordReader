@@ -1,0 +1,76 @@
+ a classic transaction boundary violation—a problem that arises when models own persistence logic, violating separation of concerns. Here's how to refactor to clean, layered data flow, especially in a vertical-slice architecture.
+
+✅ Goals
+Move DB session handling to the service layer
+
+Keep models as pure data structures
+
+Keep store() logic inside the service.py (for ingestion) or store.py (for parsing)
+
+🔧 Step-by-Step Refactor Plan
+🔁 1. Refactor DiscordMessageModel
+In features/ingestion/models.py, replace this:
+
+python
+Copy
+Edit
+@classmethod
+def create_from_dict(cls, data: dict):
+    message = cls(
+        id=data["id"],
+        content=data["content"],
+        author=data["author"],
+        ...
+    )
+    db.session.add(message)
+    db.session.commit()
+    return message
+With:
+
+python
+Copy
+Edit
+@classmethod
+def from_dict(cls, data: dict):
+    return cls(
+        id=data["id"],
+        content=data["content"],
+        author=data["author"],
+        timestamp=data.get("timestamp"),
+        channel_id=data.get("channel_id"),
+    )
+❌ No .add() or .commit() in model class
+
+🧠 2. Centralize Session Handling in features/ingestion/service.py
+Update your ingest flow to handle session/rollback explicitly:
+
+python
+Copy
+Edit
+from common.db import Session
+from common.events import publish
+from .models import DiscordMessageModel
+from .fetcher import fetch_latest_messages
+from .validator import validate_message
+
+async def ingest_messages(limit=50) -> int:
+    messages = await fetch_latest_messages(limit)
+    valid = [m for m in messages if validate_message(m)]
+    
+    stored = 0
+    session = Session()
+
+    try:
+        for msg_data in valid:
+            msg = DiscordMessageModel.from_dict(msg_data)
+            session.add(msg)
+            publish("MESSAGE_STORED", {"id": msg.id})  # Optionally send full msg_data
+            stored += 1
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+    return stored

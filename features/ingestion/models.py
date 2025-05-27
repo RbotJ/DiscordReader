@@ -52,15 +52,16 @@ class DiscordMessageModel(db.Model):
         return f"<DiscordMessage {self.message_id} from {self.author}>"
     
     @classmethod
-    def create_from_dict(cls, message_data: Dict[str, Any]) -> 'DiscordMessageModel':
+    def from_dict(cls, message_data: Dict[str, Any]) -> 'DiscordMessageModel':
         """
         Create a DiscordMessageModel instance from a message dictionary.
+        Pure data structure creation - no database operations.
         
         Args:
             message_data: Dictionary containing message data from Discord API
             
         Returns:
-            DiscordMessageModel: New model instance
+            DiscordMessageModel: New model instance (not saved to database)
         """
         # Parse timestamp
         timestamp_str = message_data.get('timestamp')
@@ -69,8 +70,8 @@ class DiscordMessageModel(db.Model):
         else:
             timestamp = timestamp_str or datetime.utcnow()
         
-        # Create model instance
-        message = cls(
+        # Create model instance (no database operations)
+        return cls(
             message_id=str(message_data['id']),
             channel_id=str(message_data['channel_id']),
             author=str(message_data['author']),
@@ -84,12 +85,6 @@ class DiscordMessageModel(db.Model):
             attachment_data=message_data.get('attachments'),
             raw_data=message_data
         )
-        
-        # Save to database
-        db.session.add(message)
-        db.session.commit()
-        
-        return message
     
     @staticmethod
     def _parse_timestamp(timestamp_str: str) -> datetime:

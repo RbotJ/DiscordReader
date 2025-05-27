@@ -157,7 +157,7 @@ class IngestionService:
     
     async def _store_messages(self, messages: List[Dict[str, Any]]) -> List[DiscordMessageModel]:
         """
-        Store validated messages in the database.
+        Store validated messages in the database with proper transaction management.
         
         Args:
             messages: List of valid messages to store
@@ -165,15 +165,30 @@ class IngestionService:
         Returns:
             List[DiscordMessageModel]: Stored message models
         """
+        from common.db import db
+        
         stored_messages = []
         
-        for message_data in messages:
-            try:
-                message_model = DiscordMessageModel.create_from_dict(message_data)
+        try:
+            # Begin transaction - process all messages in a single transaction
+            for message_data in messages:
+                # Create model instance (no database operations)
+                message_model = DiscordMessageModel.from_dict(message_data)
+                # Add to session but don't commit yet
+                db.session.add(message_model)
                 stored_messages.append(message_model)
-            except Exception as e:
-                logger.error(f"Error storing message {message_data.get('id', 'unknown')}: {e}")
-                self.stats['total_errors'] += 1
+            
+            # Commit all messages at once
+            db.session.commit()
+            logger.info(f"Successfully stored {len(stored_messages)} messages in batch")
+            
+        except Exception as e:
+            # Rollback the entire batch if any message fails
+            db.session.rollback()
+            logger.error(f"Error storing message batch: {e}")
+            self.stats['total_errors'] += len(messages)
+            stored_messages = []  # Clear the list since nothing was actually stored
+            raise
         
         return stored_messages
     
