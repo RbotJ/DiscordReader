@@ -1,369 +1,282 @@
-"""
-Setup Storage Module
+` tags.
 
-Handles saving parsed trading setups to the database.
-This module provides functionality for storing SetupModel instances
-and managing setup persistence operations following clean transaction boundaries.
+```
+<replit_final_file>
+"""
+Setup Storage Service Module
+
+Handles storing parsed trading setups to the database.
+This module provides a clean interface for persisting SetupModel instances
+and managing setup lifecycle operations.
 """
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from .models import SetupModel
-from common.db import db, publish_event
-from common.event_constants import EventChannels, EventType
+from common.db import db
 
 logger = logging.getLogger(__name__)
 
 
-def save_setup(setup: SetupModel) -> None:
-    """
-    Save a single setup to the database with proper transaction management.
-    
-    Args:
-        setup: SetupModel instance to save
-        
-    Raises:
-        Exception: If database operation fails
-    """
-    try:
-        db.session.add(setup)
-        db.session.commit()
-        logger.info(f"Saved setup: {setup.ticker} {setup.setup_type}")
-        
-        # Emit setup saved event
-        publish_event(
-            event_type=EventType.SETUP_CREATED,
-            payload=setup.to_dict(),
-            channel=EventChannels.SETUP_CREATED
-        )
-        
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error saving setup {setup.ticker}: {e}")
-        raise
-
-
-def save_setups_batch(setups: List[SetupModel]) -> int:
-    """
-    Save multiple setups in a single transaction.
-    
-    Args:
-        setups: List of SetupModel instances to save
-        
-    Returns:
-        int: Number of setups successfully saved
-        
-    Raises:
-        Exception: If batch operation fails
-    """
-    if not setups:
-        return 0
-    
-    try:
-        # Add all setups to session
-        for setup in setups:
-            db.session.add(setup)
-        
-        # Commit all at once
-        db.session.commit()
-        logger.info(f"Saved batch of {len(setups)} setups")
-        
-        # Emit events for each setup
-        for setup in setups:
-            publish_event(
-                event_type=EventType.SETUP_CREATED,
-                payload=setup.to_dict(),
-                channel=EventChannels.SETUP_CREATED
-            )
-        
-        return len(setups)
-        
-    except Exception as e:
-        # Rollback entire batch if any setup fails
-        db.session.rollback()
-        logger.error(f"Error saving setup batch: {e}")
-        raise
-
-
-def update_setup(setup: SetupModel) -> None:
-    """
-    Update an existing setup in the database.
-    
-    Args:
-        setup: SetupModel instance to update
-        
-    Raises:
-        Exception: If database operation fails
-    """
-    try:
-        # Setup is already attached to session, just commit
-        db.session.commit()
-        logger.info(f"Updated setup: {setup.ticker} {setup.setup_type}")
-        
-        # Emit setup updated event
-        publish_event(
-            event_type=EventType.SETUP_UPDATED,
-            payload=setup.to_dict(),
-            channel=EventChannels.SETUP_UPDATED
-        )
-        
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error updating setup {setup.ticker}: {e}")
-        raise
-
-
 class SetupStorageService:
     """
-    Handles storage operations for trading setups.
-    
-    This service manages the persistence of parsed trading setups
-    and coordinates with the database and event system.
+    Service for storing and managing trading setups in the database.
+
+    This service handles the persistence layer for parsed trading setups,
+    providing methods to store, update, and query setup data.
     """
-    
+
     def __init__(self):
-        """Initialize setup storage service."""
+        """Initialize the storage service."""
         self.stats = {
-            'total_stored': 0,
-            'total_errors': 0,
-            'duplicate_count': 0
+            'setups_stored': 0,
+            'storage_errors': 0,
+            'last_storage_time': None
         }
-    
-    def store_setup(self, setup: SetupModel) -> bool:
+
+    def store_setup(self, setup: SetupModel) -> Optional[SetupModel]:
         """
-        Store a single trading setup in the database.
-        
+        Store a single setup in the database.
+
         Args:
             setup: SetupModel instance to store
-            
+
         Returns:
-            bool: True if stored successfully, False otherwise
+            Optional[SetupModel]: Stored setup with ID or None if failed
         """
         try:
-            # Check for duplicates
-            if self._is_duplicate_setup(setup):
-                logger.info(f"Duplicate setup detected for {setup.ticker}, skipping")
-                self.stats['duplicate_count'] += 1
-                return False
-            
-            # Save to database
+            # Add to session and commit
             db.session.add(setup)
             db.session.commit()
-            
-            # Update statistics
-            self.stats['total_stored'] += 1
-            
-            # Publish setup stored event
-            self._publish_setup_stored_event(setup)
-            
-            logger.info(f"Successfully stored setup for {setup.ticker}")
-            return True
-            
+
+            # Update stats
+            self.stats['setups_stored'] += 1
+            self.stats['last_storage_time'] = datetime.utcnow()
+
+            logger.info(f"Successfully stored setup {setup.id} for {setup.ticker}")
+            return setup
+
         except Exception as e:
             logger.error(f"Error storing setup for {setup.ticker}: {e}")
             db.session.rollback()
-            self.stats['total_errors'] += 1
-            return False
-    
+            self.stats['storage_errors'] += 1
+            return None
+
     def store_setup_batch(self, setups: List[SetupModel]) -> Dict[str, Any]:
         """
-        Store multiple setups in a batch operation.
-        
+        Store multiple setups in a single transaction.
+
         Args:
             setups: List of SetupModel instances to store
-            
+
         Returns:
-            Dict[str, Any]: Storage results with statistics
+            Dict[str, Any]: Results including counts and stored setups
         """
-        results = {
-            'total_submitted': len(setups),
-            'successfully_stored': 0,
-            'duplicates_skipped': 0,
-            'errors': 0,
-            'stored_setups': []
-        }
-        
-        for setup in setups:
-            try:
-                if self._is_duplicate_setup(setup):
-                    results['duplicates_skipped'] += 1
-                    continue
-                
-                db.session.add(setup)
-                results['stored_setups'].append(setup)
-                
-            except Exception as e:
-                logger.error(f"Error preparing setup {setup.ticker} for batch storage: {e}")
-                results['errors'] += 1
-        
-        # Commit all setups at once
+        stored_setups = []
+        failed_setups = []
+
         try:
+            # Add all setups to session
+            for setup in setups:
+                db.session.add(setup)
+
+            # Commit all at once
             db.session.commit()
-            results['successfully_stored'] = len(results['stored_setups'])
-            
-            # Publish events for all stored setups
-            for setup in results['stored_setups']:
-                self._publish_setup_stored_event(setup)
-            
-            self.stats['total_stored'] += results['successfully_stored']
-            
+            stored_setups = setups
+
+            # Update stats
+            self.stats['setups_stored'] += len(stored_setups)
+            self.stats['last_storage_time'] = datetime.utcnow()
+
+            logger.info(f"Successfully stored {len(stored_setups)} setups")
+
         except Exception as e:
-            logger.error(f"Error committing batch setup storage: {e}")
+            logger.error(f"Error storing setup batch: {e}")
             db.session.rollback()
-            results['errors'] += len(results['stored_setups'])
-            results['successfully_stored'] = 0
-            results['stored_setups'] = []
-        
-        return results
-    
-    def update_setup(self, setup_id: int, updates: Dict[str, Any]) -> bool:
+            failed_setups = setups
+            self.stats['storage_errors'] += len(failed_setups)
+
+        return {
+            'successfully_stored': len(stored_setups),
+            'failed_to_store': len(failed_setups),
+            'stored_setups': stored_setups,
+            'failed_setups': failed_setups
+        }
+
+    def update_setup(self, setup: SetupModel) -> bool:
         """
-        Update an existing setup with new information.
-        
+        Update an existing setup in the database.
+
         Args:
-            setup_id: ID of setup to update
-            updates: Dictionary of fields to update
-            
+            setup: SetupModel instance to update
+
         Returns:
-            bool: True if updated successfully, False otherwise
+            bool: True if successful, False otherwise
+        """
+        try:
+            setup.updated_at = datetime.utcnow()
+            db.session.commit()
+
+            logger.debug(f"Successfully updated setup {setup.id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating setup {setup.id}: {e}")
+            db.session.rollback()
+            self.stats['storage_errors'] += 1
+            return False
+
+    def get_setup_by_id(self, setup_id: int) -> Optional[SetupModel]:
+        """
+        Retrieve a setup by its ID.
+
+        Args:
+            setup_id: Setup ID to retrieve
+
+        Returns:
+            Optional[SetupModel]: Setup if found, None otherwise
+        """
+        try:
+            return SetupModel.query.get(setup_id)
+        except Exception as e:
+            logger.error(f"Error retrieving setup {setup_id}: {e}")
+            return None
+
+    def get_setups_by_message(self, message_id: str) -> List[SetupModel]:
+        """
+        Get all setups created from a specific message.
+
+        Args:
+            message_id: Discord message ID
+
+        Returns:
+            List[SetupModel]: Setups from the specified message
+        """
+        try:
+            return SetupModel.query.filter_by(
+                source_message_id=message_id
+            ).all()
+        except Exception as e:
+            logger.error(f"Error retrieving setups for message {message_id}: {e}")
+            return []
+
+    def get_active_setups(self, ticker: Optional[str] = None) -> List[SetupModel]:
+        """
+        Get active setups, optionally filtered by ticker.
+
+        Args:
+            ticker: Optional ticker to filter by
+
+        Returns:
+            List[SetupModel]: Active setups
+        """
+        try:
+            query = SetupModel.query.filter_by(active=True, executed=False)
+            if ticker:
+                query = query.filter_by(ticker=ticker.upper())
+            return query.order_by(SetupModel.created_at.desc()).all()
+        except Exception as e:
+            logger.error(f"Error retrieving active setups: {e}")
+            return []
+
+    def deactivate_setup(self, setup_id: int) -> bool:
+        """
+        Deactivate a setup by ID.
+
+        Args:
+            setup_id: Setup ID to deactivate
+
+        Returns:
+            bool: True if successful, False otherwise
         """
         try:
             setup = SetupModel.query.get(setup_id)
-            if not setup:
-                logger.warning(f"Setup {setup_id} not found for update")
+            if setup:
+                setup.deactivate()
+                db.session.commit()
+                logger.info(f"Deactivated setup {setup_id}")
+                return True
+            else:
+                logger.warning(f"Setup {setup_id} not found for deactivation")
                 return False
-            
-            # Apply updates
-            for field, value in updates.items():
-                if hasattr(setup, field):
-                    setattr(setup, field, value)
-            
-            setup.updated_at = datetime.utcnow()
-            db.session.commit()
-            
-            # Publish update event
-            self._publish_setup_updated_event(setup)
-            
-            logger.info(f"Successfully updated setup {setup_id}")
-            return True
-            
         except Exception as e:
-            logger.error(f"Error updating setup {setup_id}: {e}")
+            logger.error(f"Error deactivating setup {setup_id}: {e}")
             db.session.rollback()
             return False
-    
-    def _is_duplicate_setup(self, setup: SetupModel) -> bool:
+
+    def mark_setup_executed(self, setup_id: int, execution_price: Optional[float] = None) -> bool:
         """
-        Check if a setup is a duplicate of an existing one.
-        
+        Mark a setup as executed.
+
         Args:
-            setup: SetupModel to check for duplication
-            
+            setup_id: Setup ID to mark as executed
+            execution_price: Optional execution price
+
         Returns:
-            bool: True if duplicate exists, False otherwise
-        """
-        existing = SetupModel.query.filter_by(
-            ticker=setup.ticker,
-            date=setup.date,
-            setup_type=setup.setup_type,
-            source_message_id=setup.source_message_id
-        ).first()
-        
-        return existing is not None
-    
-    def _publish_setup_stored_event(self, setup: SetupModel) -> None:
-        """
-        Publish event when a setup is stored.
-        
-        Args:
-            setup: SetupModel that was stored
+            bool: True if successful, False otherwise
         """
         try:
-            event_payload = {
-                'setup_id': setup.id,
-                'ticker': setup.ticker,
-                'setup_type': setup.setup_type,
-                'direction': setup.direction,
-                'price_target': setup.price_target,
-                'confidence': setup.confidence,
-                'date': setup.date.isoformat() if setup.date else None,
-                'source_message_id': setup.source_message_id
-            }
-            
-            publish_event(
-                event_type=EventType.SETUP_CREATED,
-                payload=event_payload,
-                channel=EventChannels.SETUP_CREATED
-            )
-            
+            setup = SetupModel.query.get(setup_id)
+            if setup:
+                setup.mark_as_executed(execution_price)
+                db.session.commit()
+                logger.info(f"Marked setup {setup_id} as executed")
+                return True
+            else:
+                logger.warning(f"Setup {setup_id} not found for execution marking")
+                return False
         except Exception as e:
-            logger.error(f"Error publishing setup stored event: {e}")
-    
-    def _publish_setup_updated_event(self, setup: SetupModel) -> None:
-        """
-        Publish event when a setup is updated.
-        
-        Args:
-            setup: SetupModel that was updated
-        """
-        try:
-            event_payload = {
-                'setup_id': setup.id,
-                'ticker': setup.ticker,
-                'updated_at': setup.updated_at.isoformat() if setup.updated_at else None
-            }
-            
-            publish_event(
-                event_type=EventType.SETUP_UPDATED,
-                payload=event_payload,
-                channel=EventChannels.SETUP_UPDATED
-            )
-            
-        except Exception as e:
-            logger.error(f"Error publishing setup updated event: {e}")
-    
+            logger.error(f"Error marking setup {setup_id} as executed: {e}")
+            db.session.rollback()
+            return False
+
     def get_storage_stats(self) -> Dict[str, Any]:
         """
-        Get storage operation statistics.
-        
+        Get storage service statistics.
+
         Returns:
             Dict[str, Any]: Storage statistics
         """
-        return self.stats.copy()
-    
+        return {
+            'service_stats': self.stats.copy(),
+            'database_stats': SetupModel.get_setup_statistics(),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
     def reset_stats(self) -> None:
-        """Reset storage statistics."""
+        """Reset storage service statistics."""
         self.stats = {
-            'total_stored': 0,
-            'total_errors': 0,
-            'duplicate_count': 0
+            'setups_stored': 0,
+            'storage_errors': 0,
+            'last_storage_time': None
         }
 
 
-def store_setup(setup: SetupModel) -> bool:
+# Convenience functions for direct usage
+def store_parsed_setup(setup: SetupModel) -> Optional[SetupModel]:
     """
-    Convenience function to store a single setup.
-    
+    Convenience function to store a single parsed setup.
+
     Args:
-        setup: SetupModel instance to store
-        
+        setup: SetupModel to store
+
     Returns:
-        bool: True if stored successfully, False otherwise
+        Optional[SetupModel]: Stored setup or None if failed
     """
-    storage_service = SetupStorageService()
-    return storage_service.store_setup(setup)
+    service = SetupStorageService()
+    return service.store_setup(setup)
 
 
-def store_setups_batch(setups: List[SetupModel]) -> Dict[str, Any]:
+def store_parsed_setups(setups: List[SetupModel]) -> Dict[str, Any]:
     """
-    Convenience function to store multiple setups.
-    
+    Convenience function to store multiple parsed setups.
+
     Args:
         setups: List of SetupModel instances to store
-        
+
     Returns:
-        Dict[str, Any]: Storage results with statistics
+        Dict[str, Any]: Storage results
     """
-    storage_service = SetupStorageService()
-    return storage_service.store_setup_batch(setups)
+    service = SetupStorageService()
+    return service.store_setup_batch(setups)
