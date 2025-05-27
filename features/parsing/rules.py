@@ -6,11 +6,78 @@ This module implements specific business rules for identifying conservative shor
 aggressive longs, and other A+ trading patterns from message content.
 """
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Set
 import re
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# Enhanced signal extraction patterns from legacy setups parser
+SIGNAL_PATTERNS = {
+    "breakout": [
+        r'\b(?:breakout|break out|breaking out|breaking)\s+(?:above|over|past)\s+(\d+(?:\.\d+)?)',
+        r'\[BREAKOUT\].*?(?:above|over|past)\s+(\d+(?:\.\d+)?)',
+        r'(?:buying|long|calls)\s+(?:above|over|past)\s+(\d+(?:\.\d+)?)',
+        r'(?:aggressive|conservative)\s+breakout\s+(?:above|over|past)\s+(\d+(?:\.\d+)?)'
+    ],
+    "breakdown": [
+        r'\b(?:breakdown|break down|breaking down)\s+(?:below|under|beneath)\s+(\d+(?:\.\d+)?)',
+        r'\[BREAKDOWN\].*?(?:below|under|beneath)\s+(\d+(?:\.\d+)?)',
+        r'(?:selling|short|puts)\s+(?:below|under|beneath)\s+(\d+(?:\.\d+)?)',
+        r'(?:aggressive|conservative)\s+breakdown\s+(?:below|under|beneath)\s+(\d+(?:\.\d+)?)'
+    ],
+    "rejection": [
+        r'\b(?:rejection|reject|rejecting)\s+(?:near|at|around)\s+(\d+(?:\.\d+)?)',
+        r'\[REJECTION\].*?(?:near|at|around)\s+(\d+(?:\.\d+)?)',
+        r'(?:resistance|support)\s+(?:rejection|reject)\s+(?:near|at|around)\s+(\d+(?:\.\d+)?)'
+    ],
+    "bounce": [
+        r'\b(?:bounce|bouncing|support)\s+(?:from|off|at)\s+(\d+(?:\.\d+)?)',
+        r'\[BOUNCE\].*?(?:from|off|at)\s+(\d+(?:\.\d+)?)',
+        r'(?:bullish|bearish)\s+bounce\s+(?:from|off|at)\s+(\d+(?:\.\d+)?)'
+    ]
+}
+
+# Bias extraction patterns from legacy parser
+BIAS_PATTERNS = [
+    r'(?i)(?:remain|bias|sentiment|outlook|stance)\s+(bullish|bearish)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)',
+    r'(?i)(bullish|bearish)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)',
+    r'(?i)(bullish|bearish)\s+(?:bias|sentiment|outlook|stance)\s+(?:above|below|near)\s+(\d+(?:\.\d+)?)'
+]
+
+# Target extraction patterns from legacy parser
+TARGET_PATTERNS = [
+    r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?:\s*(\d+(?:\.\d+)?)',
+    r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?\s+(?:at|is|of|near|around)?\s*(\d+(?:\.\d+)?)',
+    r'(?i)(?:target|tgt|price target|take profit|tp)(?:\s+\d+)?[:\s]+(\d+(?:\.\d+)?)'
+]
+
+# Emoji mappings for signal categories
+EMOJI_MAP = {
+    # Breakout indicators
+    "🔼": "[BREAKOUT]",
+    "⬆️": "[BREAKOUT]",
+    "🚀": "[BREAKOUT]",
+    "🔝": "[BREAKOUT]",
+    
+    # Breakdown indicators
+    "🔽": "[BREAKDOWN]",
+    "⬇️": "[BREAKDOWN]",
+    "📉": "[BREAKDOWN]",
+    "🔻": "[BREAKDOWN]",
+    
+    # Rejection indicators
+    "❌": "[REJECTION]",
+    "🚫": "[REJECTION]",
+    "🛑": "[REJECTION]",
+    "⛔": "[REJECTION]",
+    
+    # Bounce indicators
+    "🔄": "[BOUNCE]",
+    "↩️": "[BOUNCE]",
+    "↪️": "[BOUNCE]",
+    "🔙": "[BOUNCE]"
+}
 
 
 class SetupAggressiveness(Enum):
@@ -279,3 +346,206 @@ def analyze_message_with_aplus_rules(content: str) -> Dict[str, Any]:
     }
     
     return analysis
+
+
+def normalize_text_with_emojis(text: str) -> str:
+    """
+    Normalize text by replacing emojis with standard text markers.
+    Extracted from legacy setups parser.
+    
+    Args:
+        text: Raw text with potential emojis
+        
+    Returns:
+        Normalized text with emojis replaced by standard markers
+    """
+    normalized = text
+    for emoji, replacement in EMOJI_MAP.items():
+        normalized = normalized.replace(emoji, replacement)
+    return normalized
+
+
+def detect_signal_aggressiveness(line: str) -> str:
+    """
+    Detect aggressiveness level from signal context.
+    Enhanced from legacy setups parser logic.
+    
+    Args:
+        line: Text line containing the signal
+        
+    Returns:
+        Aggressiveness level string
+    """
+    line_lower = line.lower()
+    
+    if any(word in line_lower for word in ['aggressive', 'aggressively', 'quick', 'fast']):
+        return 'aggressive'
+    elif any(word in line_lower for word in ['conservative', 'conservatively', 'careful', 'cautious']):
+        return 'conservative'
+    elif any(word in line_lower for word in ['high conviction', 'strong', 'confident']):
+        return 'high'
+    elif any(word in line_lower for word in ['light', 'small', 'minimal']):
+        return 'low'
+    else:
+        return 'medium'
+
+
+def validate_price_levels(prices: List[float]) -> List[float]:
+    """
+    Validate price levels are reasonable.
+    Extracted from legacy setups parser.
+    
+    Args:
+        prices: List of price levels to validate
+        
+    Returns:
+        List of valid price levels
+    """
+    if not prices:
+        return []
+    
+    # Filter out obviously wrong prices (e.g. negative or too high)
+    return [p for p in prices if 0 < p < 100000]
+
+
+def extract_signals_from_text(ticker: str, text: str) -> List[Dict[str, Any]]:
+    """
+    Extract trading signals from text using enhanced patterns.
+    Migrated from legacy setups parser with improvements.
+    
+    Args:
+        ticker: The ticker symbol
+        text: The text section for this ticker
+        
+    Returns:
+        List of signal dictionaries
+    """
+    signals = []
+    
+    # Normalize text first
+    normalized_text = normalize_text_with_emojis(text)
+    
+    # Process each signal category
+    for category, patterns in SIGNAL_PATTERNS.items():
+        for pattern in patterns:
+            matches = re.finditer(pattern, normalized_text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    # Get the full line containing the match
+                    line_start = normalized_text.rfind('\n', 0, match.start()) + 1
+                    line_end = normalized_text.find('\n', match.end())
+                    if line_end == -1:
+                        line_end = len(normalized_text)
+                    line = normalized_text[line_start:line_end]
+                    
+                    # Convert the price level to float
+                    price_level = float(match.group(1))
+                    
+                    # Detect aggressiveness from line context
+                    aggressiveness = detect_signal_aggressiveness(line)
+                    
+                    # Determine comparison type and category
+                    if category == "breakout":
+                        comparison = "above"
+                    elif category == "breakdown":
+                        comparison = "below"
+                    elif category == "rejection":
+                        comparison = "near"
+                    elif category == "bounce":
+                        comparison = "above"
+                    else:
+                        comparison = "unknown"
+                    
+                    # Create the signal object
+                    signal = {
+                        'category': category,
+                        'comparison': comparison,
+                        'trigger': price_level,
+                        'aggressiveness': aggressiveness,
+                        'line_context': line.strip()
+                    }
+                    
+                    signals.append(signal)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error extracting signal for {ticker}: {e}")
+    
+    return signals
+
+
+def extract_bias_from_text(ticker: str, text: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract market bias from text using enhanced patterns.
+    Migrated from legacy setups parser.
+    
+    Args:
+        ticker: The ticker symbol
+        text: The text section for this ticker
+        
+    Returns:
+        Bias dictionary if found, None otherwise
+    """
+    # Extract bias from text
+    for pattern in BIAS_PATTERNS:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            try:
+                # Format might be (direction, price) or (price, direction) depending on regex
+                if len(match) == 2:
+                    if match[0].lower() in ["bullish", "bearish"]:
+                        direction_str, price_str = match
+                    else:
+                        price_str, direction_str = match
+                
+                    # Parse direction
+                    direction = direction_str.lower()
+                    
+                    # Parse price
+                    price = float(price_str)
+                    
+                    # Determine condition type based on context
+                    condition_text = re.search(r'(above|below|near)\s+\d+(?:\.\d+)?', text, re.IGNORECASE)
+                    if condition_text:
+                        condition = condition_text.group(1).lower()
+                    else:
+                        # Default condition based on direction
+                        condition = "above" if direction == "bullish" else "below"
+                    
+                    # Create bias object
+                    bias = {
+                        'direction': direction,
+                        'condition': condition,
+                        'price': price
+                    }
+                    
+                    return bias
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error extracting bias for {ticker}: {e}")
+    
+    return None
+
+
+def extract_targets_from_text(text: str) -> List[float]:
+    """
+    Extract price targets from text using enhanced patterns.
+    Migrated from legacy setups parser.
+    
+    Args:
+        text: Text to extract targets from
+        
+    Returns:
+        List of target prices
+    """
+    targets = []
+    
+    for pattern in TARGET_PATTERNS:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            try:
+                target_price = float(match)
+                targets.append(target_price)
+            except (ValueError, TypeError):
+                continue
+    
+    # Validate and return unique targets
+    valid_targets = validate_price_levels(targets)
+    return list(set(valid_targets))
