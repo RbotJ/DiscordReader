@@ -1,219 +1,149 @@
 """
-Workflow Integration Test: Ingest and Parse Flow
+Integration Test for Workflow 1: Ingest and Parse Pipeline
 
-Tests the complete vertical slice architecture:
-1. Discord message ingestion (features/ingestion/)
-2. Message parsing and setup extraction (features/parsing/)
-3. Database persistence and event flow
+Tests the complete flow:
+1. Discord message ingestion → ingestion/service.py
+2. Message validation and storage
+3. Parse stored messages on MESSAGE_STORED event
+4. Emit SETUP_PARSED event
+5. Store parsed SetupModel in DB
 """
+
 import pytest
-import asyncio
-from datetime import datetime
+from datetime import datetime, date
 from unittest.mock import patch, MagicMock
 
-from features.ingestion.service import ingest_messages
-from features.parsing.parser import parse_setup_from_text
-from features.parsing.store import save_setup
-from features.ingestion.models import DiscordMessageModel
+from features.ingestion.service import IngestionService
+from features.parsing.parser import MessageParser
 from features.parsing.models import SetupModel
-from common.db import db
+from common.db import db, publish_event
+from common.event_constants import EventChannels
 
 
 class TestWorkflowIngestAndParse:
-    """Test the complete ingest and parse workflow."""
+    """Test complete ingestion and parsing workflow"""
     
     def setup_method(self):
-        """Set up test environment."""
-        # Create test data
-        self.sample_discord_messages = [
-            {
-                'id': '12345',
-                'content': '$AAPL breakout above 150, target 155, stop 148',
-                'author': 'TestTrader',
-                'author_id': '67890',
-                'channel_id': '11111',
-                'timestamp': datetime.now().isoformat(),
-                'embeds': [],
-                'attachments': []
-            },
-            {
-                'id': '12346',
-                'content': '$TSLA bullish bounce from support at 200, conservative entry',
-                'author': 'TestTrader2',
-                'author_id': '67891',
-                'channel_id': '11111',
-                'timestamp': datetime.now().isoformat(),
-                'embeds': [],
-                'attachments': []
-            }
-        ]
+        """Setup test environment"""
+        self.ingestion_service = IngestionService()
+        self.parser = MessageParser()
     
-    @patch('features.ingestion.fetcher.fetch_latest_messages')
-    async def test_complete_ingest_and_parse_flow(self, mock_fetch):
-        """Test the complete workflow from Discord fetch to setup extraction."""
-        # Step 1: Mock Discord API response
-        mock_fetch.return_value = self.sample_discord_messages
+    def test_complete_discord_to_setup_workflow(self):
+        """Test full workflow from Discord message to parsed setup"""
         
-        # Step 2: Run ingestion process
-        count = await ingest_messages(limit=5)
-        assert count == 2, f"Expected 2 messages ingested, got {count}"
+        # Sample Discord message with trading setup
+        sample_message = {
+            'message_id': 'test_msg_123',
+            'channel_id': 'test_channel_456', 
+            'author_id': 'test_author_789',
+            'content': '$AAPL breakout above $180 resistance. Looking for continuation to $185. Stop at $178.',
+            'created_at': datetime.utcnow().isoformat()
+        }
         
-        # Step 3: Verify messages were stored
-        stored_messages = DiscordMessageModel.query.all()
-        assert len(stored_messages) >= 2, "Messages should be stored in database"
+        # Step 1: Ingest Discord message
+        result = self.ingestion_service.ingest_discord_message(sample_message)
+        assert result is not None
+        assert result.get('status') == 'success'
         
-        # Step 4: Test parsing individual messages
-        for message in stored_messages:
-            setup = parse_setup_from_text(message.content)
-            if setup:  # Only test if parsing succeeded
-                # Step 5: Save parsed setup
-                save_setup(setup)
-                
-                # Step 6: Verify setup was stored
-                saved_setup = SetupModel.query.filter_by(
-                    ticker=setup.ticker,
-                    source_message_id=setup.source_message_id
-                ).first()
-                assert saved_setup is not None, f"Setup for {setup.ticker} should be saved"
-                assert saved_setup.setup_type is not None, "Setup type should be classified"
+        # Verify message was stored
+        stored_message_id = result.get('message_id')
+        assert stored_message_id is not None
+        
+        # Step 2: Parse the stored message
+        setups = self.parser.parse_message(
+            sample_message['content'], 
+            sample_message['message_id']
+        )
+        
+        # Verify parsing results
+        assert len(setups) > 0
+        setup = setups[0]
+        assert isinstance(setup, SetupModel)
+        assert setup.ticker == 'AAPL'
+        assert 'breakout' in setup.content.lower()
+        
+        # Step 3: Verify setup can be stored
+        with db.session.begin():
+            db.session.add(setup)
+            db.session.flush()
+            setup_id = setup.id
+        
+        assert setup_id is not None
+        
+        # Step 4: Verify event publishing works
+        event_success = publish_event('setup.parsed', {
+            'setup_id': setup_id,
+            'ticker': setup.ticker,
+            'message_id': sample_message['message_id']
+        })
+        
+        assert event_success is True
     
-    def test_parse_setup_from_text_functionality(self):
-        """Test the core parsing functionality with various message types."""
-        test_cases = [
-            {
-                'content': '$AAPL breakout above 150, target 155, stop 148',
-                'expected_ticker': 'AAPL',
-                'expected_direction': 'bullish',
-                'expected_setup_type': 'breakout'
-            },
-            {
-                'content': '$SPY short below 400 resistance, aggressive position',
-                'expected_ticker': 'SPY',
-                'expected_direction': 'bearish',
-                'expected_setup_type': 'breakdown'
-            },
-            {
-                'content': '$TSLA conservative bounce from 200 support',
-                'expected_ticker': 'TSLA',
-                'expected_direction': 'bullish',
-                'expected_setup_type': 'bounce'
-            }
-        ]
+    def test_multi_ticker_message_parsing(self):
+        """Test parsing message with multiple tickers"""
         
-        for case in test_cases:
-            setup = parse_setup_from_text(case['content'])
-            if setup:  # Only test if parsing succeeded
-                assert setup.ticker == case['expected_ticker']
-                assert setup.direction == case['expected_direction']
-                assert setup.setup_type == case['expected_setup_type']
+        multi_ticker_message = {
+            'message_id': 'test_multi_123',
+            'channel_id': 'test_channel_456',
+            'author_id': 'test_author_789', 
+            'content': '$TSLA breaking $250 resistance, target $260. $NVDA pullback to $900 support level.',
+            'created_at': datetime.utcnow().isoformat()
+        }
+        
+        # Ingest and parse
+        result = self.ingestion_service.ingest_discord_message(multi_ticker_message)
+        assert result.get('status') == 'success'
+        
+        setups = self.parser.parse_message(
+            multi_ticker_message['content'],
+            multi_ticker_message['message_id']
+        )
+        
+        # Should find multiple setups
+        assert len(setups) >= 2
+        tickers = [setup.ticker for setup in setups]
+        assert 'TSLA' in tickers
+        assert 'NVDA' in tickers
     
-    def test_setup_confidence_scoring(self):
-        """Test that setup confidence is calculated correctly."""
-        # High confidence setup (has ticker, direction, entry, target, stop)
-        high_confidence_content = '$AAPL long entry 150, target 155, stop 148'
-        setup = parse_setup_from_text(high_confidence_content)
+    def test_invalid_message_handling(self):
+        """Test handling of invalid or non-setup messages"""
         
-        if setup:
-            assert setup.confidence > 0.5, "Complete setup should have high confidence"
+        invalid_message = {
+            'message_id': 'test_invalid_123',
+            'channel_id': 'test_channel_456',
+            'author_id': 'test_author_789',
+            'content': 'Just saying hello to everyone!',
+            'created_at': datetime.utcnow().isoformat()
+        }
         
-        # Low confidence setup (only ticker)
-        low_confidence_content = '$AAPL mentioned in some context'
-        setup_low = parse_setup_from_text(low_confidence_content)
+        # Should still ingest but not parse as setup
+        result = self.ingestion_service.ingest_discord_message(invalid_message)
+        assert result.get('status') == 'success'
         
-        if setup_low:
-            assert setup_low.confidence <= 0.5, "Incomplete setup should have lower confidence"
+        setups = self.parser.parse_message(
+            invalid_message['content'],
+            invalid_message['message_id']
+        )
+        
+        # Should return empty list for non-trading messages
+        assert len(setups) == 0
     
-    @patch('features.ingestion.discord.get_discord_client')
-    async def test_ingestion_error_handling(self, mock_client):
-        """Test that ingestion handles errors gracefully."""
-        # Mock Discord client failure
-        mock_client.return_value = None
+    def test_workflow_error_handling(self):
+        """Test error handling in the workflow"""
         
-        # Should handle the error without crashing
-        try:
-            count = await ingest_messages(limit=5)
-            # If it doesn't raise an exception, that's good
-        except Exception as e:
-            # If it does raise, it should be a clear error message
-            assert "Discord" in str(e) or "client" in str(e).lower()
-    
-    def test_database_transaction_integrity(self):
-        """Test that database operations maintain transaction integrity."""
-        # Create a test setup
-        test_content = '$TEST breakout above 100, target 105, stop 98'
-        setup = parse_setup_from_text(test_content)
+        # Test with malformed message
+        malformed_message = {
+            'message_id': '',  # Empty message ID
+            'content': '$AAPL to the moon!'
+        }
         
-        if setup:
-            # Test saving
-            save_setup(setup)
-            
-            # Verify it was saved
-            saved = SetupModel.query.filter_by(ticker='TEST').first()
-            assert saved is not None, "Setup should be saved to database"
-            
-            # Test updating
-            saved.mark_as_triggered()
-            db.session.commit()
-            
-            # Verify update
-            updated = SetupModel.query.filter_by(ticker='TEST').first()
-            assert updated.triggered is True, "Setup should be marked as triggered"
-    
-    def test_event_flow_integration(self):
-        """Test that events are properly emitted during the workflow."""
-        with patch('common.db.publish_event') as mock_publish:
-            # Test setup saving emits event
-            test_content = '$EVENT breakout test'
-            setup = parse_setup_from_text(test_content)
-            
-            if setup:
-                save_setup(setup)
-                
-                # Verify event was published
-                mock_publish.assert_called()
-                call_args = mock_publish.call_args
-                assert 'SETUP_CREATED' in str(call_args) or 'setup' in str(call_args).lower()
-    
-    def teardown_method(self):
-        """Clean up after tests."""
-        # Clean up test data
-        try:
-            db.session.query(DiscordMessageModel).filter(
-                DiscordMessageModel.author.in_(['TestTrader', 'TestTrader2'])
-            ).delete()
-            db.session.query(SetupModel).filter(
-                SetupModel.ticker.in_(['TEST', 'EVENT'])
-            ).delete()
-            db.session.commit()
-        except:
-            db.session.rollback()
+        # Should handle gracefully
+        result = self.ingestion_service.ingest_discord_message(malformed_message)
+        
+        # Should indicate error but not crash
+        assert result is not None
+        assert 'error' in result or result.get('status') == 'error'
 
 
-@pytest.mark.asyncio
-async def test_quick_workflow_validation():
-    """Quick test to validate the workflow is functional."""
-    # Test parsing functionality
-    sample_content = '$QUICK breakout above 50'
-    setup = parse_setup_from_text(sample_content)
-    
-    if setup:
-        assert setup.ticker == 'QUICK'
-        assert 'breakout' in setup.setup_type
-        print(f"✅ Parsing working: {setup.ticker} {setup.setup_type}")
-    else:
-        print("⚠️ Parsing returned None - check parser implementation")
-    
-    # Test that ingestion service is importable and callable
-    try:
-        # Don't actually call it without mocking Discord
-        from features.ingestion.service import ingest_messages
-        print("✅ Ingestion service importable")
-    except ImportError as e:
-        print(f"❌ Ingestion service import failed: {e}")
-    
-    print("Workflow integration test validation complete!")
-
-
-if __name__ == "__main__":
-    # Run quick validation
-    asyncio.run(test_quick_workflow_validation())
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
