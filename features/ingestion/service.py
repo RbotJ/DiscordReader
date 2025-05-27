@@ -11,9 +11,10 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from .fetcher import MessageFetcher
+from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
 from .models import DiscordMessageModel
+from .discord import get_discord_client, ensure_discord_connection
 from common.db import publish_event
 from common.event_constants import EventChannels
 
@@ -38,6 +39,16 @@ class IngestionService:
             'total_stored': 0,
             'total_errors': 0
         }
+    
+    async def _ensure_fetcher_ready(self) -> bool:
+        """Ensure the message fetcher is ready with Discord connection."""
+        if self.fetcher is None:
+            client_manager = await ensure_discord_connection()
+            if client_manager:
+                self.fetcher = MessageFetcher(client_manager)
+                return True
+            return False
+        return True
     
     async def ingest_latest_messages(
         self,
