@@ -103,7 +103,7 @@ class SetupModel(db.Model):
         }
     
     @classmethod
-    def create_from_parsed_data(
+    def from_parsed_data(
         cls, 
         ticker: str, 
         setup_data: Dict[str, Any], 
@@ -111,6 +111,7 @@ class SetupModel(db.Model):
     ) -> 'SetupModel':
         """
         Create a SetupModel from parsed data dictionary.
+        Pure data structure creation - no database operations.
         
         Args:
             ticker: Stock ticker symbol
@@ -118,9 +119,9 @@ class SetupModel(db.Model):
             source_message_id: Discord message ID that generated this setup
             
         Returns:
-            SetupModel: New model instance
+            SetupModel: New model instance (not saved to database)
         """
-        setup = cls(
+        return cls(
             ticker=ticker.upper(),
             setup_type=setup_data.get('setup_type', 'unknown'),
             direction=setup_data.get('direction', 'neutral'),
@@ -137,12 +138,11 @@ class SetupModel(db.Model):
             risk_parameters=setup_data.get('risk_parameters'),
             analysis_data=setup_data.get('analysis_data')
         )
-        
-        return setup
     
     def mark_as_executed(self, execution_price: Optional[float] = None) -> None:
         """
         Mark this setup as executed.
+        Pure data update - no database operations.
         
         Args:
             execution_price: Optional price at which setup was executed
@@ -151,30 +151,27 @@ class SetupModel(db.Model):
         if execution_price:
             self.entry_price = execution_price
         self.updated_at = datetime.utcnow()
-        db.session.commit()
     
     def mark_as_triggered(self) -> None:
-        """Mark this setup as triggered."""
+        """Mark this setup as triggered. Pure data update - no database operations."""
         self.triggered = True
         self.updated_at = datetime.utcnow()
-        db.session.commit()
     
     def deactivate(self) -> None:
-        """Deactivate this setup."""
+        """Deactivate this setup. Pure data update - no database operations."""
         self.active = False
         self.updated_at = datetime.utcnow()
-        db.session.commit()
     
     def update_confidence(self, new_confidence: float) -> None:
         """
         Update the confidence score for this setup.
+        Pure data update - no database operations.
         
         Args:
             new_confidence: New confidence score (0.0 to 1.0)
         """
         self.confidence = max(0.0, min(1.0, new_confidence))
         self.updated_at = datetime.utcnow()
-        db.session.commit()
     
     @classmethod
     def get_active_setups(cls, ticker: Optional[str] = None) -> List['SetupModel']:

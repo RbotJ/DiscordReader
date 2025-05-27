@@ -3,7 +3,7 @@ Setup Storage Module
 
 Handles saving parsed trading setups to the database.
 This module provides functionality for storing SetupModel instances
-and managing setup persistence operations.
+and managing setup persistence operations following clean transaction boundaries.
 """
 import logging
 from typing import List, Dict, Any, Optional
@@ -14,6 +14,104 @@ from common.db import db, publish_event
 from common.event_constants import EventChannels, EventType
 
 logger = logging.getLogger(__name__)
+
+
+def save_setup(setup: SetupModel) -> None:
+    """
+    Save a single setup to the database with proper transaction management.
+    
+    Args:
+        setup: SetupModel instance to save
+        
+    Raises:
+        Exception: If database operation fails
+    """
+    try:
+        db.session.add(setup)
+        db.session.commit()
+        logger.info(f"Saved setup: {setup.ticker} {setup.setup_type}")
+        
+        # Emit setup saved event
+        publish_event(
+            event_type=EventType.SETUP_CREATED,
+            payload=setup.to_dict(),
+            channel=EventChannels.SETUP_CREATED
+        )
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error saving setup {setup.ticker}: {e}")
+        raise
+
+
+def save_setups_batch(setups: List[SetupModel]) -> int:
+    """
+    Save multiple setups in a single transaction.
+    
+    Args:
+        setups: List of SetupModel instances to save
+        
+    Returns:
+        int: Number of setups successfully saved
+        
+    Raises:
+        Exception: If batch operation fails
+    """
+    if not setups:
+        return 0
+    
+    try:
+        # Add all setups to session
+        for setup in setups:
+            db.session.add(setup)
+        
+        # Commit all at once
+        db.session.commit()
+        logger.info(f"Saved batch of {len(setups)} setups")
+        
+        # Emit events for each setup
+        for setup in setups:
+            publish_event(
+                event_type=EventType.SETUP_CREATED,
+                payload=setup.to_dict(),
+                channel=EventChannels.SETUP_CREATED
+            )
+        
+        return len(setups)
+        
+    except Exception as e:
+        # Rollback entire batch if any setup fails
+        db.session.rollback()
+        logger.error(f"Error saving setup batch: {e}")
+        raise
+
+
+def update_setup(setup: SetupModel) -> None:
+    """
+    Update an existing setup in the database.
+    
+    Args:
+        setup: SetupModel instance to update
+        
+    Raises:
+        Exception: If database operation fails
+    """
+    try:
+        # Setup is already attached to session, just commit
+        db.session.commit()
+        logger.info(f"Updated setup: {setup.ticker} {setup.setup_type}")
+        
+        # Emit setup updated event
+        publish_event(
+            event_type=EventType.SETUP_UPDATED,
+            payload=setup.to_dict(),
+            channel=EventChannels.SETUP_UPDATED
+        )
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating setup {setup.ticker}: {e}")
+        raise
 
 
 class SetupStorageService:
