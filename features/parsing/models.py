@@ -270,3 +270,37 @@ class SetupModel(db.Model):
             'average_confidence': round(float(avg_confidence), 3),
             'execution_rate': round((executed_setups / total_setups * 100), 2) if total_setups > 0 else 0.0
         }
+
+
+# Legacy models from setups/models.py - consolidated here for parsing slice
+class SetupMessageModel(db.Model):
+    """Legacy setup message model - consolidated into parsing slice."""
+    __tablename__ = 'setup_messages'
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(50), nullable=True)
+    source = Column(String(50), nullable=False, default='discord')
+    raw_text = Column(Text, nullable=False)
+    parsed_data = Column(JSONB, nullable=True)
+    date = Column(Date, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    ticker_setups = db.relationship("TickerSetupModel", back_populates="message", cascade="all, delete-orphan")
+
+
+class TickerSetupModel(db.Model):
+    """Legacy ticker setup model - consolidated into parsing slice."""
+    __tablename__ = 'ticker_setups'
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    setup_message_id = Column(Integer, db.ForeignKey('setup_messages.id', ondelete='CASCADE'), nullable=True)
+    text = Column(Text, nullable=True)
+    category = Column(String(50), nullable=True)
+    direction = Column(String(10), nullable=True)
+    price_level = Column(Float, nullable=True)
+    target1 = Column(Float, nullable=True)
+    target2 = Column(Float, nullable=True)
+    stop_loss = Column(Float, nullable=True)
+    status = Column(String(20), nullable=False, default='active')
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    message = db.relationship("SetupMessageModel", back_populates="ticker_setups")
