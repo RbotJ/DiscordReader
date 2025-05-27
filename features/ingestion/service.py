@@ -241,6 +241,60 @@ class IngestionService:
         }
 
 
+async def ingest_messages(limit: int = 50) -> int:
+    """
+    Main ingestion function following the specified interface.
+    Fetches, validates, stores messages and emits MESSAGE_STORED events.
+    
+    Args:
+        limit: Maximum number of messages to fetch
+        
+    Returns:
+        int: Number of valid messages processed
+    """
+    from .fetcher import fetch_latest_messages
+    from .validator import validate_message
+    from common.db import db, publish_event
+    from common.event_constants import EventChannels, EventType
+    
+    try:
+        # Fetch messages from Discord
+        messages = await fetch_latest_messages(limit)
+        
+        # Validate messages
+        valid = [m for m in messages if validate_message(m)]
+        
+        # Store valid messages and emit events
+        for msg_data in valid:
+            # Create model instance
+            msg_model = DiscordMessageModel.from_dict(msg_data)
+            
+            # Save to database
+            db.session.add(msg_model)
+            db.session.commit()
+            
+            # Emit MESSAGE_STORED event
+            publish_event(
+                event_type=EventType.INFO,
+                payload={
+                    'message_id': msg_model.message_id,
+                    'channel_id': msg_model.channel_id,
+                    'content': msg_model.content,
+                    'author': msg_model.author,
+                    'timestamp': msg_model.timestamp.isoformat()
+                },
+                channel=EventChannels.DISCORD_MESSAGE
+            )
+        
+        logger.info(f"Ingested {len(valid)} valid messages out of {len(messages)} fetched")
+        return len(valid)
+        
+    except Exception as e:
+        logger.error(f"Error in message ingestion: {e}")
+        db.session.rollback()
+        raise
+
+
 async def ingest_channel_messages(
     channel_id: str,
     limit: int = 100,
