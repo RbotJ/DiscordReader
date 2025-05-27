@@ -74,6 +74,60 @@ class MessageParser:
         except Exception as e:
             logger.error(f"Error parsing message {message_id}: {e}")
             return []
+    
+    def _parse_ticker_section(self, section, message_id: str) -> Optional[SetupModel]:
+        """
+        Parse a ticker section to extract trading setup information.
+        
+        Args:
+            section: TickerSection object containing ticker and content
+            message_id: Message ID for reference
+            
+        Returns:
+            SetupModel instance or None if no valid setup found
+        """
+        try:
+            ticker = section.ticker
+            content = section.content
+            
+            # Extract signals and bias from the section
+            signal = extract_signal_from_section(content)
+            bias = extract_bias_from_section(content)
+            
+            # Determine if this represents a valid trading setup
+            if not signal and not bias:
+                # Check for basic setup keywords
+                setup_found = any(keyword in content.lower() for keyword in self.setup_keywords)
+                if not setup_found:
+                    return None
+            
+            # Create setup model
+            setup = SetupModel(
+                ticker=ticker,
+                content=content,
+                message_id=message_id,
+                date=date.today(),
+                parsed_at=datetime.utcnow()
+            )
+            
+            # Add signal information if found
+            if signal:
+                setup.signal_type = signal.signal_type
+                setup.price_level = signal.price_level
+                setup.direction = signal.direction
+                setup.confidence = signal.confidence
+            
+            # Add bias information if found
+            if bias:
+                setup.bias_direction = bias.direction
+                setup.bias_timeframe = bias.timeframe
+                setup.bias_price = bias.price_level
+            
+            return setup
+            
+        except Exception as e:
+            logger.error(f"Error parsing ticker section for {section.ticker}: {e}")
+            return None
 
 
 def parse_setup_from_text(content: str) -> SetupModel:
