@@ -74,6 +74,204 @@ class MessageParser:
         except Exception as e:
             logger.error(f"Error parsing message {message_id}: {e}")
             return []
+
+
+def parse_setup_from_text(content: str) -> SetupModel:
+    """
+    Parse text content to extract a single trading setup.
+    Main parsing function following the specified interface.
+    
+    Args:
+        content: Raw text content to parse
+        
+    Returns:
+        SetupModel: Extracted trading setup or None if parsing fails
+    """
+    try:
+        # Extract ticker symbols
+        tickers = _extract_tickers(content)
+        if not tickers:
+            logger.debug("No tickers found in content")
+            return None
+        
+        # Use the first ticker found
+        ticker = tickers[0]
+        
+        # Extract setup information
+        setup_data = {
+            'setup_type': _classify_setup_type(content),
+            'direction': _extract_direction(content),
+            'price_target': _extract_price_target(content),
+            'entry_price': _extract_entry_price(content),
+            'stop_loss': _extract_stop_loss(content),
+            'confidence': _calculate_confidence(content),
+            'aggressiveness': _extract_aggressiveness(content),
+            'position_size_hint': _extract_position_size(content),
+            'context': content[:500],  # First 500 chars as context
+            'date': date.today()
+        }
+        
+        # Create and return SetupModel
+        setup = SetupModel.from_parsed_data(
+            ticker=ticker,
+            setup_data=setup_data,
+            source_message_id="parsed_from_text"
+        )
+        
+        logger.info(f"Successfully parsed setup for {ticker}: {setup_data['setup_type']}")
+        return setup
+        
+    except Exception as e:
+        logger.error(f"Error parsing setup from text: {e}")
+        return None
+
+
+def _extract_tickers(content: str) -> List[str]:
+    """Extract ticker symbols from content."""
+    ticker_pattern = re.compile(r'\$([A-Z]{1,5})', re.IGNORECASE)
+    matches = ticker_pattern.findall(content)
+    return [ticker.upper() for ticker in matches]
+
+
+def _extract_direction(content: str) -> str:
+    """Extract trading direction (bullish/bearish/neutral)."""
+    content_lower = content.lower()
+    
+    bullish_keywords = ['long', 'call', 'bullish', 'buy', 'breakout', 'bounce']
+    bearish_keywords = ['short', 'put', 'bearish', 'sell', 'breakdown', 'rejection']
+    
+    bullish_count = sum(1 for keyword in bullish_keywords if keyword in content_lower)
+    bearish_count = sum(1 for keyword in bearish_keywords if keyword in content_lower)
+    
+    if bullish_count > bearish_count:
+        return 'bullish'
+    elif bearish_count > bullish_count:
+        return 'bearish'
+    else:
+        return 'neutral'
+
+
+def _extract_price_target(content: str) -> Optional[float]:
+    """Extract price target from content."""
+    target_patterns = [
+        r'target[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'tp[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'take profit[:\s]+\$?(\d+(?:\.\d{1,2})?)'
+    ]
+    
+    for pattern in target_patterns:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    
+    return None
+
+
+def _extract_entry_price(content: str) -> Optional[float]:
+    """Extract entry price from content."""
+    entry_patterns = [
+        r'entry[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'enter[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'buy[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'above[:\s]+\$?(\d+(?:\.\d{1,2})?)'
+    ]
+    
+    for pattern in entry_patterns:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    
+    return None
+
+
+def _extract_stop_loss(content: str) -> Optional[float]:
+    """Extract stop loss from content."""
+    stop_patterns = [
+        r'stop[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'sl[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'stop loss[:\s]+\$?(\d+(?:\.\d{1,2})?)',
+        r'below[:\s]+\$?(\d+(?:\.\d{1,2})?)'
+    ]
+    
+    for pattern in stop_patterns:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    
+    return None
+
+
+def _classify_setup_type(content: str) -> str:
+    """Classify the type of trading setup."""
+    content_lower = content.lower()
+    
+    setup_types = {
+        'breakout': ['breakout', 'break out', 'resistance break'],
+        'breakdown': ['breakdown', 'break down', 'support break'],
+        'bounce': ['bounce', 'support hold', 'reversal'],
+        'rejection': ['rejection', 'resistance hold', 'failed break'],
+        'range': ['range', 'sideways', 'consolidation'],
+        'trend': ['trend', 'trending', 'momentum']
+    }
+    
+    for setup_type, keywords in setup_types.items():
+        if any(keyword in content_lower for keyword in keywords):
+            return setup_type
+    
+    return 'unknown'
+
+
+def _extract_aggressiveness(content: str) -> str:
+    """Extract aggressiveness level."""
+    content_lower = content.lower()
+    
+    if any(word in content_lower for word in ['conservative', 'safe', 'cautious']):
+        return 'conservative'
+    elif any(word in content_lower for word in ['aggressive', 'risky', 'high risk']):
+        return 'aggressive'
+    else:
+        return 'moderate'
+
+
+def _extract_position_size(content: str) -> Optional[str]:
+    """Extract position size hint."""
+    content_lower = content.lower()
+    
+    size_keywords = {
+        'small': ['small', 'light', 'minimal'],
+        'medium': ['medium', 'moderate', 'normal'],
+        'large': ['large', 'big', 'heavy'],
+        'maximum': ['max', 'maximum', 'full']
+    }
+    
+    for size, keywords in size_keywords.items():
+        if any(keyword in content_lower for keyword in keywords):
+            return size
+    
+    return None
+
+
+def _calculate_confidence(content: str) -> float:
+    """Calculate confidence score based on setup completeness."""
+    score = 0.0
+    
+    # Check for ticker presence
+    if _extract_tickers(content):
+        score += 0.2
+    
+    # Check for direction indicators
+    if _extract_direction(content) != 'neutral':
+        score += 0.2
+    
+    # Check for price levels
+    if _extract_entry_price(content):
+        score += 0.2
+    if _extract_price_target(content):
+        score += 0.2
+    if _extract_stop_loss(content):
+        score += 0.2
+    
+    return min(score, 1.0)
     
     def parse_batch_messages(self, messages: List[Dict[str, Any]]) -> List[SetupModel]:
         """
