@@ -6,47 +6,110 @@ The A+ Trading App follows a vertical-slice architecture, organizing code by fea
 
 ## Architecture Principles
 
-1. **Vertical Slices**: Code is organized by feature rather than technical layer
-2. **Loose Coupling**: Features communicate via PostgreSQL events system
-3. **High Cohesion**: Related functionality is kept together
-4. **Single Responsibility**: Each module has a clear, focused purpose
-5. **Event-Driven**: Components communicate via PostgreSQL for reliable event handling
+Vertical Slices: Code is organized by feature rather than technical layer
+
+Loose Coupling: Features communicate via PostgreSQL LISTEN/NOTIFY for event handling
+
+High Cohesion: Related functionality is kept together
+
+Single Responsibility: Each module has a clear, focused purpose
+
+Event-Driven: Components communicate through DB-driven event channels
 
 ## Component Structure
 
 ```
 /
 ├── features/
-│   ├── setups/           # ingestion, parsing, storage
-│   ├── market/           # underlying price subscriptions
-│   ├── options_selector/ # chain_fetcher, greeks, filters, risk
-│   ├── strategy/         # detect triggers, map to signals
-│   ├── execution/        # place orders, simulate
-│   ├── management/       # positions, exit rules
-│   └── notifications/    # Slack, dashboards
+│   ├── ingestion/              # Ingest raw messages from Discord or other sources
+│   │   ├── discord.py          # Discord API adapter
+│   │   ├── fetcher.py          # Message pulling logic
+│   │   ├── validator.py        # Pre-ingest validation
+│   │   ├── service.py          # fetch → validate → store → notify orchestration
+│   │   └── models.py           # DiscordMessageModel
+│
+│   ├── parsing/                # Parse raw messages into structured setups
+│   │   ├── parser.py           # Regex/NLP parsing logic
+│   │   ├── rules.py            # Aggressive/conservative long/short classification
+│   │   ├── store.py            # SetupModel storage logic
+│   │   ├── listener.py         # on MESSAGE_STORED → parse
+│   │   └── models.py           # SetupModel
+│
+│   ├── market/                 # Price data feed & historical info
+│   │   ├── feed.py             # Real-time websocket (Alpaca)
+│   │   ├── history.py          # Candle data pull
+│
+│   ├── options_selector/       # Choose options contracts from setup signals
+│   │   ├── chain_fetcher.py    # Retrieve option chains from Alpaca
+│   │   ├── greeks.py           # Delta, theta, etc.
+│   │   ├── filters.py          # Liquidity, IV, spreads
+│   │   └── risk.py             # DTE rules, position sizing
+│
+│   ├── strategy/               # Signal logic & mapping to intent
+│   │   ├── detector.py         # Detect price cross, volume surge, VWAP break
+│   │   ├── selector.py         # Map signal → strategy → options contract
+│   │   └── listener.py         # on SIGNAL_TRIGGERED → submit intent
+│
+│   ├── execution/              # Submit trades or simulate paper fills
+│   │   ├── executor.py         # Alpaca trade submit
+│   │   ├── simulator.py        # Paper trade emulator
+│   │   └── listener.py         # on TRADE_INTENT → execute → notify
+│
+│   ├── management/             # Position tracking and automated exits
+│   │   ├── positions.py        # Track open positions, Greeks, fill info
+│   │   ├── exit_engine.py      # Stop loss / target logic
+│   │   └── listener.py         # on TRADE_EXECUTED → monitor position
+│
+│   ├── notifications/          # Push alerts & updates to users
+│   │   ├── discord.py          # Discord outbound
+│   │   ├── slack.py            # Slack outbound
+│   │   ├── listener.py         # on signal/position/update → notify
+│   │   └── templates.py        # Alert templates for formatting
+│
+│   ├── dashboard/              # Data for visualization
+│   │   ├── tickers.py          # Today's watchlist
+│   │   ├── levels.py           # Support/resistance/targets
+│   │   ├── ranges.py           # Ranges between levels
+│   │   ├── listener.py         # Dashboard update trigger
+│   │   └── api.py              # Streamlit/Flask endpoints
+│
 ├── common/
-│   ├── models.py         # Pydantic / SQLAlchemy definitions
-│   └── utils.py          # logging, config loader
-├── docs/
-│   ├── adr/              # ADR Markdown files
-│   ├── schema.sql        # relational schema
-│   └── architecture.md   # detailed architecture docs
-├── templates/            # HTML templates for web UI
-├── static/               # CSS, JS, and assets for web UI
-└── app.py                # Application entry point
+│   ├── db.py                   # SQLAlchemy setup
+│   ├── events.py               # Postgres LISTEN/NOTIFY event bus
+│   ├── models.py               # Pydantic + DB models
+│   ├── redis_utils.py          # Cache (optional)
+│   └── utils.py                # Logging, config, shared helpers
+│
+├── templates/                  # Web UI HTML templates
+├── static/                     # CSS, JS, assets
+├── docs/                       # Architecture, schema, ADRs
+│   ├── adr/
+│   ├── schema.sql
+│   └── architecture.md
+└── app.py                      # Main entrypoint (Flask)
+
+
 ```
 
 ## Event Flow
 
-The application uses Redis pub/sub channels for event orchestration:
+The application uses PostgreSQL LISTEN/NOTIFY for inter-feature event orchestration:
 
-1. `setup.received` - Raw setup message received
-2. `setup.parsed` - Setup has been parsed into signals
-3. `market.price_update` - Real-time price update for a symbol
-4. `signal.triggered` - A price trigger condition has been met
-5. `trade.executed` - A trade has been executed
-6. `position.updated` - A position has been updated
-7. `position.closed` - A position has been closed
+MESSAGE_STORED - Raw message saved
+
+SETUP_PARSED - Setup extracted from message
+
+SIGNAL_TRIGGERED - Price action meets setup condition
+
+TRADE_INTENT - Strategy chosen, trade planned
+
+TRADE_EXECUTED - Trade submitted to broker
+
+POSITION_UPDATED - Position opened or modified
+
+POSITION_CLOSED - Exit rule met
+
+
 
 This event-driven architecture allows components to be developed, tested, and deployed independently.
 
@@ -55,89 +118,102 @@ This event-driven architecture allows components to be developed, tested, and de
 The following diagram illustrates the data flow through the system:
 
 ```
-[Discord/Email] -> [Setups Parser] -> [Strategy Detector]
-                                        |
-[Alpaca WebSocket] -> [Price Monitor] --+
-                                        |
-                                        v
-                                  [Options Selector]
-                                        |
-                                        v
-                                  [Trade Executor] -> [Alpaca API]
-                                        |
-                                        v
-                                  [Position Manager]
-                                        |
-                                        v
-                                  [Notifications] -> [Slack/Email]
+[Discord] -> [Ingestion] --(MESSAGE_STORED)--> [Parsing] --(SETUP_PARSED)--> [Monitoring/Options/Dashboard]
+                                                                |              ↘  [Dashboard]
+                                                                v
+                                                         [Notifications]
+                                                                v
+                                                         [Trade Execution] → [Alpaca API]
+                                                                v
+                                                       [Position Tracking]
 ```
 
-## Technologies
+Technologies
 
-- **Python 3.8+**: Core application language
-- **Flask**: Web framework for UI and API endpoints
-- **Redis**: Event orchestration via pub/sub
-- **PostgreSQL**: Persistent storage for setups, signals, and positions
-- **Alpaca API**: Paper trading execution
-- **WebSockets**: Real-time market data
-- **Bootstrap**: UI components and styling
+Python 3.8+: Core application language
 
-## Security Considerations
+Flask: Optional REST UI and endpoints
 
-1. **API Keys**: Stored securely in environment variables
-2. **Database Access**: Limited to application service account
-3. **Input Validation**: All user input and webhook data is validated
-4. **Rate Limiting**: API endpoints are rate-limited to prevent abuse
+PostgreSQL: Primary database + event coordination
 
-## Deployment Architecture
+Alpaca API: Market data and trading
 
-The application is designed to be deployed as a set of containerized services:
+WebSockets: Real-time market stream
 
-1. **Web Server**: Flask application with UI and API endpoints
-2. **Market Watcher**: Process for WebSocket connections and price triggers
-3. **Strategy Detector**: Process for evaluating signals against price data
-4. **Executor**: Process for placing trades and managing positions
-5. **Redis**: Message broker for event orchestration
-6. **PostgreSQL**: Persistent storage
+Bootstrap: UI framework for dashboards
 
-## Future Enhancements
+Security Considerations
 
-1. **Machine Learning**: Add ML models for setup classification and signal quality scoring
-2. **Historical Backtesting**: Allow backtesting of strategies against historical data
-3. **Portfolio Optimization**: Add portfolio-level risk management and allocation
-4. **Advanced Options Strategies**: Support for complex options strategies (spreads, etc.)
-5. **Mobile App**: Companion mobile application for notifications and quick actions
+API Keys: Stored securely in environment variables
 
-## Development Process
+DB Access: Scoped roles for app-only access
 
-The application follows a phased development approach:
+Validation: All inputs validated and parsed before persistence
 
-**Phase 1: Core Infrastructure**
-- Basic Flask application structure
-- Database models and Redis client
-- UI templates and static assets
+Rate Limiting: Internal limits and retries for external APIs
 
-**Phase 2: Setups and Signals**
-- Setup parsing and storage
-- Signal extraction and validation
-- UI for viewing setups and signals
+Deployment Architecture
 
-**Phase 3: Market Integration**
-- Alpaca WebSocket integration
-- Price monitoring and trigger detection
-- Historical data fetching and display
+Web Server: Hosts the UI, optional setup submission endpoint
 
-**Phase 4: Options and Execution**
-- Options chain fetching and filtering
-- Greeks calculation and contract selection
-- Trade execution via Alpaca API
+Ingestion Worker: Pulls Discord messages
 
-**Phase 5: Position Management**
-- Position tracking and display
-- Exit rule implementation
-- P&L calculation and visualization
+Parser Worker: Converts raw → setup
 
-**Phase 6: Notifications and Alerts**
-- Slack and email integration
-- Dashboard alerts and notifications
-- Activity logging and reporting
+Strategy Worker: Tracks prices and fires triggers
+
+Executor Worker: Submits trades
+
+Management Worker: Tracks positions, applies exit logic
+
+PostgreSQL: Central DB and event router
+
+Future Enhancements
+
+ML-enhanced setup classification and scoring
+
+Replay system for setup re-simulation and backtesting
+
+Full dashboard with trading journal and logs
+
+Portfolio risk overlays
+
+Mobile companion app
+
+Development Roadmap
+
+Phase 1: Message Ingest
+
+Fetch Discord messages, store raw
+
+Emit MESSAGE_STORED
+
+Phase 2: Setup Parsing
+
+Parse messages into setups
+
+Emit SETUP_PARSED
+
+Phase 3: Notifications + Dashboard
+
+Send setup alerts
+
+Update chart dashboards
+
+Phase 4: Monitoring
+
+Real-time monitoring of key levels
+
+Trigger event on condition met
+
+Phase 5: Option Selection + Trade Execution
+
+Pick strike/contract
+
+Submit paper trade
+
+Phase 6: Position Tracking + Exit Logic
+
+Track fills, stop/target rules
+
+Notify on exit and update dashboard
