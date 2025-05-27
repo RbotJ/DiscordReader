@@ -4,7 +4,7 @@ Discord Feature Models
 Database models for Discord channel management and related data.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, UniqueConstraint
 from datetime import datetime
 from common.db import db
 

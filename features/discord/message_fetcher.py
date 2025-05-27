@@ -10,7 +10,7 @@ import discord
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import db
-from common.db_models import SetupModel
+from .models import DiscordMessageModel
 from common.events import publish_event
 from common.event_constants import EventType
 
@@ -96,27 +96,27 @@ def store_message(message: Dict) -> Optional[int]:
         return None
 
     try:
-        setup = SetupModel(
-            date=datetime.fromisoformat(message['timestamp']).date(),
-            raw_text=message['content'],
-            source='discord',
-            parsed=False
+        discord_message = DiscordMessageModel(
+            message_id=message['id'],
+            content=message['content'],
+            author=message['author'],
+            author_id=message.get('author_id', ''),
+            channel_id=message.get('channel_id', ''),
+            timestamp=datetime.fromisoformat(message['timestamp'])
         )
 
-        db.session.add(setup)
+        db.session.add(discord_message)
         db.session.commit()
 
-        # Publish event for parser 
+        # Publish event for other slices to consume
         publish_event(EventType.MESSAGE_STORED, {
-            'message_id': setup.id,
-            'timestamp': message['timestamp']
+            'discord_message_id': discord_message.id,
+            'content': message['content'],
+            'timestamp': message['timestamp'],
+            'source': 'discord'
         })
 
-        # Trigger immediate parsing
-        from features.setups.processor import parse_new_setup_messages
-        parse_new_setup_messages()
-
-        return setup.id
+        return discord_message.id
 
     except SQLAlchemyError as e:
         db.session.rollback()
