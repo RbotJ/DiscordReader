@@ -37,7 +37,7 @@ def test_signal_extraction():
    - Bullish bias above 180, flips bearish below 175"""
 
     # Add direct testing of the ticker extraction and signals
-    from features.setups.parser import extract_tickers, extract_signals, extract_bias, parse_setup_message
+    from features.parsing.parser import MessageParser
     from common.events import publish_event, get_latest_events
     from common.db import db
 
