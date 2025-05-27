@@ -127,8 +127,9 @@ class IngestionService:
         Returns:
             List[Dict[str, Any]]: Fetched messages
         """
-        if not self.fetcher:
-            raise RuntimeError("Message fetcher not initialized")
+        # Ensure fetcher is ready
+        if not await self._ensure_fetcher_ready():
+            raise RuntimeError("Could not initialize Discord fetcher")
         
         return await self.fetcher.fetch_latest_messages(channel_id, limit, since)
     
