@@ -28,12 +28,14 @@ def status():
         
     except Exception as e:
         # Render template with error state
+        from .services.data_service import get_service_status
         return render_template('dashboard/status.html', 
                              error=str(e),
                              total_messages_count=0,
                              todays_messages_count=0,
                              todays_setups=[],
-                             tickers_summary=[])
+                             tickers_summary=[],
+                             service_status=get_service_status())
 
 # Version information
 __version__ = '0.1.0'
