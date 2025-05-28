@@ -158,6 +158,7 @@ class IngestionService:
     async def _store_messages(self, messages: List[Dict[str, Any]]) -> List[DiscordMessageModel]:
         """
         Store validated messages in the database with proper transaction management.
+        Ensures channel exists in discord_channels table before storing messages.
 
         Args:
             messages: List of valid messages to store
@@ -166,12 +167,27 @@ class IngestionService:
             List[DiscordMessageModel]: Stored message models
         """
         from common.db import db
+        from features.models.new_schema.discord_channels import DiscordChannel
 
         stored_messages = []
 
         try:
             # Begin transaction - process all messages in a single transaction
             for message_data in messages:
+                # Ensure channel exists in discord_channels table
+                channel_id = str(message_data['channel_id'])
+                existing_channel = DiscordChannel.query.filter_by(channel_id=channel_id).first()
+                
+                if not existing_channel:
+                    # Create channel record if it doesn't exist
+                    new_channel = DiscordChannel(
+                        channel_id=channel_id,
+                        channel_name=f"Channel {channel_id}",  # Will be updated by channel manager
+                        is_active=True
+                    )
+                    db.session.add(new_channel)
+                    logger.info(f"Created channel record for {channel_id}")
+
                 # Create model instance (no database operations)
                 message_model = DiscordMessageModel.from_dict(message_data)
                 # Add to session but don't commit yet
@@ -181,6 +197,7 @@ class IngestionService:
             # Commit all messages at once
             db.session.commit()
             logger.info(f"Successfully stored {len(stored_messages)} messages in batch")
+            self.stats['total_stored'] += len(stored_messages)
 
         except Exception as e:
             # Rollback the entire batch if any message fails
