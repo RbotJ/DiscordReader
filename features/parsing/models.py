@@ -15,15 +15,13 @@ from common.db import db
 logger = logging.getLogger(__name__)
 
 
-class SetupModel(db.Model):
-    """
-    Database model for storing parsed trading setups.
-    
-    This model represents structured trading setup information
-    extracted from Discord messages through the parsing process.
-    """
-    
-    __tablename__ = 'trading_setups'
+# Legacy parsing models have been replaced by new schema
+# Use features.models.new_schema.TradeSetup and ParsedLevel instead
+
+from features.models.new_schema import TradeSetup, ParsedLevel
+
+# Re-export for backward compatibility during migration
+SetupModel = TradeSetup
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     

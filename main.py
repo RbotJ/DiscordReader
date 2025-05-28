@@ -166,11 +166,11 @@ app = create_app()
 # Component initialization on startup
 with app.app_context():
     try:
-        # Import all feature models to register them with SQLAlchemy
-        from features.parsing.models import *
+        # Import new schema models to register them with SQLAlchemy
+        from features.models.new_schema import DiscordChannel, DiscordMessage, TradeSetup, ParsedLevel
         from features.strategy.models import *
-        from common.events.models import *
-        # Note: features.discord.models moved to discord_decommission/
+        # Initialize database with new schema
+        initialize_db(app)
         
         # Initialize database tables
         from common.db import db
