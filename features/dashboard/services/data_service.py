@@ -9,6 +9,7 @@ import logging
 import datetime
 from typing import Dict, List, Any, Optional
 import pandas as pd
+from common.db import execute_query
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -216,6 +217,149 @@ def get_daily_performance(date_str: Optional[str] = None) -> Dict[str, Any]:
             'performance': [],
             'setups': [],
             'tickers': [],
+            'updated_at': datetime.datetime.now().isoformat(),
+            'error': str(e)
+        }
+
+def get_system_status() -> Dict[str, Any]:
+    """
+    Get system status data showing operational telemetry.
+    
+    Returns:
+        Dictionary containing:
+        - recent_discord_messages: 5 most recent raw Discord messages
+        - todays_messages: All messages for current trading day
+        - todays_setups: Parsed setups for current trading day
+        - tickers_summary: Parsed tickers with trade types and watch levels
+    """
+    try:
+        today = datetime.datetime.now().date()
+        
+        # Get 5 most recent Discord messages from events table
+        recent_messages_query = """
+            SELECT 
+                created_at,
+                event_type,
+                payload
+            FROM events 
+            WHERE channel LIKE 'discord%' 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        """
+        recent_messages = execute_query(recent_messages_query) or []
+        
+        # Get all messages for today
+        todays_messages_query = """
+            SELECT 
+                created_at,
+                event_type,
+                payload
+            FROM events 
+            WHERE channel LIKE 'discord%' 
+            AND DATE(created_at) = %s
+            ORDER BY created_at DESC
+        """
+        todays_messages = execute_query(todays_messages_query, [today]) or []
+        
+        # Get parsed setups for today
+        todays_setups_query = """
+            SELECT 
+                id,
+                ticker,
+                setup_type,
+                direction,
+                price_target,
+                confidence,
+                source,
+                active,
+                created_at
+            FROM setups 
+            WHERE DATE(created_at) = %s
+            ORDER BY created_at DESC
+        """
+        todays_setups = execute_query(todays_setups_query, [today]) or []
+        
+        # Get ticker summaries with trade types and watch levels
+        ticker_summary_query = """
+            SELECT 
+                ticker,
+                setup_type,
+                direction,
+                price_target,
+                confidence,
+                COUNT(*) as setup_count,
+                MAX(created_at) as latest_setup
+            FROM setups 
+            WHERE DATE(created_at) = %s
+            AND active = true
+            GROUP BY ticker, setup_type, direction, price_target, confidence
+            ORDER BY latest_setup DESC
+        """
+        tickers_summary = execute_query(ticker_summary_query, [today]) or []
+        
+        # Format the data for better readability
+        formatted_recent_messages = []
+        for msg in recent_messages:
+            try:
+                payload = msg.get('payload', {})
+                content = ''
+                if isinstance(payload, dict):
+                    content = payload.get('content', str(payload))[:100]
+                else:
+                    content = str(payload)[:100]
+                
+                formatted_recent_messages.append({
+                    'timestamp': msg.get('created_at'),
+                    'type': msg.get('event_type'),
+                    'content': content
+                })
+            except Exception as e:
+                logger.warning(f"Error formatting message: {e}")
+                continue
+        
+        formatted_todays_setups = []
+        for setup in todays_setups:
+            formatted_todays_setups.append({
+                'id': setup.get('id'),
+                'ticker': setup.get('ticker'),
+                'setup_type': setup.get('setup_type'),
+                'direction': setup.get('direction'),
+                'price_target': setup.get('price_target'),
+                'confidence': setup.get('confidence'),
+                'source': setup.get('source'),
+                'active': setup.get('active'),
+                'created_at': setup.get('created_at')
+            })
+        
+        formatted_tickers_summary = []
+        for ticker in tickers_summary:
+            formatted_tickers_summary.append({
+                'ticker': ticker.get('ticker'),
+                'setup_type': ticker.get('setup_type'),
+                'direction': ticker.get('direction'),
+                'watch_level': ticker.get('price_target'),
+                'confidence': ticker.get('confidence'),
+                'setup_count': ticker.get('setup_count'),
+                'latest_setup': ticker.get('latest_setup')
+            })
+        
+        return {
+            'recent_discord_messages': formatted_recent_messages,
+            'todays_messages_count': len(todays_messages),
+            'todays_setups': formatted_todays_setups,
+            'tickers_summary': formatted_tickers_summary,
+            'date': today.isoformat(),
+            'updated_at': datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting system status: {e}")
+        return {
+            'recent_discord_messages': [],
+            'todays_messages_count': 0,
+            'todays_setups': [],
+            'tickers_summary': [],
+            'date': datetime.datetime.now().date().isoformat(),
             'updated_at': datetime.datetime.now().isoformat(),
             'error': str(e)
         }

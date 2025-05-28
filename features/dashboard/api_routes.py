@@ -4,14 +4,15 @@ Dashboard API Routes
 This module provides API endpoints for the dashboard feature.
 """
 
-from flask import jsonify, request
+from flask import jsonify, request, render_template
 from . import dashboard_bp
 from .services.data_service import (
     get_dashboard_summary,
     get_discord_stats,
     get_trade_monitor_data,
     get_setup_data,
-    get_daily_performance
+    get_daily_performance,
+    get_system_status
 )
 
 # Register routes with the dashboard blueprint
@@ -84,6 +85,39 @@ def get_daily_performance_route():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@dashboard_bp.route('/status', methods=['GET'])
+def system_status():
+    """Get system status showing operational telemetry."""
+    try:
+        # Get system status data
+        status_data = get_system_status()
+        
+        # Check if JSON format is requested
+        format_requested = request.args.get('format', '').lower()
+        if format_requested == 'json':
+            return jsonify(status_data)
+        
+        # Otherwise, render HTML template
+        return render_template('dashboard/status.html', **status_data)
+        
+    except Exception as e:
+        error_data = {
+            'status': 'error',
+            'message': str(e),
+            'recent_discord_messages': [],
+            'todays_messages_count': 0,
+            'todays_setups': [],
+            'tickers_summary': [],
+            'error': str(e)
+        }
+        
+        # Return JSON error if requested, otherwise render error template
+        format_requested = request.args.get('format', '').lower()
+        if format_requested == 'json':
+            return jsonify(error_data), 500
+        
+        return render_template('dashboard/status.html', **error_data), 500
 
 def register_routes(app):
     """Register dashboard routes with the Flask app."""
