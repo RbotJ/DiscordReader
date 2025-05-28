@@ -235,78 +235,74 @@ def get_system_status() -> Dict[str, Any]:
     try:
         today = datetime.datetime.now().date()
         
-        # Get 5 most recent Discord messages from events table (fixed column name)
+        # Get 5 most recent Discord messages from NEW schema
         recent_messages_query = """
             SELECT 
-                created_at,
-                event_type,
-                data
-            FROM events 
-            WHERE channel LIKE %s 
-            ORDER BY created_at DESC 
+                m.created_at,
+                m.message_id,
+                m.content,
+                m.processed,
+                c.name as channel_name
+            FROM new_discord_messages m
+            LEFT JOIN new_discord_channels c ON m.channel_id = c.channel_id
+            ORDER BY m.created_at DESC 
             LIMIT 5
         """
-        recent_messages = execute_query(recent_messages_query, ['discord%']) or []
+        recent_messages = execute_query(recent_messages_query) or []
         
-        # Get all messages for today
+        # Get all messages for today from NEW schema
         todays_messages_query = """
-            SELECT 
-                created_at,
-                event_type,
-                data
-            FROM events 
-            WHERE channel LIKE %s 
-            AND DATE(created_at) = %s
-            ORDER BY created_at DESC
+            SELECT COUNT(*) as count
+            FROM new_discord_messages 
+            WHERE DATE(created_at) = %s
         """
-        todays_messages = execute_query(todays_messages_query, ['discord%', today]) or []
+        todays_messages_result = execute_query(todays_messages_query, (today,)) or []
+        todays_messages_count = todays_messages_result[0].get('count', 0) if todays_messages_result else 0
         
-        # Get parsed setups for today from existing trade_setups table
+        # Get parsed setups for today from NEW schema
         todays_setups_query = """
             SELECT 
-                id,
-                ticker,
-                setup_type,
-                watch_levels,
-                trading_day,
-                created_at,
-                active
-            FROM trade_setups 
-            WHERE DATE(created_at) = %s
-            ORDER BY created_at DESC
+                ts.id,
+                ts.ticker,
+                ts.trade_date,
+                ts.bias_note,
+                ts.is_active,
+                ts.parsed_at,
+                m.content as source_message
+            FROM new_trade_setups ts
+            LEFT JOIN new_discord_messages m ON ts.message_id = m.message_id
+            WHERE DATE(ts.parsed_at) = %s
+            ORDER BY ts.parsed_at DESC
         """
-        todays_setups = execute_query(todays_setups_query, [today]) or []
+        todays_setups = execute_query(todays_setups_query, (today,)) or []
         
-        # Get ticker summaries with trade types and watch levels
+        # Get ticker summaries with parsed levels from NEW schema
         ticker_summary_query = """
             SELECT 
-                ticker,
-                setup_type,
-                watch_levels,
-                COUNT(*) as setup_count,
-                MAX(created_at) as latest_setup
-            FROM trade_setups 
-            WHERE DATE(created_at) = %s
-            AND active = true
-            GROUP BY ticker, setup_type, watch_levels
+                ts.ticker,
+                COUNT(DISTINCT ts.id) as setup_count,
+                COUNT(pl.id) as levels_count,
+                MAX(ts.parsed_at) as latest_setup,
+                STRING_AGG(DISTINCT pl.direction, ', ') as directions,
+                AVG(pl.trigger_price) as avg_trigger_price
+            FROM new_trade_setups ts
+            LEFT JOIN new_parsed_levels pl ON ts.id = pl.setup_id
+            WHERE DATE(ts.parsed_at) = %s
+            AND ts.is_active = true
+            GROUP BY ts.ticker
             ORDER BY latest_setup DESC
         """
-        tickers_summary = execute_query(ticker_summary_query, [today]) or []
+        tickers_summary = execute_query(ticker_summary_query, (today,)) or []
         
-        # Format the data for better readability
+        # Format the data for better readability using NEW schema
         formatted_recent_messages = []
         for msg in recent_messages:
             try:
-                data_field = msg.get('data', {})
-                content = ''
-                if isinstance(data_field, dict):
-                    content = data_field.get('content', str(data_field))[:100]
-                else:
-                    content = str(data_field)[:100]
+                content = msg.get('content', '')[:100] if msg.get('content') else 'No content'
                 
                 formatted_recent_messages.append({
                     'timestamp': msg.get('created_at'),
-                    'type': msg.get('event_type'),
+                    'type': f"Discord Message ({msg.get('channel_name', 'Unknown Channel')})",
                     'content': content
                 })
             except Exception as e:
@@ -318,34 +314,30 @@ def get_system_status() -> Dict[str, Any]:
             formatted_todays_setups.append({
                 'id': setup.get('id'),
                 'ticker': setup.get('ticker'),
-                'setup_type': setup.get('setup_type'),
-                'watch_levels': setup.get('watch_levels'),
-                'trading_day': setup.get('trading_day'),
-                'active': setup.get('active'),
-                'created_at': setup.get('created_at')
+                'setup_type': 'Parsed Setup',
+                'direction': 'From Discord',
+                'price_target': setup.get('avg_trigger_price'),
+                'confidence': 1.0,  # New schema indicates processed setups
+                'source': 'discord',
+                'active': setup.get('is_active'),
+                'created_at': setup.get('parsed_at')
             })
         
         formatted_tickers_summary = []
         for ticker in tickers_summary:
-            # Extract first watch level from JSONB if available
-            watch_levels = ticker.get('watch_levels', {})
-            first_level = None
-            if isinstance(watch_levels, dict) and watch_levels:
-                first_level = next(iter(watch_levels.values()), None)
-            
             formatted_tickers_summary.append({
                 'ticker': ticker.get('ticker'),
-                'setup_type': ticker.get('setup_type'),
-                'direction': 'mixed',  # Default since old table doesn't have this
-                'watch_level': first_level,
-                'confidence': 0.5,  # Default since old table doesn't have this
+                'setup_type': 'Multi-Level Setup',
+                'direction': ticker.get('directions', 'mixed'),
+                'watch_level': ticker.get('avg_trigger_price'),
+                'confidence': 0.9,  # High confidence for parsed data
                 'setup_count': ticker.get('setup_count'),
                 'latest_setup': ticker.get('latest_setup')
             })
         
         return {
             'recent_discord_messages': formatted_recent_messages,
-            'todays_messages_count': len(todays_messages),
+            'todays_messages_count': todays_messages_count,
             'todays_setups': formatted_todays_setups,
             'tickers_summary': formatted_tickers_summary,
             'date': today.isoformat(),
