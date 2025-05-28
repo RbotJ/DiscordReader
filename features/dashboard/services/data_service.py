@@ -219,3 +219,92 @@ def get_daily_performance(date_str: Optional[str] = None) -> Dict[str, Any]:
             'updated_at': datetime.datetime.now().isoformat(),
             'error': str(e)
         }
+
+def get_status_summary() -> Dict[str, Any]:
+    """
+    Get comprehensive status summary including Discord messages and parsed setups.
+    
+    Returns:
+        Dictionary containing status summary data
+    """
+    try:
+        from datetime import date
+        from common.db import execute_query
+        
+        today = date.today().isoformat()
+        
+        # Get latest Discord messages
+        discord_messages_query = """
+        SELECT message_id, content, author_id, channel_id, created_at, processed
+        FROM discord_messages 
+        ORDER BY created_at DESC 
+        LIMIT 5
+        """
+        discord_messages = execute_query(discord_messages_query) or []
+        
+        # Get today's messages count
+        today_messages_query = """
+        SELECT COUNT(*) as count
+        FROM discord_messages 
+        WHERE DATE(created_at) = %s
+        """
+        today_messages_result = execute_query(today_messages_query, params=[today], fetch_one=True)
+        today_message_count = today_messages_result['count'] if today_messages_result and 'count' in today_messages_result else 0
+        
+        # Get today's parsed setups
+        parsed_setups_query = """
+        SELECT ticker, setup_type as trade_type, watch_levels, trading_day, created_at
+        FROM trade_setups 
+        WHERE DATE(created_at) = %s
+        ORDER BY created_at DESC
+        """
+        parsed_setups = execute_query(parsed_setups_query, params=[today]) or []
+        
+        # Format parsed setups for response
+        formatted_setups = []
+        for setup in parsed_setups:
+            formatted_setups.append({
+                'ticker': setup.get('ticker'),
+                'type': setup.get('trade_type', 'unknown'),
+                'watch_levels': setup.get('watch_levels', []),
+                'trading_day': setup.get('trading_day').isoformat() if setup.get('trading_day') else today,
+            })
+        
+        return {
+            'discord': {
+                'latest_messages': [
+                    {
+                        'message_id': msg.get('message_id'),
+                        'content': msg.get('content', '')[:100] + '...' if len(msg.get('content', '')) > 100 else msg.get('content', ''),
+                        'author_id': msg.get('author_id'),
+                        'timestamp': msg.get('created_at').isoformat() if msg.get('created_at') else None,
+                        'processed': msg.get('processed', False)
+                    }
+                    for msg in discord_messages
+                ],
+                'today_message_count': today_message_count
+            },
+            'parser': {
+                'date': today,
+                'message_count': today_message_count,
+                'parsed_setups': formatted_setups,
+                'setup_count': len(formatted_setups)
+            },
+            'updated_at': datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting status summary: {e}")
+        return {
+            'discord': {
+                'latest_messages': [],
+                'today_message_count': 0
+            },
+            'parser': {
+                'date': datetime.datetime.now().date().isoformat(),
+                'message_count': 0,
+                'parsed_setups': [],
+                'setup_count': 0
+            },
+            'updated_at': datetime.datetime.now().isoformat(),
+            'error': str(e)
+        }

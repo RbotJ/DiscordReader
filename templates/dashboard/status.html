@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Status - A+ Trading Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-card {
+            border-left: 4px solid #007bff;
+            transition: all 0.3s ease;
+        }
+        .status-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .message-item {
+            border-left: 3px solid #28a745;
+            background: #f8f9fa;
+            margin-bottom: 10px;
+            padding: 12px;
+            border-radius: 0 8px 8px 0;
+        }
+        .setup-item {
+            border-left: 3px solid #ffc107;
+            background: #fff3cd;
+            margin-bottom: 10px;
+            padding: 12px;
+            border-radius: 0 8px 8px 0;
+        }
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            border-radius: 50px;
+            padding: 12px 20px;
+        }
+        .badge-count {
+            font-size: 0.9rem;
+            padding: 8px 12px;
+        }
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1 class="h3 mb-0">
+                        <i class="fas fa-chart-line text-primary me-2"></i>
+                        System Status Dashboard
+                    </h1>
+                    <div class="text-muted small">
+                        Last updated: <span id="last-updated">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Summary Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fab fa-discord fa-2x text-primary mb-2"></i>
+                        <h5 class="card-title">Discord Messages</h5>
+                        <span class="badge bg-primary badge-count" id="discord-count">0</span>
+                        <p class="text-muted small mb-0">Today</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-chart-bar fa-2x text-success mb-2"></i>
+                        <h5 class="card-title">Parsed Setups</h5>
+                        <span class="badge bg-success badge-count" id="setup-count">0</span>
+                        <p class="text-muted small mb-0">Today</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-clock fa-2x text-warning mb-2"></i>
+                        <h5 class="card-title">Date</h5>
+                        <span class="badge bg-warning text-dark badge-count" id="current-date">-</span>
+                        <p class="text-muted small mb-0">Trading Day</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-sync-alt fa-2x text-info mb-2"></i>
+                        <h5 class="card-title">Status</h5>
+                        <span class="badge bg-info badge-count" id="system-status">Active</span>
+                        <p class="text-muted small mb-0">System</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="row">
+            <!-- Latest Discord Messages -->
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="fab fa-discord me-2"></i>
+                            Latest Discord Messages
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="discord-messages">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Loading messages...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Today's Parsed Setups -->
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-bar me-2"></i>
+                            Today's Parsed Setups
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="parsed-setups">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-success" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Loading setups...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refresh Button -->
+    <button class="btn btn-primary refresh-btn" onclick="loadStatus()">
+        <i class="fas fa-sync-alt me-1"></i> Refresh
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let isLoading = false;
+
+        async function loadStatus() {
+            if (isLoading) return;
+            
+            isLoading = true;
+            document.body.classList.add('loading');
+            
+            try {
+                const response = await fetch('/dashboard/status');
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(`Error loading status: ${data.error}`);
+                    return;
+                }
+                
+                updateStatusCards(data);
+                updateDiscordMessages(data.discord);
+                updateParsedSetups(data.parser);
+                updateLastUpdated(data.updated_at);
+                
+            } catch (error) {
+                console.error('Error loading status:', error);
+                showError('Failed to load status data. Please check your connection.');
+            } finally {
+                isLoading = false;
+                document.body.classList.remove('loading');
+            }
+        }
+
+        function updateStatusCards(data) {
+            document.getElementById('discord-count').textContent = data.discord.today_message_count || 0;
+            document.getElementById('setup-count').textContent = data.parser.setup_count || 0;
+            document.getElementById('current-date').textContent = data.parser.date || 'Unknown';
+            document.getElementById('system-status').textContent = 'Active';
+        }
+
+        function updateDiscordMessages(discordData) {
+            const container = document.getElementById('discord-messages');
+            
+            if (!discordData.latest_messages || discordData.latest_messages.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4">
+                        <i class="fab fa-discord fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No recent Discord messages found</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const messagesHtml = discordData.latest_messages.map(msg => `
+                <div class="message-item">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <small class="text-muted">
+                            <i class="fas fa-user me-1"></i>
+                            ${msg.author_id || 'Unknown'}
+                        </small>
+                        <small class="text-muted">
+                            ${formatTimestamp(msg.timestamp)}
+                        </small>
+                    </div>
+                    <p class="mb-1">${msg.content || 'No content'}</p>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">ID: ${msg.message_id || 'N/A'}</small>
+                        <span class="badge ${msg.processed ? 'bg-success' : 'bg-warning text-dark'}">
+                            ${msg.processed ? 'Processed' : 'Pending'}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = messagesHtml;
+        }
+
+        function updateParsedSetups(parserData) {
+            const container = document.getElementById('parsed-setups');
+            
+            if (!parserData.parsed_setups || parserData.parsed_setups.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4">
+                        <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No parsed setups found for today</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const setupsHtml = parserData.parsed_setups.map(setup => `
+                <div class="setup-item">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="mb-0">
+                            <i class="fas fa-chart-line me-1"></i>
+                            ${setup.ticker || 'Unknown'}
+                        </h6>
+                        <span class="badge bg-primary">${setup.type || 'Unknown'}</span>
+                    </div>
+                    <p class="mb-1">
+                        <strong>Watch Levels:</strong> 
+                        ${Array.isArray(setup.watch_levels) && setup.watch_levels.length > 0 
+                            ? setup.watch_levels.join(', ') 
+                            : 'No levels specified'}
+                    </p>
+                    <small class="text-muted">
+                        <i class="fas fa-calendar me-1"></i>
+                        Trading Day: ${setup.trading_day || 'Unknown'}
+                    </small>
+                </div>
+            `).join('');
+            
+            container.innerHTML = setupsHtml;
+        }
+
+        function updateLastUpdated(timestamp) {
+            if (timestamp) {
+                const date = new Date(timestamp);
+                document.getElementById('last-updated').textContent = date.toLocaleString();
+            }
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'Unknown';
+            const date = new Date(timestamp);
+            return date.toLocaleString();
+        }
+
+        function showError(message) {
+            const alertHtml = `
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            // Insert at the top of the container
+            const container = document.querySelector('.container-fluid');
+            container.insertAdjacentHTML('afterbegin', alertHtml);
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadStatus, 30000);
+
+        // Load status on page load
+        document.addEventListener('DOMContentLoaded', loadStatus);
+    </script>
+</body>
+</html>
