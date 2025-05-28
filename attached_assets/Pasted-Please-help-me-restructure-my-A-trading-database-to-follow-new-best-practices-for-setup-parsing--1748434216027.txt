@@ -1,0 +1,92 @@
+Please help me restructure my A+ trading database to follow new best practices for setup parsing.
+
+🎯 Goal:
+
+1. Create 4 new SQLAlchemy models and Alembic migrations
+2. Document and mark old setup tables as deprecated
+3. Refactor the ingestion and parsing features to use the new schema
+
+🆕 New Tables to Create (with Alembic migration):
+
+1. `discord_channels`
+2. `discord_messages`
+3. `trade_setups` (ticker-wide info per day)
+4. `parsed_levels` (individual parsed setup rows)
+
+📐 New SQLAlchemy Models:
+
+# discord\_channels.py
+
+class DiscordChannel(Base):
+id = Column(Integer, primary\_key=True)
+guild\_id = Column(String(50), nullable=False)
+channel\_id = Column(String(50), unique=True, nullable=False)
+name = Column(String(255), nullable=False)
+channel\_type = Column(String(50), nullable=False)
+is\_listen = Column(Boolean, default=False)
+is\_announce = Column(Boolean, default=False)
+is\_active = Column(Boolean, default=True)
+created\_at = Column(DateTime, default=datetime.utcnow)
+last\_seen = Column(DateTime)
+
+# discord\_messages.py
+
+class DiscordMessage(Base):
+id = Column(Integer, primary\_key=True)
+message\_id = Column(String(50), unique=True, nullable=False)
+channel\_id = Column(String(50), ForeignKey("discord\_channels.channel\_id"), nullable=False)
+author\_id = Column(String(50))
+content = Column(Text)
+message\_date = Column(Date)
+message\_time = Column(DateTime(timezone=True))
+processed = Column(Boolean, default=False)
+created\_at = Column(DateTime, default=datetime.utcnow)
+
+# trade\_setups.py
+
+class TradeSetup(Base):
+id = Column(Integer, primary\_key=True)
+ticker = Column(String(10), nullable=False)
+trade\_date = Column(Date, nullable=False)
+message\_id = Column(String(50), ForeignKey("discord\_messages.message\_id"), nullable=False)
+parsed\_at = Column(DateTime, default=datetime.utcnow)
+bias\_note = Column(Text)
+is\_active = Column(Boolean, default=True)
+
+# parsed\_levels.py
+
+class ParsedLevel(Base):
+id = Column(Integer, primary\_key=True)
+setup\_id = Column(Integer, ForeignKey("trade\_setups.id", ondelete="CASCADE"), nullable=False)
+label = Column(String, nullable=False)
+direction = Column(String, nullable=False)
+strategy\_type = Column(String)
+trigger\_relation = Column(String, nullable=False)
+trigger\_price = Column(Float, nullable=False)
+target\_1 = Column(Float)
+target\_2 = Column(Float)
+target\_3 = Column(Float)
+notes = Column(Text)
+
+🧹 Deprecation:
+
+* Archive or mark these tables as deprecated: `trade_setups`, `ticker_setups`, `setup_messages`
+* Leave data intact for now but stop all new writes to them
+
+🔁 Refactor:
+
+* Update all ingestion and parser features logic to:
+
+  * Store raw messages in `discord_messages`
+  * Link `discord_channels` via `channel_id`
+  * Store parsed tickers in `trade_setups`
+  * Store levels in `parsed_levels`
+
+📘 Documentation:
+
+* Document model purpose and key columns using SQLAlchemy model docstrings or separate markdown
+* Indicate clearly in old model files and comments that those are now deprecated and will be removed after migration is verified
+
+💡 Tip: Use vertical-slice layout conventions when placing models and refactoring features
+
+Please execute this migration, regenerate the database schema using Alembic, and confirm ingestion pipeline is fully rewired to the new models.
