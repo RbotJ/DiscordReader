@@ -176,8 +176,48 @@ with app.app_context():
         from common.db import db
         db.create_all()
         logging.info("Database tables initialized successfully")
+        
+        # Start Discord bot in background after database is ready
+        start_discord_bot_background()
+        
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
+
+def start_discord_bot_background():
+    """Start Discord bot in background thread"""
+    import asyncio
+    import threading
+    
+    def run_bot():
+        try:
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Check if Discord credentials are available
+            from features.discord_bot.config.settings import get_discord_token
+            token = get_discord_token()
+            
+            if not token:
+                logging.warning("Discord bot token not found - Discord integration disabled")
+                logging.info("Set DISCORD_BOT_TOKEN environment variable to enable Discord features")
+                return
+            
+            # Initialize and connect bot
+            from features.discord_bot.bot import DiscordClientManager
+            manager = DiscordClientManager(token=token)
+            
+            logging.info("Starting Discord bot connection...")
+            loop.run_until_complete(manager.connect())
+            
+        except Exception as e:
+            logging.error(f"Discord bot startup failed: {e}")
+            logging.info("Discord integration disabled - application will continue without bot features")
+    
+    # Start bot in daemon thread (won't block Flask shutdown)
+    bot_thread = threading.Thread(target=run_bot, daemon=True, name="DiscordBot")
+    bot_thread.start()
+    logging.info("Discord bot initialization started in background thread")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
