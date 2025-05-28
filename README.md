@@ -1,18 +1,18 @@
 # A+ Trading App
 
-A sophisticated options trading application that automates the process of parsing trading signals, selecting appropriate options contracts, and executing paper trades through Alpaca API.
+An advanced AI-powered options trading platform that leverages cutting-edge technology to provide intelligent market insights, comprehensive trading analysis, and dynamic monitoring capabilities.
 
 ## Overview
 
-The A+ Trading App is designed for traders who receive setup messages from various sources (like Discord or email) and want to automatically execute options trades based on those signals. The application features:
+The A+ Trading App is designed for traders who receive setup messages from Discord communities and want to automatically process and monitor trading signals. The application features:
 
-- Ingestion of setup messages through webhooks
-- Advanced parsing of trading signals, targets, and biases
-- Real-time market monitoring via Alpaca WebSocket
-- Options chain fetching and Greek calculations
-- Automated trade execution on signal triggers
-- Position management and exit rules
-- Web-based dashboard for monitoring activity
+- **Discord Bot Integration** - Real-time message monitoring and ingestion
+- **Advanced Message Parsing** - AI-powered extraction of trading signals and setups
+- **Enhanced Event System** - Complete operational telemetry with correlation tracking
+- **Real-time Market Data** - Live ticker prices via Alpaca WebSocket integration
+- **Interactive Dashboard** - Comprehensive monitoring with live event analytics
+- **Correlation Flow Tracking** - End-to-end visibility from Discord messages to trade setups
+- **Automated Cleanup** - 90-day retention policy with scheduled maintenance
 
 ## Architecture
 
@@ -21,28 +21,28 @@ The application follows a vertical-slice architecture, organized by features rat
 ```
 /  
 ├── features/
-│   ├── setups/           # ingestion, parsing, storage
-│   ├── market/           # underlying price subscriptions
-│   ├── options_selector/ # chain_fetcher, greeks, filters, risk
-│   ├── strategy/         # detect triggers, map to signals
-│   ├── execution/        # place orders, simulate
-│   ├── management/       # positions, exit rules
-│   └── notifications/    # Slack, dashboards
+│   ├── dashboard/        # Interactive monitoring dashboard with event analytics
+│   ├── discord_bot/      # Real-time Discord message monitoring and ingestion
+│   ├── events/           # Enhanced PostgreSQL event bus with correlation tracking
+│   ├── alpaca/           # WebSocket integration for real-time market data
+│   ├── models/           # Database models organized by feature
+│   │   └── new_schema/   # Enhanced schema (events, discord_channels, trade_setups, etc.)
+│   ├── ingestion/        # Message processing and storage services
+│   └── parsing/          # AI-powered setup extraction from Discord messages
 ├── common/
-│   ├── models.py         # Pydantic / SQLAlchemy definitions
-│   └── utils.py          # logging, config loader
+│   ├── db.py             # Enhanced database utilities with event publishing
+│   ├── event_constants.py # Structured event channels and types
+│   └── models.py         # Pydantic schemas and DTOs
 ├── docs/
-│   ├── adr/              # ADR Markdown files
-│   ├── schema.sql        # relational schema
-│   └── architecture.md   # detailed architecture docs
-├── templates/            # HTML templates for web UI
-├── static/               # CSS, JS, and assets for web UI
-│   ├── css/
-│   └── js/
-└── app.py               # Application entry point
+│   ├── DATABASE_SCHEMA.md       # Complete database documentation
+│   ├── PHASE_5_FUTURE_ENHANCEMENTS.md # Future development roadmap
+│   └── architecture.md          # System architecture details
+├── templates/            # Jinja2 templates for dashboard UI
+├── static/               # CSS, JS, and assets for web interface
+└── main.py              # Application entry point with enhanced initialization
 ```
 
-Event orchestration between components is handled through Redis pub/sub, allowing for loose coupling between features.
+Event orchestration is handled through an enhanced PostgreSQL-based event bus with correlation tracking, providing complete operational visibility from Discord messages through trade setup creation.
 
 ## Getting Started
 
