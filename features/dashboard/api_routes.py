@@ -264,3 +264,76 @@ def _calculate_operational_health(stats: Dict[str, Any]) -> Dict[str, Any]:
             'status': 'unknown',
             'error': str(e)
         }
+
+
+@dashboard_api.route('/correlation-flows', methods=['GET'])
+def get_correlation_flows():
+    """
+    Get recent correlation flows for Discord message tracing.
+    
+    Query parameters:
+        - hours: Hours to look back for flows (default: 24)
+        - limit: Maximum flows to return (default: 20)
+    """
+    try:
+        hours = int(request.args.get('hours', 24))
+        limit = int(request.args.get('limit', 20))
+        
+        # Get recent events with correlation IDs
+        since = datetime.utcnow() - timedelta(hours=hours)
+        events = EventQueryService.get_recent_events(hours, None, 1000)
+        
+        # Group by correlation ID
+        correlation_flows = {}
+        for event in events:
+            if event.correlation_id:
+                corr_id = str(event.correlation_id)
+                if corr_id not in correlation_flows:
+                    correlation_flows[corr_id] = {
+                        'correlation_id': corr_id,
+                        'events': [],
+                        'start_time': event.created_at,
+                        'end_time': event.created_at,
+                        'channels': set(),
+                        'sources': set()
+                    }
+                
+                flow = correlation_flows[corr_id]
+                flow['events'].append(event.to_dict())
+                flow['channels'].add(event.channel)
+                flow['sources'].add(event.source or 'unknown')
+                
+                # Update timespan
+                if event.created_at < flow['start_time']:
+                    flow['start_time'] = event.created_at
+                if event.created_at > flow['end_time']:
+                    flow['end_time'] = event.created_at
+        
+        # Convert sets to lists and sort by start time
+        flows = []
+        for flow in correlation_flows.values():
+            flow['channels'] = list(flow['channels'])
+            flow['sources'] = list(flow['sources'])
+            flow['event_count'] = len(flow['events'])
+            flow['duration_seconds'] = (flow['end_time'] - flow['start_time']).total_seconds()
+            flow['start_time'] = flow['start_time'].isoformat()
+            flow['end_time'] = flow['end_time'].isoformat()
+            flows.append(flow)
+        
+        # Sort by start time descending and limit
+        flows.sort(key=lambda x: x['start_time'], reverse=True)
+        flows = flows[:limit]
+        
+        return jsonify({
+            'success': True,
+            'flows': flows,
+            'count': len(flows),
+            'total_correlations': len(correlation_flows)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving correlation flows: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

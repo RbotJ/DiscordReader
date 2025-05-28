@@ -19,6 +19,7 @@ from .config.settings import (
     get_guild_id
 )
 from features.ingestion.service import IngestionService
+from features.discord_bot.services.correlation_service import DiscordCorrelationService
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,9 @@ class TradingDiscordBot(discord.Client):
             logger.error(f"Error scanning channels: {e}")
 
     async def _startup_catchup_ingestion(self):
-        """Trigger catch-up ingestion on startup using last message in database."""
+        """Trigger catch-up ingestion on startup using last message in database with correlation tracking."""
+        correlation_id = DiscordCorrelationService.generate_message_correlation_id()
+        
         try:
             from features.ingestion.models import DiscordMessageModel
             
@@ -106,6 +109,14 @@ class TradingDiscordBot(discord.Client):
             else:
                 logger.info("No previous messages found, starting full ingestion")
             
+            # Publish ingestion started event with correlation tracking
+            DiscordCorrelationService.publish_ingestion_started({
+                'channel_id': self.aplus_setups_channel_id,
+                'ingestion_type': 'startup_catchup',
+                'since_timestamp': since_timestamp.isoformat() if since_timestamp else None,
+                'limit': 200
+            }, correlation_id)
+            
             # Trigger catch-up ingestion with larger limit for startup
             result = await self.ingestion_service.ingest_latest_messages(
                 channel_id=self.aplus_setups_channel_id,
@@ -113,28 +124,66 @@ class TradingDiscordBot(discord.Client):
                 since=since_timestamp
             )
             
+            # Publish ingestion completed event with results
+            DiscordCorrelationService.publish_ingestion_completed({
+                **result.get('statistics', {}),
+                'channel_id': self.aplus_setups_channel_id,
+                'ingestion_type': 'startup_catchup'
+            }, correlation_id)
+            
             logger.info(f"Startup catch-up ingestion completed: {result.get('statistics', {})}")
             
         except Exception as e:
             logger.error(f"Error during startup catch-up ingestion: {e}")
+            # Publish error event
+            DiscordCorrelationService.publish_ingestion_completed({
+                'error': str(e),
+                'channel_id': self.aplus_setups_channel_id,
+                'ingestion_type': 'startup_catchup',
+                'success': False
+            }, correlation_id)
 
     async def _trigger_ingestion(self, channel_id: str):
-        """Trigger message ingestion for a specific channel."""
+        """Trigger message ingestion for a specific channel with correlation tracking."""
+        correlation_id = DiscordCorrelationService.generate_message_correlation_id()
+        
         if not self.ingestion_service:
             logger.error("Ingestion service not initialized")
             return
             
         try:
+            # Publish ingestion started event
+            DiscordCorrelationService.publish_ingestion_started({
+                'channel_id': channel_id,
+                'ingestion_type': 'real_time_trigger',
+                'limit': 50
+            }, correlation_id)
+            
             # Ingest latest 50 messages since last trigger
             result = await self.ingestion_service.ingest_latest_messages(
                 channel_id=channel_id,
                 limit=50,
                 since=self.ingestion_service.get_last_triggered()
             )
+            
+            # Publish ingestion completed event with results
+            DiscordCorrelationService.publish_ingestion_completed({
+                **result.get('statistics', {}),
+                'channel_id': channel_id,
+                'ingestion_type': 'real_time_trigger'
+            }, correlation_id)
+            
             logger.info(f"Ingestion completed: {result.get('statistics', {})}")
             
         except Exception as e:
             logger.error(f"Error triggering ingestion: {e}")
+            # Publish error event
+            DiscordCorrelationService.publish_ingestion_completed({
+                'error': str(e),
+                'channel_id': channel_id,
+                'ingestion_type': 'real_time_trigger',
+                'success': False
+            }, correlation_id)
 
     def is_ready(self) -> bool:
         """Check if bot is ready."""
