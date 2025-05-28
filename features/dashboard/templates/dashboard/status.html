@@ -51,6 +51,58 @@
             border-radius: 4px;
             font-size: 0.875rem;
         }
+        .service-status {
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .status-connected {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status-disconnected {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .status-disabled {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .status-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .status-idle {
+            background: #e2e3e5;
+            border: 1px solid #d6d8db;
+            color: #383d41;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .indicator-connected {
+            background: #28a745;
+        }
+        .indicator-disconnected {
+            background: #dc3545;
+        }
+        .indicator-disabled {
+            background: #ffc107;
+        }
+        .indicator-error {
+            background: #dc3545;
+        }
+        .indicator-idle {
+            background: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -70,6 +122,65 @@
         <div class="alert alert-danger" role="alert">
             <i class="fas fa-exclamation-triangle me-2"></i>
             <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <!-- Service Status Indicators -->
+        {% if service_status %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-server me-2"></i>Service Status</h3>
+            </div>
+            
+            <!-- Discord Bot Status -->
+            <div class="col-md-4 mb-3">
+                <div class="service-status status-{{ service_status.discord_bot.status }}">
+                    <h5>
+                        <span class="status-indicator indicator-{{ service_status.discord_bot.status }}"></span>
+                        Discord Bot
+                    </h5>
+                    <p class="mb-1"><strong>Status:</strong> {{ service_status.discord_bot.status|title }}</p>
+                    <p class="mb-1"><strong>Total Messages:</strong> {{ service_status.discord_bot.total_messages }}</p>
+                    <p class="mb-1"><strong>Today's Messages:</strong> {{ service_status.discord_bot.today_messages }}</p>
+                    {% if service_status.discord_bot.last_error %}
+                    <p class="mb-0"><small class="text-muted">{{ service_status.discord_bot.last_error }}</small></p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Alpaca Market Data Status -->
+            <div class="col-md-4 mb-3">
+                <div class="service-status status-{{ service_status.alpaca_market.status }}">
+                    <h5>
+                        <span class="status-indicator indicator-{{ service_status.alpaca_market.status }}"></span>
+                        Alpaca Market Data
+                    </h5>
+                    <p class="mb-1"><strong>Status:</strong> {{ service_status.alpaca_market.status|title }}</p>
+                    {% if service_status.alpaca_market.subscriptions %}
+                    <p class="mb-1"><strong>Subscriptions:</strong> {{ service_status.alpaca_market.subscriptions|join(', ') }}</p>
+                    {% endif %}
+                    {% if service_status.alpaca_market.last_error %}
+                    <p class="mb-0"><small class="text-muted">{{ service_status.alpaca_market.last_error }}</small></p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Database Status -->
+            <div class="col-md-4 mb-3">
+                <div class="service-status status-{{ service_status.database.status }}">
+                    <h5>
+                        <span class="status-indicator indicator-{{ service_status.database.status }}"></span>
+                        Database
+                    </h5>
+                    <p class="mb-1"><strong>Status:</strong> {{ service_status.database.status|title }}</p>
+                    {% if service_status.database.connection_time_ms %}
+                    <p class="mb-1"><strong>Query Time:</strong> {{ service_status.database.connection_time_ms }}ms</p>
+                    {% endif %}
+                    {% if service_status.database.last_error %}
+                    <p class="mb-0"><small class="text-muted">{{ service_status.database.last_error }}</small></p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
         {% endif %}
 
