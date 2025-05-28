@@ -107,16 +107,14 @@ def execute_query(query, params=None, fetch_one=False):
         
         # Handle different parameter formats
         if params is None:
-            query_params = {}
-        elif isinstance(params, tuple):
-            # Convert tuple to dict for named parameters
-            query_params = {}
+            result = db.session.execute(sql_text)
+        elif isinstance(params, (tuple, list)):
+            # For positional parameters, use the raw query with execute
+            result = db.session.execute(query, params)
         elif isinstance(params, dict):
-            query_params = params
+            result = db.session.execute(sql_text, params)
         else:
-            query_params = {}
-            
-        result = db.session.execute(sql_text, query_params)
+            result = db.session.execute(sql_text)
         
         if fetch_one:
             row = result.fetchone()

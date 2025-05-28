@@ -15,9 +15,25 @@ from . import api_routes
 # Add basic status route
 @dashboard_bp.route('/status')
 def status():
-    """Basic status route that redirects to enhanced dashboard."""
-    from flask import redirect, url_for
-    return redirect(url_for('dashboard_api.get_enhanced_status'))
+    """Main status dashboard with HTML interface."""
+    from flask import render_template
+    from .services.data_service import get_system_status
+    
+    try:
+        # Get system status data
+        status_data = get_system_status()
+        
+        # Render the HTML template with the data
+        return render_template('dashboard/status.html', **status_data)
+        
+    except Exception as e:
+        # Render template with error state
+        return render_template('dashboard/status.html', 
+                             error=str(e),
+                             recent_discord_messages=[],
+                             todays_messages_count=0,
+                             todays_setups=[],
+                             tickers_summary=[])
 
 # Version information
 __version__ = '0.1.0'
