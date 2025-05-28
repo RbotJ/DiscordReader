@@ -1,8 +1,8 @@
 """
-Discord Bot Client - Unified Implementation
+Discord Bot - Phase 2 Implementation
 
-Consolidates Discord client initialization logic from multiple sources.
-Uses standardized DISCORD_BOT_TOKEN environment variable.
+Real-time message monitoring with channel scanning and ingestion pipeline integration.
+Handles event-driven message processing and channel management.
 """
 import asyncio
 import logging
@@ -10,6 +10,7 @@ import os
 from typing import Optional, Dict, Any
 import discord
 from discord.ext import tasks
+from datetime import datetime
 
 from .config.settings import (
     validate_discord_env, 
@@ -17,6 +18,7 @@ from .config.settings import (
     get_channel_id,
     get_guild_id
 )
+from features.ingestion.service import IngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -24,31 +26,93 @@ logger = logging.getLogger(__name__)
 _global_client_manager = None
 
 
-class TradingDiscordClient(discord.Client):
-    """Discord client optimized for trading message monitoring."""
+class TradingDiscordBot(discord.Client):
+    """Discord bot for real-time message monitoring and channel management."""
 
     def __init__(self, *args, **kwargs):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.guilds = True
         super().__init__(intents=intents, *args, **kwargs)
-        self.channel_id = None
         self.ready_status = False
+        self.aplus_setups_channel_id = None
+        self.ingestion_service = None
+        self.client_manager = None
 
     async def on_ready(self):
-        """Called when the client is ready."""
-        logger.info(f'Connected to Discord as {self.user}')
+        """Bot startup - scan channels and initialize ingestion."""
+        logger.info(f'Discord bot connected as {self.user}')
         self.ready_status = True
+        
+        # Initialize channel monitoring service
+        await self._scan_and_update_channels()
+        
+        # Initialize ingestion service with this bot's client manager
+        if self.client_manager:
+            self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
+            logger.info("Ingestion service initialized with bot client")
+
+    async def on_message(self, message):
+        """Handle incoming messages from monitored channels."""
+        # Skip bot's own messages
+        if message.author == self.user:
+            return
+            
+        # Only process messages from aplus-setups channel
+        if str(message.channel.id) == self.aplus_setups_channel_id:
+            logger.info(f"Processing message from #aplus-setups: {message.id}")
+            await self._trigger_ingestion(message.channel.id)
+
+    async def _scan_and_update_channels(self):
+        """Scan all text channels and update database."""
+        from features.discord_bot.services.channel_monitor import ChannelMonitor
+        
+        try:
+            monitor = ChannelMonitor()
+            channels_updated = await monitor.scan_and_update_channels(self)
+            
+            # Find aplus-setups channel
+            for guild in self.guilds:
+                for channel in guild.text_channels:
+                    if channel.name == "aplus-setups":
+                        self.aplus_setups_channel_id = str(channel.id)
+                        logger.info(f"Found #aplus-setups channel: {self.aplus_setups_channel_id}")
+                        break
+                        
+            if not self.aplus_setups_channel_id:
+                logger.warning("Could not find #aplus-setups channel for ingestion")
+                
+        except Exception as e:
+            logger.error(f"Error scanning channels: {e}")
+
+    async def _trigger_ingestion(self, channel_id: str):
+        """Trigger message ingestion for a specific channel."""
+        if not self.ingestion_service:
+            logger.error("Ingestion service not initialized")
+            return
+            
+        try:
+            # Ingest latest 50 messages since last trigger
+            result = await self.ingestion_service.ingest_latest_messages(
+                channel_id=channel_id,
+                limit=50,
+                since=self.ingestion_service.get_last_triggered()
+            )
+            logger.info(f"Ingestion completed: {result.get('statistics', {})}")
+            
+        except Exception as e:
+            logger.error(f"Error triggering ingestion: {e}")
 
     def is_ready(self) -> bool:
-        """Check if client is ready."""
+        """Check if bot is ready."""
         return self.ready_status
 
 
 class DiscordClientManager:
     """
-    Unified Discord client manager with standardized environment variables.
+    Unified Discord client manager with bot integration.
     
-    Consolidates client management logic from multiple sources into one place.
+    Manages the Discord bot lifecycle and provides access to ingestion services.
     """
     
     def __init__(self, token: Optional[str] = None):
@@ -61,7 +125,7 @@ class DiscordClientManager:
         self.token = token or get_discord_token()
         self.channel_id = get_channel_id('default')
         self.guild_id = get_guild_id()
-        self.client: Optional[TradingDiscordClient] = None
+        self.client: Optional[TradingDiscordBot] = None
         self._is_connected = False
         self._connection_task = None
     
@@ -85,9 +149,9 @@ class DiscordClientManager:
                 logger.info("Discord client already connected")
                 return True
             
-            # Create new client instance
-            self.client = TradingDiscordClient()
-            self.client.channel_id = self.channel_id
+            # Create new bot instance
+            self.client = TradingDiscordBot()
+            self.client.client_manager = self  # Inject client manager reference
             
             # Start client in background task
             self._connection_task = asyncio.create_task(self._run_client())
