@@ -1,0 +1,95 @@
+# features/ingestion/status.py
+from .store import get_latest_discord_messages
+
+
+def get_ingestion_status():
+    return {
+        "latest_discord_messages": get_latest_discord_messages(limit=5)
+    }
+
+
+# features/setups/status.py
+from .store import get_today_messages, get_today_parsed_setups
+from datetime import date
+
+
+def get_parser_status():
+    today = date.today().isoformat()
+    messages = get_today_messages()
+    setups = get_today_parsed_setups()
+
+    parsed = [
+        {
+            "ticker": s.ticker,
+            "type": s.trade_type,
+            "watch_levels": s.watch_levels,
+            "trading_day": s.trading_day.isoformat(),
+        }
+        for s in setups
+    ]
+
+    return {
+        "date": today,
+        "message_count": len(messages),
+        "parsed_setups": parsed
+    }
+
+
+# routes/status.py
+from flask import Blueprint, jsonify
+from features.ingestion.status import get_ingestion_status
+from features.setups.status import get_parser_status
+
+status_bp = Blueprint("status", __name__, url_prefix="/status")
+
+
+@status_bp.route("/ingestion")
+def ingestion_status():
+    return jsonify(get_ingestion_status())
+
+
+@status_bp.route("/parser")
+def parser_status():
+    return jsonify(get_parser_status())
+
+
+# main.py or app.py (Flask entrypoint)
+from flask import Flask
+from routes.status import status_bp
+
+app = Flask(__name__)
+app.register_blueprint(status_bp)
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+# Example HTML/JS dashboard template snippet (Jinja2)
+# templates/status_dashboard.html
+<!DOCTYPE html>
+<html>
+<head><title>Status Dashboard</title></head>
+<body>
+  <h1>Ingestion Status</h1>
+  <ul id="discord-messages"></ul>
+
+  <h1>Parser Status</h1>
+  <p id="parse-date"></p>
+  <ul id="parsed-setups"></ul>
+
+  <script>
+    async function loadStatus() {
+      const ingestion = await fetch('/status/ingestion').then(res => res.json());
+      const parser = await fetch('/status/parser').then(res => res.json());
+
+      document.getElementById('discord-messages').innerHTML = ingestion.latest_discord_messages
+        .map(msg => `<li>${msg.timestamp} - ${msg.content}</li>`).join('');
+
+      document.getElementById('parse-date').textContent = `Date: ${parser.date}`;
+      document.getElementById('parsed-setups').innerHTML = parser.parsed_setups
+        .map(setup => `<li>${setup.ticker} (${setup.type}) → ${setup.watch_levels.join(', ')}</li>`).join('');
+    }
+    loadStatus();
+  </script>
+</body>
+</html>

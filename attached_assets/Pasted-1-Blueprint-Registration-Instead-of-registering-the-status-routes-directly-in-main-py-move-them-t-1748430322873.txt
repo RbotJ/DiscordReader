@@ -1,0 +1,84 @@
+1. Blueprint Registration
+Instead of registering the /status routes directly in main.py, move them to:
+
+bash
+Copy
+Edit
+features/dashboard/api_routes.py
+And register under the existing dashboard_bp blueprint in features/dashboard/__init__.py.
+
+2. Use the Dashboard Service Layer
+Move logic like get_ingestion_status() and get_parser_status() into:
+
+bash
+Copy
+Edit
+features/dashboard/services/data_service.py
+This keeps vertical slices intact and lets your dashboard layer pull from services without tightly coupling to setups or ingestion.
+
+python
+Copy
+Edit
+# features/dashboard/services/data_service.py
+
+from features.setups.store import get_today_messages, get_today_parsed_setups
+from features.ingestion.store import get_latest_discord_messages
+from datetime import date
+
+def get_status_summary():
+    return {
+        "discord": {
+            "latest_messages": get_latest_discord_messages(limit=5),
+        },
+        "parser": {
+            "date": date.today().isoformat(),
+            "messages_today": get_today_messages(),
+            "parsed_setups": [
+                {
+                    "ticker": s.ticker,
+                    "type": s.trade_type,
+                    "watch_levels": s.watch_levels,
+                    "trading_day": s.trading_day.isoformat(),
+                }
+                for s in get_today_parsed_setups()
+            ],
+        }
+    }
+3. Dashboard API Route
+Expose this through your API routes:
+
+python
+Copy
+Edit
+# features/dashboard/api_routes.py
+
+from flask import Blueprint, jsonify
+from .services.data_service import get_status_summary
+
+dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/dashboard")
+
+@dashboard_bp.route("/status", methods=["GET"])
+def status_summary():
+    return jsonify(get_status_summary())
+4. Jinja2 Template for Status Page
+If you're using templates:
+
+jinja2
+Copy
+Edit
+<!-- templates/dashboard/status.html -->
+<h1>System Status</h1>
+
+<h2>Latest Discord Messages</h2>
+<ul>
+  {% for msg in discord.latest_messages %}
+    <li>{{ msg.timestamp }} - {{ msg.content }}</li>
+  {% endfor %}
+</ul>
+
+<h2>Today's Parsed Setups ({{ parser.date }})</h2>
+<ul>
+  {% for setup in parser.parsed_setups %}
+    <li>{{ setup.ticker }} - {{ setup.type }} @ {{ setup.watch_levels | join(', ') }}</li>
+  {% endfor %}
+</ul>
