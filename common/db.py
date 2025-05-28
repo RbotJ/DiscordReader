@@ -103,14 +103,13 @@ def execute_query(query, params=None, fetch_one=False):
         list or dict: Query results or None if an error occurred
     """
     try:
-        sql_text = text(query)
+        from sqlalchemy import text
         
         # Handle different parameter formats with proper SQLAlchemy syntax
-        from sqlalchemy import text
         if params is None:
             result = db.session.execute(text(query))
         elif isinstance(params, (tuple, list)):
-            # For positional parameters, convert to named parameters
+            # For positional parameters
             result = db.session.execute(text(query), params)
         elif isinstance(params, dict):
             result = db.session.execute(text(query), params)
