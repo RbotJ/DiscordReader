@@ -105,16 +105,17 @@ def execute_query(query, params=None, fetch_one=False):
     try:
         sql_text = text(query)
         
-        # Handle different parameter formats
+        # Handle different parameter formats with proper SQLAlchemy syntax
+        from sqlalchemy import text
         if params is None:
-            result = db.session.execute(sql_text)
+            result = db.session.execute(text(query))
         elif isinstance(params, (tuple, list)):
-            # For positional parameters, use the raw query with execute
-            result = db.session.execute(query, params)
+            # For positional parameters, convert to named parameters
+            result = db.session.execute(text(query), params)
         elif isinstance(params, dict):
-            result = db.session.execute(sql_text, params)
+            result = db.session.execute(text(query), params)
         else:
-            result = db.session.execute(sql_text)
+            result = db.session.execute(text(query))
         
         if fetch_one:
             row = result.fetchone()

@@ -247,9 +247,9 @@ def get_system_status() -> Dict[str, Any]:
         todays_messages_query = """
             SELECT COUNT(*) as count
             FROM discord_messages 
-            WHERE DATE(created_at) = %s
+            WHERE DATE(created_at) = CURRENT_DATE
         """
-        todays_messages_result = execute_query(todays_messages_query, (today,)) or []
+        todays_messages_result = execute_query(todays_messages_query) or []
         todays_messages_count = todays_messages_result[0].get('count', 0) if todays_messages_result else 0
         
         # Get parsed setups for today from your new schema
@@ -264,10 +264,10 @@ def get_system_status() -> Dict[str, Any]:
                 m.content as source_message
             FROM trade_setups ts
             LEFT JOIN discord_messages m ON ts.message_id = m.message_id
-            WHERE DATE(ts.parsed_at) = %s
+            WHERE DATE(ts.parsed_at) = CURRENT_DATE
             ORDER BY ts.parsed_at DESC
         """
-        todays_setups = execute_query(todays_setups_query, (today,)) or []
+        todays_setups = execute_query(todays_setups_query) or []
         
         # Get ticker summaries with parsed levels from your new schema
         ticker_summary_query = """
@@ -280,12 +280,12 @@ def get_system_status() -> Dict[str, Any]:
                 AVG(pl.trigger_price) as avg_trigger_price
             FROM trade_setups ts
             LEFT JOIN parsed_levels pl ON ts.id = pl.setup_id
-            WHERE DATE(ts.parsed_at) = %s
+            WHERE DATE(ts.parsed_at) = CURRENT_DATE
             AND ts.is_active = true
             GROUP BY ts.ticker
             ORDER BY latest_setup DESC
         """
-        tickers_summary = execute_query(ticker_summary_query, (today,)) or []
+        tickers_summary = execute_query(ticker_summary_query) or []
         
         # No need to format individual messages since we're showing totals
         
