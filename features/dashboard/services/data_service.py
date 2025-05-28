@@ -235,7 +235,7 @@ def get_system_status() -> Dict[str, Any]:
     try:
         today = datetime.datetime.now().date()
         
-        # Get 5 most recent Discord messages from NEW schema
+        # Get 5 most recent Discord messages from your new schema
         recent_messages_query = """
             SELECT 
                 m.created_at,
@@ -243,23 +243,23 @@ def get_system_status() -> Dict[str, Any]:
                 m.content,
                 m.processed,
                 c.name as channel_name
-            FROM new_discord_messages m
-            LEFT JOIN new_discord_channels c ON m.channel_id = c.channel_id
+            FROM discord_messages m
+            LEFT JOIN discord_channels c ON m.channel_id = c.channel_id
             ORDER BY m.created_at DESC 
             LIMIT 5
         """
         recent_messages = execute_query(recent_messages_query) or []
         
-        # Get all messages for today from NEW schema
+        # Get all messages for today from your new schema
         todays_messages_query = """
             SELECT COUNT(*) as count
-            FROM new_discord_messages 
+            FROM discord_messages 
             WHERE DATE(created_at) = %s
         """
         todays_messages_result = execute_query(todays_messages_query, (today,)) or []
         todays_messages_count = todays_messages_result[0].get('count', 0) if todays_messages_result else 0
         
-        # Get parsed setups for today from NEW schema
+        # Get parsed setups for today from your new schema
         todays_setups_query = """
             SELECT 
                 ts.id,
@@ -269,14 +269,14 @@ def get_system_status() -> Dict[str, Any]:
                 ts.is_active,
                 ts.parsed_at,
                 m.content as source_message
-            FROM new_trade_setups ts
-            LEFT JOIN new_discord_messages m ON ts.message_id = m.message_id
+            FROM trade_setups ts
+            LEFT JOIN discord_messages m ON ts.message_id = m.message_id
             WHERE DATE(ts.parsed_at) = %s
             ORDER BY ts.parsed_at DESC
         """
         todays_setups = execute_query(todays_setups_query, (today,)) or []
         
-        # Get ticker summaries with parsed levels from NEW schema
+        # Get ticker summaries with parsed levels from your new schema
         ticker_summary_query = """
             SELECT 
                 ts.ticker,
@@ -285,14 +285,14 @@ def get_system_status() -> Dict[str, Any]:
                 MAX(ts.parsed_at) as latest_setup,
                 STRING_AGG(DISTINCT pl.direction, ', ') as directions,
                 AVG(pl.trigger_price) as avg_trigger_price
-            FROM new_trade_setups ts
-            LEFT JOIN new_parsed_levels pl ON ts.id = pl.setup_id
+            FROM trade_setups ts
+            LEFT JOIN parsed_levels pl ON ts.id = pl.setup_id
             WHERE DATE(ts.parsed_at) = %s
             AND ts.is_active = true
             GROUP BY ts.ticker
             ORDER BY latest_setup DESC
         """
-        tickers_summary = execute_query(ticker_summary_query, (today,)) or []
+        tickers_summary = execute_query(tickers_summary_query, (today,)) or []
         
         # Format the data for better readability using NEW schema
         formatted_recent_messages = []
