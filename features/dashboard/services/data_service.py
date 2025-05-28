@@ -235,20 +235,13 @@ def get_system_status() -> Dict[str, Any]:
     try:
         today = datetime.datetime.now().date()
         
-        # Get 5 most recent Discord messages from your new schema
-        recent_messages_query = """
-            SELECT 
-                m.created_at,
-                m.message_id,
-                m.content,
-                m.processed,
-                c.name as channel_name
-            FROM discord_messages m
-            LEFT JOIN discord_channels c ON m.channel_id = c.channel_id
-            ORDER BY m.created_at DESC 
-            LIMIT 5
+        # Get total message count from your new schema
+        total_messages_query = """
+            SELECT COUNT(*) as total_count
+            FROM discord_messages
         """
-        recent_messages = execute_query(recent_messages_query) or []
+        total_messages_result = execute_query(total_messages_query) or []
+        total_messages_count = total_messages_result[0].get('total_count', 0) if total_messages_result else 0
         
         # Get all messages for today from your new schema
         todays_messages_query = """
@@ -294,20 +287,7 @@ def get_system_status() -> Dict[str, Any]:
         """
         tickers_summary = execute_query(ticker_summary_query, (today,)) or []
         
-        # Format the data for better readability using NEW schema
-        formatted_recent_messages = []
-        for msg in recent_messages:
-            try:
-                content = msg.get('content', '')[:100] if msg.get('content') else 'No content'
-                
-                formatted_recent_messages.append({
-                    'timestamp': msg.get('created_at'),
-                    'type': f"Discord Message ({msg.get('channel_name', 'Unknown Channel')})",
-                    'content': content
-                })
-            except Exception as e:
-                logger.warning(f"Error formatting message: {e}")
-                continue
+        # No need to format individual messages since we're showing totals
         
         formatted_todays_setups = []
         for setup in todays_setups:
@@ -336,7 +316,7 @@ def get_system_status() -> Dict[str, Any]:
             })
         
         return {
-            'recent_discord_messages': formatted_recent_messages,
+            'total_messages_count': total_messages_count,
             'todays_messages_count': todays_messages_count,
             'todays_setups': formatted_todays_setups,
             'tickers_summary': formatted_tickers_summary,
@@ -347,7 +327,7 @@ def get_system_status() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
         return {
-            'recent_discord_messages': [],
+            'total_messages_count': 0,
             'todays_messages_count': 0,
             'todays_setups': [],
             'tickers_summary': [],

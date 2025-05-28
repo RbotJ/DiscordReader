@@ -30,7 +30,7 @@ def status():
         # Render template with error state
         return render_template('dashboard/status.html', 
                              error=str(e),
-                             recent_discord_messages=[],
+                             total_messages_count=0,
                              todays_messages_count=0,
                              todays_setups=[],
                              tickers_summary=[])
