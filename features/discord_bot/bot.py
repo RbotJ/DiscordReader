@@ -51,6 +51,10 @@ class TradingDiscordBot(discord.Client):
         if self.client_manager:
             self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
             logger.info("Ingestion service initialized with bot client")
+            
+            # Trigger startup catch-up ingestion if aplus-setups channel found
+            if self.aplus_setups_channel_id:
+                await self._startup_catchup_ingestion()
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
@@ -84,6 +88,35 @@ class TradingDiscordBot(discord.Client):
                 
         except Exception as e:
             logger.error(f"Error scanning channels: {e}")
+
+    async def _startup_catchup_ingestion(self):
+        """Trigger catch-up ingestion on startup using last message in database."""
+        try:
+            from features.ingestion.models import DiscordMessageModel
+            
+            # Get timestamp of last message in database for aplus-setups channel
+            last_message = DiscordMessageModel.query.filter_by(
+                channel_id=self.aplus_setups_channel_id
+            ).order_by(DiscordMessageModel.timestamp.desc()).first()
+            
+            since_timestamp = last_message.timestamp if last_message else None
+            
+            if since_timestamp:
+                logger.info(f"Starting catch-up ingestion since last message: {since_timestamp}")
+            else:
+                logger.info("No previous messages found, starting full ingestion")
+            
+            # Trigger catch-up ingestion with larger limit for startup
+            result = await self.ingestion_service.ingest_latest_messages(
+                channel_id=self.aplus_setups_channel_id,
+                limit=200,  # Larger limit for catch-up
+                since=since_timestamp
+            )
+            
+            logger.info(f"Startup catch-up ingestion completed: {result.get('statistics', {})}")
+            
+        except Exception as e:
+            logger.error(f"Error during startup catch-up ingestion: {e}")
 
     async def _trigger_ingestion(self, channel_id: str):
         """Trigger message ingestion for a specific channel."""
