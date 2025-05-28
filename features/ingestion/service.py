@@ -14,7 +14,6 @@ from datetime import datetime
 from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
 from .models import DiscordMessageModel
-from .discord import get_discord_client, ensure_discord_connection
 from common.db import publish_event
 from common.event_constants import EventChannels
 
@@ -29,10 +28,17 @@ class IngestionService:
     to storing them and emitting events for downstream processing.
     """
 
-    def __init__(self):
-        """Initialize ingestion service with required components."""
-        self.fetcher = None  # Will be initialized with Discord client
+    def __init__(self, discord_client_manager=None):
+        """
+        Initialize ingestion service with required components.
+        
+        Args:
+            discord_client_manager: Discord client manager instance (dependency injection)
+        """
+        self.client_manager = discord_client_manager
+        self.fetcher = None  # Will be initialized with provided client
         self.validator = MessageValidator()
+        self.last_triggered = None  # Track when ingestion was last triggered
         self.stats = {
             'total_fetched': 0,
             'total_validated': 0,
@@ -41,13 +47,14 @@ class IngestionService:
         }
 
     async def _ensure_fetcher_ready(self) -> bool:
-        """Ensure the message fetcher is ready with Discord connection."""
+        """Ensure the message fetcher is ready with injected Discord client."""
         if self.fetcher is None:
-            client_manager = await ensure_discord_connection()
-            if client_manager:
-                self.fetcher = MessageFetcher(client_manager)
+            if self.client_manager and self.client_manager.is_connected():
+                self.fetcher = MessageFetcher(self.client_manager)
                 return True
-            return False
+            else:
+                logger.error("Discord client manager not provided or not connected")
+                return False
         return True
 
     async def ingest_latest_messages(
@@ -68,6 +75,8 @@ class IngestionService:
             Dict[str, Any]: Ingestion results with statistics
         """
         try:
+            # Record when ingestion was triggered for dashboard tracking
+            self.last_triggered = datetime.utcnow()
             logger.info(f"Starting message ingestion for channel {channel_id}")
 
             # Step 1: Fetch messages
@@ -256,6 +265,16 @@ class IngestionService:
             'total_stored': 0,
             'total_errors': 0
         }
+
+    def get_last_triggered(self) -> Optional[datetime]:
+        """
+        Get timestamp of when ingestion was last triggered.
+        Used by dashboard for operational telemetry.
+        
+        Returns:
+            Optional[datetime]: Last triggered timestamp or None if never triggered
+        """
+        return self.last_triggered
 
     def _emit_message_stored_event(self, message) -> None:
         """
