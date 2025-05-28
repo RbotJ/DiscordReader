@@ -246,19 +246,19 @@ def get_status_summary() -> Dict[str, Any]:
         today_messages_query = """
         SELECT COUNT(*) as count
         FROM discord_messages 
-        WHERE DATE(created_at) = %s
+        WHERE DATE(created_at) = CURRENT_DATE
         """
-        today_messages_result = execute_query(today_messages_query, params=[today], fetch_one=True)
+        today_messages_result = execute_query(today_messages_query, fetch_one=True)
         today_message_count = today_messages_result['count'] if today_messages_result and 'count' in today_messages_result else 0
         
         # Get today's parsed setups
         parsed_setups_query = """
         SELECT ticker, setup_type as trade_type, watch_levels, trading_day, created_at
         FROM trade_setups 
-        WHERE DATE(created_at) = %s
+        WHERE DATE(created_at) = CURRENT_DATE
         ORDER BY created_at DESC
         """
-        parsed_setups = execute_query(parsed_setups_query, params=[today]) or []
+        parsed_setups = execute_query(parsed_setups_query) or []
         
         # Format parsed setups for response
         formatted_setups = []
