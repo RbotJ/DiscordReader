@@ -27,19 +27,27 @@ def initialize_db(app):
         logger.error(f"Failed to initialize database: {e}")
         return False
 
-def publish_event(event_type: str, payload: dict, channel: str = "default"):
-    """Publish event to the database using unified events schema."""
+def publish_event(event_type: str, payload: dict, channel: str = "default", source: str = None, correlation_id: str = None):
+    """
+    Publish event to the database using enhanced events schema with correlation tracking.
+    
+    Args:
+        event_type: Type of event (e.g. 'setup.parsed')
+        payload: Event data payload
+        channel: Event channel (e.g. 'setup:created')
+        source: Source service/module (e.g. 'discord_parser')
+        correlation_id: UUID for tracing related events
+    """
     try:
-        from common.events.models import EventModel  # local import to avoid circular dependency
-        event = EventModel(
-            event_type=event_type,
+        from features.events.enhanced_publisher import EventPublisher
+        event = EventPublisher.publish_event(
             channel=channel,
+            event_type=event_type,
             data=payload,
-            created_at=datetime.utcnow()
+            source=source,
+            correlation_id=correlation_id
         )
-        with db.session.begin():
-            db.session.add(event)
-        return True
+        return event is not None
     except Exception as e:
         logger.error(f"Failed to publish event: {e}")
         return False

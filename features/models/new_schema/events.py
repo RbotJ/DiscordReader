@@ -176,7 +176,7 @@ class Event(db.Model):
             'channel': self.channel,
             'event_type': self.event_type,
             'source': self.source,
-            'correlation_id': str(self.correlation_id) if self.correlation_id else None,
+            'correlation_id': str(self.correlation_id) if self.correlation_id is not None else None,
             'data': self.data,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at is not None else None
         }

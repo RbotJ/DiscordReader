@@ -123,6 +123,7 @@ def create_app():
     initialize_db(app)
 
     from common import models_db  # Import models after db init
+    from features.models.new_schema import events  # Import enhanced event model
 
     socketio.init_app(app, cors_allowed_origins="*")
     register_feature_routes(app)
