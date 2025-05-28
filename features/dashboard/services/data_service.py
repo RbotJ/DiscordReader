@@ -235,45 +235,43 @@ def get_system_status() -> Dict[str, Any]:
     try:
         today = datetime.datetime.now().date()
         
-        # Get 5 most recent Discord messages from events table
+        # Get 5 most recent Discord messages from events table (fixed column name)
         recent_messages_query = """
             SELECT 
                 created_at,
                 event_type,
-                payload
+                data
             FROM events 
-            WHERE channel LIKE 'discord%' 
+            WHERE channel LIKE %s 
             ORDER BY created_at DESC 
             LIMIT 5
         """
-        recent_messages = execute_query(recent_messages_query) or []
+        recent_messages = execute_query(recent_messages_query, ['discord%']) or []
         
         # Get all messages for today
         todays_messages_query = """
             SELECT 
                 created_at,
                 event_type,
-                payload
+                data
             FROM events 
-            WHERE channel LIKE 'discord%' 
+            WHERE channel LIKE %s 
             AND DATE(created_at) = %s
             ORDER BY created_at DESC
         """
-        todays_messages = execute_query(todays_messages_query, [today]) or []
+        todays_messages = execute_query(todays_messages_query, ['discord%', today]) or []
         
-        # Get parsed setups for today
+        # Get parsed setups for today from existing trade_setups table
         todays_setups_query = """
             SELECT 
                 id,
                 ticker,
                 setup_type,
-                direction,
-                price_target,
-                confidence,
-                source,
-                active,
-                created_at
-            FROM setups 
+                watch_levels,
+                trading_day,
+                created_at,
+                active
+            FROM trade_setups 
             WHERE DATE(created_at) = %s
             ORDER BY created_at DESC
         """
@@ -284,15 +282,13 @@ def get_system_status() -> Dict[str, Any]:
             SELECT 
                 ticker,
                 setup_type,
-                direction,
-                price_target,
-                confidence,
+                watch_levels,
                 COUNT(*) as setup_count,
                 MAX(created_at) as latest_setup
-            FROM setups 
+            FROM trade_setups 
             WHERE DATE(created_at) = %s
             AND active = true
-            GROUP BY ticker, setup_type, direction, price_target, confidence
+            GROUP BY ticker, setup_type, watch_levels
             ORDER BY latest_setup DESC
         """
         tickers_summary = execute_query(ticker_summary_query, [today]) or []
@@ -301,12 +297,12 @@ def get_system_status() -> Dict[str, Any]:
         formatted_recent_messages = []
         for msg in recent_messages:
             try:
-                payload = msg.get('payload', {})
+                data_field = msg.get('data', {})
                 content = ''
-                if isinstance(payload, dict):
-                    content = payload.get('content', str(payload))[:100]
+                if isinstance(data_field, dict):
+                    content = data_field.get('content', str(data_field))[:100]
                 else:
-                    content = str(payload)[:100]
+                    content = str(data_field)[:100]
                 
                 formatted_recent_messages.append({
                     'timestamp': msg.get('created_at'),
@@ -323,22 +319,26 @@ def get_system_status() -> Dict[str, Any]:
                 'id': setup.get('id'),
                 'ticker': setup.get('ticker'),
                 'setup_type': setup.get('setup_type'),
-                'direction': setup.get('direction'),
-                'price_target': setup.get('price_target'),
-                'confidence': setup.get('confidence'),
-                'source': setup.get('source'),
+                'watch_levels': setup.get('watch_levels'),
+                'trading_day': setup.get('trading_day'),
                 'active': setup.get('active'),
                 'created_at': setup.get('created_at')
             })
         
         formatted_tickers_summary = []
         for ticker in tickers_summary:
+            # Extract first watch level from JSONB if available
+            watch_levels = ticker.get('watch_levels', {})
+            first_level = None
+            if isinstance(watch_levels, dict) and watch_levels:
+                first_level = next(iter(watch_levels.values()), None)
+            
             formatted_tickers_summary.append({
                 'ticker': ticker.get('ticker'),
                 'setup_type': ticker.get('setup_type'),
-                'direction': ticker.get('direction'),
-                'watch_level': ticker.get('price_target'),
-                'confidence': ticker.get('confidence'),
+                'direction': 'mixed',  # Default since old table doesn't have this
+                'watch_level': first_level,
+                'confidence': 0.5,  # Default since old table doesn't have this
                 'setup_count': ticker.get('setup_count'),
                 'latest_setup': ticker.get('latest_setup')
             })
