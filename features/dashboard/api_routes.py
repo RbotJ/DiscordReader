@@ -11,8 +11,7 @@ from .services.data_service import (
     get_discord_stats,
     get_trade_monitor_data,
     get_setup_data,
-    get_daily_performance,
-    get_status_summary
+    get_daily_performance
 )
 
 # Register routes with the dashboard blueprint
@@ -85,24 +84,6 @@ def get_daily_performance_route():
             'status': 'error',
             'message': str(e)
         }), 500
-
-@dashboard_bp.route('/status', methods=['GET'])
-def status_summary():
-    """Get comprehensive status summary including Discord messages and parsed setups."""
-    try:
-        data = get_status_summary()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@dashboard_bp.route('/status-page', methods=['GET'])
-def status_page():
-    """Render the status dashboard page."""
-    from flask import render_template
-    return render_template('dashboard/status.html')
 
 def register_routes(app):
     """Register dashboard routes with the Flask app."""
