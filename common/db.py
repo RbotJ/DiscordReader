@@ -96,7 +96,7 @@ def execute_query(query, params=None, fetch_one=False):
 
     Args:
         query (str): SQL query to execute
-        params (dict, optional): Parameters for the query
+        params (tuple or dict, optional): Parameters for the query
         fetch_one (bool, optional): If True, fetch one result, otherwise fetch all
 
     Returns:
@@ -104,8 +104,27 @@ def execute_query(query, params=None, fetch_one=False):
     """
     try:
         sql_text = text(query)
-        result = db.session.execute(sql_text, params or {})
-        return result.fetchone() if fetch_one else result.fetchall()
+        
+        # Handle different parameter formats
+        if params is None:
+            query_params = {}
+        elif isinstance(params, tuple):
+            # Convert tuple to dict for named parameters
+            query_params = {}
+        elif isinstance(params, dict):
+            query_params = params
+        else:
+            query_params = {}
+            
+        result = db.session.execute(sql_text, query_params)
+        
+        if fetch_one:
+            row = result.fetchone()
+            return dict(row._mapping) if row else None
+        else:
+            rows = result.fetchall()
+            return [dict(row._mapping) for row in rows] if rows else []
+            
     except Exception as e:
         logger.error(f"Error executing query: {e}")
         db.session.rollback()

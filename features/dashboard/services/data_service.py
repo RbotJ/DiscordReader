@@ -292,7 +292,7 @@ def get_system_status() -> Dict[str, Any]:
             GROUP BY ts.ticker
             ORDER BY latest_setup DESC
         """
-        tickers_summary = execute_query(tickers_summary_query, (today,)) or []
+        tickers_summary = execute_query(ticker_summary_query, (today,)) or []
         
         # Format the data for better readability using NEW schema
         formatted_recent_messages = []
