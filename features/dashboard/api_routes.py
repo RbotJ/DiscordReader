@@ -1,125 +1,266 @@
 """
-Dashboard API Routes
+Enhanced Dashboard API Routes
 
-This module provides API endpoints for the dashboard feature.
+Provides event analytics endpoints for operational monitoring and real-time data.
+Integrates with the enhanced event system for comprehensive telemetry.
 """
+import logging
+from datetime import datetime, timedelta
+from flask import Blueprint, jsonify, request
+from typing import Dict, Any, List
 
-from flask import jsonify, request, render_template
-from . import dashboard_bp
-from .services.data_service import (
-    get_dashboard_summary,
-    get_discord_stats,
-    get_trade_monitor_data,
-    get_setup_data,
-    get_daily_performance,
-    get_system_status
-)
+from features.events.query_service import EventQueryService
+from common.event_constants import EventChannels, EventTypes
 
-# Register routes with the dashboard blueprint
-@dashboard_bp.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint for dashboard API."""
-    return jsonify({
-        'status': 'ok',
-        'feature': 'dashboard',
-        'version': '0.1.0'
-    })
+logger = logging.getLogger(__name__)
 
-@dashboard_bp.route('/data/summary', methods=['GET'])
-def get_data_summary():
-    """Get summary data for the main dashboard."""
+# Create blueprint for dashboard API routes
+dashboard_api = Blueprint('dashboard_api', __name__, url_prefix='/dashboard')
+
+
+@dashboard_api.route('/events', methods=['GET'])
+def get_events():
+    """
+    Get filtered events for operational monitoring.
+    
+    Query parameters:
+        - channel: Filter by event channel
+        - event_type: Filter by event type
+        - source: Filter by event source
+        - hours: Hours to look back (default: 24)
+        - limit: Maximum events to return (default: 100)
+    """
     try:
-        summary = get_dashboard_summary()
-        return jsonify(summary)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@dashboard_bp.route('/data/discord-stats', methods=['GET'])
-def get_discord_stats_route():
-    """Get Discord message statistics."""
-    try:
-        stats = get_discord_stats()
-        return jsonify(stats)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@dashboard_bp.route('/data/trade-monitor', methods=['GET'])
-def get_trade_monitor_data_route():
-    """Get data for trade monitoring."""
-    try:
-        data = get_trade_monitor_data()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@dashboard_bp.route('/data/setups', methods=['GET'])
-def get_setup_data_route():
-    """Get data for setup monitoring."""
-    try:
-        data = get_setup_data()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@dashboard_bp.route('/data/daily-performance', methods=['GET'])
-def get_daily_performance_route():
-    """Get daily ticker performance data."""
-    try:
-        date_str = request.args.get('date')
-        data = get_daily_performance(date_str)
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@dashboard_bp.route('/status', methods=['GET'])
-def system_status():
-    """Get system status showing operational telemetry."""
-    try:
-        # Get system status data
-        status_data = get_system_status()
+        # Parse query parameters
+        channel = request.args.get('channel')
+        event_type = request.args.get('event_type')
+        source = request.args.get('source')
+        hours = int(request.args.get('hours', 24))
+        limit = int(request.args.get('limit', 100))
         
-        # Check if JSON format is requested
-        format_requested = request.args.get('format', '').lower()
-        if format_requested == 'json':
-            return jsonify(status_data)
+        # Get events based on filters
+        if channel:
+            since = datetime.utcnow() - timedelta(hours=hours)
+            events = EventQueryService.get_events_by_channel(channel, since, limit)
+        elif event_type:
+            since = datetime.utcnow() - timedelta(hours=hours)
+            events = EventQueryService.get_events_by_type(event_type, since, limit)
+        elif source:
+            since = datetime.utcnow() - timedelta(hours=hours)
+            events = EventQueryService.get_events_by_source(source, since, limit)
+        else:
+            # Get recent events with operational focus
+            operational_channels = [
+                EventChannels.DISCORD_MESSAGE,
+                EventChannels.INGESTION_MESSAGE,
+                EventChannels.PARSING_SETUP,
+                EventChannels.BOT_STARTUP,
+                EventChannels.SYSTEM
+            ]
+            events = EventQueryService.get_recent_events(hours, operational_channels, limit)
         
-        # Otherwise, render HTML template
-        return render_template('dashboard/status.html', **status_data)
+        # Convert events to JSON-serializable format
+        event_data = [event.to_dict() for event in events]
+        
+        return jsonify({
+            'success': True,
+            'events': event_data,
+            'count': len(event_data),
+            'filters': {
+                'channel': channel,
+                'event_type': event_type,
+                'source': source,
+                'hours': hours,
+                'limit': limit
+            }
+        })
         
     except Exception as e:
-        error_data = {
-            'status': 'error',
-            'message': str(e),
-            'recent_discord_messages': [],
-            'todays_messages_count': 0,
-            'todays_setups': [],
-            'tickers_summary': [],
+        logger.error(f"Error retrieving events: {e}")
+        return jsonify({
+            'success': False,
             'error': str(e)
+        }), 500
+
+
+@dashboard_api.route('/events/correlation/<correlation_id>', methods=['GET'])
+def get_correlation_flow(correlation_id: str):
+    """
+    Get all events with the same correlation ID for flow tracing.
+    
+    Args:
+        correlation_id: UUID string for correlation tracking
+    """
+    try:
+        events = EventQueryService.get_events_by_correlation(correlation_id)
+        
+        if not events:
+            return jsonify({
+                'success': False,
+                'message': f'No events found for correlation ID: {correlation_id}'
+            }), 404
+        
+        # Convert events to timeline format
+        timeline = []
+        for event in events:
+            timeline.append({
+                'id': event.id,
+                'timestamp': event.created_at.isoformat(),
+                'channel': event.channel,
+                'event_type': event.event_type,
+                'source': event.source,
+                'data': event.data
+            })
+        
+        return jsonify({
+            'success': True,
+            'correlation_id': correlation_id,
+            'timeline': timeline,
+            'count': len(timeline)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving correlation flow: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@dashboard_api.route('/events/statistics', methods=['GET'])
+def get_event_statistics():
+    """
+    Get event statistics for operational monitoring.
+    
+    Query parameters:
+        - hours: Hours to calculate stats for (default: 24)
+    """
+    try:
+        hours = int(request.args.get('hours', 24))
+        since = datetime.utcnow() - timedelta(hours=hours)
+        
+        stats = EventQueryService.get_event_statistics(since)
+        
+        # Add operational insights
+        operational_stats = {
+            **stats,
+            'operational_health': _calculate_operational_health(stats),
+            'timeframe_hours': hours
         }
         
-        # Return JSON error if requested, otherwise render error template
-        format_requested = request.args.get('format', '').lower()
-        if format_requested == 'json':
-            return jsonify(error_data), 500
+        return jsonify({
+            'success': True,
+            'statistics': operational_stats
+        })
         
-        return render_template('dashboard/status.html', **error_data), 500
+    except Exception as e:
+        logger.error(f"Error calculating event statistics: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
-def register_routes(app):
-    """Register dashboard routes with the Flask app."""
-    app.register_blueprint(dashboard_bp)
-    return app
+
+@dashboard_api.route('/status/enhanced', methods=['GET'])
+def get_enhanced_status():
+    """
+    Enhanced status endpoint combining existing dashboard data with event analytics.
+    """
+    try:
+        # Get existing dashboard data from basic status endpoint
+        try:
+            from features.dashboard.services.data_service import get_system_status
+            existing_status = get_system_status()
+        except ImportError:
+            existing_status = {'success': True, 'message': 'Basic status data unavailable'}
+        
+        # Get recent operational events (last 2 hours)
+        recent_events = EventQueryService.get_recent_events(
+            hours=2,
+            channels=[
+                EventChannels.DISCORD_MESSAGE,
+                EventChannels.INGESTION_MESSAGE,
+                EventChannels.PARSING_SETUP,
+                EventChannels.ALERT_SYSTEM,
+                EventChannels.BOT_STARTUP
+            ],
+            limit=50
+        )
+        
+        # Get event statistics for operational health
+        event_stats = EventQueryService.get_event_statistics(
+            since=datetime.utcnow() - timedelta(hours=24)
+        )
+        
+        # Enhanced status response
+        enhanced_status = {
+            **existing_status,
+            'events': {
+                'recent_count': len(recent_events),
+                'recent_events': [event.to_dict() for event in recent_events[:10]],
+                'statistics': event_stats,
+                'operational_health': _calculate_operational_health(event_stats)
+            }
+        }
+        
+        return jsonify(enhanced_status)
+        
+    except Exception as e:
+        logger.error(f"Error getting enhanced status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+def _calculate_operational_health(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate operational health metrics from event statistics.
+    
+    Args:
+        stats: Event statistics dictionary
+        
+    Returns:
+        Dict containing health metrics
+    """
+    try:
+        total_events = stats.get('total_events', 0)
+        channels = stats.get('channels', {})
+        sources = stats.get('sources', {})
+        
+        # Calculate health indicators
+        discord_activity = channels.get(EventChannels.DISCORD_MESSAGE, 0)
+        ingestion_activity = channels.get(EventChannels.INGESTION_MESSAGE, 0)
+        parsing_activity = channels.get(EventChannels.PARSING_SETUP, 0)
+        system_errors = channels.get(EventChannels.SYSTEM, 0)
+        
+        # Health scoring
+        health_score = 100
+        if total_events == 0:
+            health_score = 50  # No activity
+        elif system_errors > (total_events * 0.1):
+            health_score = 30  # High error rate
+        elif ingestion_activity == 0 and discord_activity > 0:
+            health_score = 60  # Discord active but ingestion not working
+        elif parsing_activity == 0 and ingestion_activity > 0:
+            health_score = 70  # Ingestion working but parsing issues
+        
+        return {
+            'score': health_score,
+            'status': 'healthy' if health_score >= 80 else 'warning' if health_score >= 50 else 'critical',
+            'indicators': {
+                'discord_messages': discord_activity,
+                'ingestion_events': ingestion_activity,
+                'parsing_events': parsing_activity,
+                'system_errors': system_errors,
+                'total_events': total_events
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating operational health: {e}")
+        return {
+            'score': 0,
+            'status': 'unknown',
+            'error': str(e)
+        }

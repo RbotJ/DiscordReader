@@ -256,8 +256,234 @@
                 </p>
             </div>
         </div>
+        
+        <!-- Operational Events Section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Operational Events</h5>
+                        <div>
+                            <span id="operational-health" class="badge bg-secondary">Loading...</span>
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshEvents()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label for="eventChannel" class="form-label">Channel:</label>
+                                <select id="eventChannel" class="form-select form-select-sm" onchange="refreshEvents()">
+                                    <option value="">All Channels</option>
+                                    <option value="discord:message">Discord Messages</option>
+                                    <option value="ingestion:message">Ingestion</option>
+                                    <option value="parsing:setup">Setup Parsing</option>
+                                    <option value="bot:startup">Bot Events</option>
+                                    <option value="system">System</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="eventHours" class="form-label">Time Range:</label>
+                                <select id="eventHours" class="form-select form-select-sm" onchange="refreshEvents()">
+                                    <option value="2">Last 2 Hours</option>
+                                    <option value="6">Last 6 Hours</option>
+                                    <option value="24" selected>Last 24 Hours</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="events-table">
+                            <div class="text-center">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Event Analytics Functions
+        function refreshEvents() {
+            const channel = document.getElementById('eventChannel').value;
+            const hours = document.getElementById('eventHours').value;
+            
+            // Show loading
+            document.getElementById('events-table').innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            `;
+            
+            // Build query parameters
+            let params = new URLSearchParams();
+            if (channel) params.append('channel', channel);
+            params.append('hours', hours);
+            params.append('limit', '50');
+            
+            // Fetch events
+            fetch(`/dashboard/events?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayEvents(data.events);
+                        updateOperationalHealth(data.events);
+                    } else {
+                        document.getElementById('events-table').innerHTML = `
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Error loading events: ${data.error}
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching events:', error);
+                    document.getElementById('events-table').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-times-circle me-2"></i>
+                            Failed to load events. Please check console for details.
+                        </div>
+                    `;
+                });
+        }
+        
+        function displayEvents(events) {
+            if (events.length === 0) {
+                document.getElementById('events-table').innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        No events found for the selected filters.
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Channel</th>
+                                <th>Event Type</th>
+                                <th>Source</th>
+                                <th>Details</th>
+                                <th>Correlation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            events.forEach(event => {
+                const time = new Date(event.created_at).toLocaleTimeString();
+                const channelBadge = getChannelBadge(event.channel);
+                const eventTypeBadge = getEventTypeBadge(event.event_type);
+                const details = getEventDetails(event.data);
+                const correlationLink = event.correlation_id ? 
+                    `<a href="#" onclick="showCorrelationFlow('${event.correlation_id}')" class="text-decoration-none">
+                        <i class="fas fa-link"></i>
+                    </a>` : '-';
+                
+                html += `
+                    <tr>
+                        <td class="text-muted small">${time}</td>
+                        <td>${channelBadge}</td>
+                        <td>${eventTypeBadge}</td>
+                        <td class="small">${event.source || '-'}</td>
+                        <td class="small text-truncate" style="max-width: 200px;">${details}</td>
+                        <td class="text-center">${correlationLink}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            document.getElementById('events-table').innerHTML = html;
+        }
+        
+        function getChannelBadge(channel) {
+            const badges = {
+                'discord:message': 'bg-primary',
+                'ingestion:message': 'bg-info',
+                'parsing:setup': 'bg-success',
+                'bot:startup': 'bg-warning',
+                'system': 'bg-danger'
+            };
+            const badgeClass = badges[channel] || 'bg-secondary';
+            return `<span class="badge ${badgeClass}">${channel}</span>`;
+        }
+        
+        function getEventTypeBadge(eventType) {
+            if (eventType.includes('error')) return `<span class="badge bg-danger">${eventType}</span>`;
+            if (eventType.includes('warning')) return `<span class="badge bg-warning">${eventType}</span>`;
+            if (eventType.includes('parsed')) return `<span class="badge bg-success">${eventType}</span>`;
+            return `<span class="badge bg-light text-dark">${eventType}</span>`;
+        }
+        
+        function getEventDetails(data) {
+            if (data.ticker) return `Ticker: ${data.ticker}`;
+            if (data.message_count) return `Messages: ${data.message_count}`;
+            if (data.channel_id) return `Channel: ${data.channel_id}`;
+            if (data.service) return `Service: ${data.service}`;
+            return 'Event logged';
+        }
+        
+        function updateOperationalHealth(events) {
+            const healthElement = document.getElementById('operational-health');
+            
+            if (events.length === 0) {
+                healthElement.className = 'badge bg-warning';
+                healthElement.textContent = 'No Activity';
+                return;
+            }
+            
+            // Simple health calculation based on recent events
+            const errorEvents = events.filter(e => e.event_type.includes('error')).length;
+            const totalEvents = events.length;
+            
+            if (errorEvents > totalEvents * 0.1) {
+                healthElement.className = 'badge bg-danger';
+                healthElement.textContent = 'Critical';
+            } else if (totalEvents < 5) {
+                healthElement.className = 'badge bg-warning';
+                healthElement.textContent = 'Low Activity';
+            } else {
+                healthElement.className = 'badge bg-success';
+                healthElement.textContent = 'Healthy';
+            }
+        }
+        
+        function showCorrelationFlow(correlationId) {
+            if (!correlationId) return;
+            
+            // You could implement a modal or expand section here
+            fetch(`/dashboard/events/correlation/${correlationId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`Correlation Flow (${data.count} events):\n\n` + 
+                              data.timeline.map(e => `${e.timestamp}: ${e.channel}.${e.event_type}`).join('\n'));
+                    }
+                })
+                .catch(error => console.error('Error fetching correlation flow:', error));
+        }
+        
+        // Auto-refresh events every 30 seconds
+        setInterval(refreshEvents, 30000);
+        
+        // Load events on page load
+        document.addEventListener('DOMContentLoaded', refreshEvents);
+    </script>
 </body>
 </html>

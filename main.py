@@ -69,6 +69,14 @@ def register_feature_routes(app):
     except ImportError as e:
         logging.warning(f"Could not register dashboard routes: {e}")
     
+    # Register enhanced dashboard API routes
+    try:
+        from features.dashboard.api_routes import dashboard_api
+        app.register_blueprint(dashboard_api)
+        logging.info("Enhanced dashboard API routes registered successfully")
+    except ImportError as e:
+        logging.warning(f"Could not register enhanced dashboard API routes: {e}")
+    
     try:
         from features.discord.admin_routes import discord_admin_bp
         app.register_blueprint(discord_admin_bp)
@@ -128,6 +136,22 @@ def create_app():
     # Initialize enhanced event system
     from features.events.cleanup_service import cleanup_service
     cleanup_service.start_cleanup_scheduler()
+    
+    # Initialize Alpaca WebSocket for real-time ticker prices
+    try:
+        from features.alpaca.websocket_service import initialize_websocket_service
+        websocket_service = initialize_websocket_service(
+            api_key=app.config.get("ALPACA_API_KEY"),
+            api_secret=app.config.get("ALPACA_API_SECRET"),
+            paper_trading=app.config.get("PAPER_TRADING", True)
+        )
+        if websocket_service:
+            # Start with common tickers for real-time price updates
+            common_tickers = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA']
+            websocket_service.start_price_streaming(common_tickers)
+            logging.info("Alpaca WebSocket service initialized for real-time prices")
+    except Exception as e:
+        logging.warning(f"Could not initialize Alpaca WebSocket service: {e}")
 
     socketio.init_app(app, cors_allowed_origins="*")
     register_feature_routes(app)
