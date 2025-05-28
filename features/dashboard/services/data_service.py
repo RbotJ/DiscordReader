@@ -257,15 +257,14 @@ def get_system_status() -> Dict[str, Any]:
             SELECT 
                 ts.id,
                 ts.ticker,
-                ts.trade_date,
-                ts.bias_note,
-                ts.is_active,
-                ts.parsed_at,
-                m.content as source_message
+                ts.trading_day as trade_date,
+                ts.setup_type as bias_note,
+                ts.active as is_active,
+                ts.created_at as parsed_at,
+                NULL as source_message
             FROM trade_setups ts
-            LEFT JOIN discord_messages m ON ts.message_id = m.message_id
-            WHERE DATE(ts.parsed_at) = CURRENT_DATE
-            ORDER BY ts.parsed_at DESC
+            WHERE DATE(ts.trading_day) = CURRENT_DATE
+            ORDER BY ts.created_at DESC
         """
         todays_setups = execute_query(todays_setups_query) or []
         
@@ -275,13 +274,13 @@ def get_system_status() -> Dict[str, Any]:
                 ts.ticker,
                 COUNT(DISTINCT ts.id) as setup_count,
                 COUNT(pl.id) as levels_count,
-                MAX(ts.parsed_at) as latest_setup,
+                MAX(ts.created_at) as latest_setup,
                 STRING_AGG(DISTINCT pl.direction, ', ') as directions,
                 AVG(pl.trigger_price) as avg_trigger_price
             FROM trade_setups ts
             LEFT JOIN parsed_levels pl ON ts.id = pl.setup_id
-            WHERE DATE(ts.parsed_at) = CURRENT_DATE
-            AND ts.is_active = true
+            WHERE DATE(ts.trading_day) = CURRENT_DATE
+            AND ts.active = true
             GROUP BY ts.ticker
             ORDER BY latest_setup DESC
         """
