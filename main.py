@@ -77,12 +77,8 @@ def register_feature_routes(app):
     except ImportError as e:
         logging.warning(f"Could not register enhanced dashboard API routes: {e}")
     
-    try:
-        from features.discord.admin_routes import discord_admin_bp
-        app.register_blueprint(discord_admin_bp)
-        logging.info("Discord admin routes registered successfully")
-    except ImportError as e:
-        logging.warning(f"Could not register Discord admin routes: {e}")
+    # Discord admin routes not yet implemented
+    # Future: Add Discord bot management interface
 
 def register_web_routes(app):
     """Register main web routes"""

@@ -21,6 +21,7 @@ class Event(db.Model):
     """
     
     __tablename__ = 'events'
+    __table_args__ = {'extend_existing': True}
     
     # Primary key
     id = Column(Integer, primary_key=True, autoincrement=True)

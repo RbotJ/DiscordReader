@@ -41,6 +41,13 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
     Returns:
         bool: True if event published successfully, False otherwise
     """
+    from flask import has_app_context
+    
+    if not has_app_context():
+        import logging
+        logging.warning(f"Attempted to publish event {event_type} outside Flask application context")
+        return False
+    
     try:
         from features.events.enhanced_publisher import EventPublisher
         import uuid

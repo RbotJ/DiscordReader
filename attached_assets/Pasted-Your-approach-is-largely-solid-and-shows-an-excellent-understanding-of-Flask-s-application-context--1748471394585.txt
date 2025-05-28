@@ -1,0 +1,76 @@
+Your approach is largely solid and shows an excellent understanding of Flask’s application context. That said, I want to clarify what's right, what might be risky, and how to make it bulletproof—especially to ensure you don’t unintentionally override your event system's integrity.
+
+✅ What's Right About Your Fix
+
+1. Guarding with has_app_context()
+You're correctly checking if you're inside an app context before invoking Flask-dependent operations like db.session.
+
+if not has_app_context():
+    with current_app.app_context():
+        ...
+This is safe and necessary for:
+
+Background threads
+WebSocket handlers
+Scheduled jobs (e.g. cron or Celery)
+Scripted entrypoints (like manage.py or CLI tools)
+2. Encapsulating Publishing in a Helper
+This avoids duplicating the Flask context logic in every feature or module that publishes an event.
+
+⚠️ What Might Be Risky
+
+1. Calling current_app.app_context() Without App Context
+with current_app.app_context():
+This line assumes current_app exists, but current_app only exists if you're already in a Flask context. If you're truly outside Flask (e.g. in a Celery worker or async task), this will raise:
+
+RuntimeError: Working outside of application context.
+So this line won’t work reliably unless you’re already in the context (in which case you wouldn't need it).
+
+✅ Recommended Fix: Pass the App Explicitly
+
+Instead of relying on current_app, pass the app instance explicitly when needed, especially for background tasks or bootstrapping jobs.
+
+🔁 Replace:
+with current_app.app_context():
+✅ With:
+from flask import Flask
+
+def publish_event_with_app(app: Flask, *args, **kwargs):
+    with app.app_context():
+        publish_event(*args, **kwargs)
+Then call:
+
+publish_event_with_app(app, "setup.parsed", data)
+✅ Safe and Explicit Context Pattern
+
+Here’s a bulletproof way to structure your common/db.py publishing helper:
+
+from flask import current_app, has_app_context
+
+def publish_event(event_type: str, payload: dict, channel: str = "default", source: str = None, correlation_id: str = None):
+    from common.models import Event  # safe import here
+    from common.db import db
+
+    event = Event(
+        event_type=event_type,
+        channel=channel,
+        data=payload,
+        source=source,
+        correlation_id=correlation_id,
+        created_at=datetime.utcnow()
+    )
+
+    if has_app_context():
+        db.session.add(event)
+        db.session.commit()
+    else:
+        raise RuntimeError("publish_event must be called inside a Flask application context.")
+And then externally:
+with app.app_context():
+    publish_event("setup.created", data)
+✅ Summary
+
+Topic	Status	Recommendation
+Event system	✅ Compatible	Your improvements don’t override it
+App context fix	⚠️ Partially Safe	Avoid using current_app.app_context() unless you're already inside Flask
+Future-proofing	✅ Suggested	Use app.app_context() explicitly in scripts, pass app as needed
