@@ -1,0 +1,69 @@
+2. 🧰 Event Publishing Wrapper
+Update your publish_event() function to support richer metadata and traceability:
+
+python
+Copy
+Edit
+def publish_event(channel: str, event_type: str, data: dict, source: Optional[str] = None, correlation_id: Optional[UUID] = None):
+    event = Event(
+        channel=channel,
+        event_type=event_type,
+        data=data,
+        source=source,
+        correlation_id=correlation_id,
+        created_at=datetime.utcnow()
+    )
+    session.add(event)
+    session.commit()
+3. 📤 Event Constants Organization
+In common/event_constants.py, define channels and event types cleanly:
+
+python
+Copy
+Edit
+class EventChannels:
+    DISCORD_MESSAGE = 'discord:message'
+    SETUP_CREATED = 'setup:created'
+    SIGNAL_TRIGGERED = 'signal:triggered'
+    TRADE_EXECUTED = 'trade:executed'
+    POSITION_CLOSED = 'position:closed'
+
+class EventTypes:
+    DISCORD_RECEIVED = 'discord.message.received'
+    SETUP_PARSED = 'setup.parsed'
+    SIGNAL_TRIGGERED = 'signal.triggered'
+    TRADE_FILLED = 'trade.filled'
+4. 🧾 Events Query API
+Use filtered queries for event monitoring by channel or type:
+
+python
+Copy
+Edit
+def get_events_by_channel(channel: str, since: Optional[datetime] = None) -> List[Event]:
+    query = session.query(Event).filter_by(channel=channel)
+    if since:
+        query = query.filter(Event.created_at >= since)
+    return query.order_by(Event.created_at.desc()).all()
+5. 📈 Future-Proofing: Event Indexing
+To support production-grade throughput, add indexes:
+
+sql
+Copy
+Edit
+CREATE INDEX idx_events_channel ON events (channel);
+CREATE INDEX idx_events_event_type ON events (event_type);
+CREATE INDEX idx_events_created_at ON events (created_at);
+Optionally, a GIN index on data for filtering by payload:
+
+sql
+Copy
+Edit
+CREATE INDEX idx_events_data ON events USING GIN (data);
+✅ Summary of Suggested Improvements
+Area	Improvement
+Schema	Add source, correlation_id fields
+Publisher API	Support richer metadata + correlation IDs
+Event Types	Centralize constants for type/channel
+Querying	Filter by channel, type, time
+Indexing	Speed up queries across time/type/channels
+Traceability	Use correlation IDs to connect event flows

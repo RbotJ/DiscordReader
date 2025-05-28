@@ -29,27 +29,58 @@ def initialize_db(app):
 
 def publish_event(event_type: str, payload: dict, channel: str = "default", source: str = None, correlation_id: str = None):
     """
-    Publish event to the database using enhanced events schema with correlation tracking.
+    Enhanced event publishing wrapper with richer metadata and traceability.
     
     Args:
-        event_type: Type of event (e.g. 'setup.parsed')
-        payload: Event data payload
-        channel: Event channel (e.g. 'setup:created')
+        event_type: Type of event (e.g. 'parsing.setup.parsed')
+        payload: Event data payload (dict)
+        channel: Event channel (e.g. 'parsing:setup')
         source: Source service/module (e.g. 'discord_parser')
-        correlation_id: UUID for tracing related events
+        correlation_id: UUID string for tracing related events
+        
+    Returns:
+        bool: True if event published successfully, False otherwise
     """
     try:
         from features.events.enhanced_publisher import EventPublisher
+        import uuid
+        
+        # Generate correlation ID if not provided
+        if correlation_id is None:
+            correlation_id = str(uuid.uuid4())
+        
+        # Validate correlation ID format
+        if correlation_id and isinstance(correlation_id, str):
+            try:
+                uuid.UUID(correlation_id)  # Validate UUID format
+            except ValueError:
+                logger.warning(f"Invalid correlation_id format: {correlation_id}, generating new one")
+                correlation_id = str(uuid.uuid4())
+        
+        # Add metadata to payload
+        enhanced_payload = {
+            **payload,
+            'published_at': datetime.utcnow().isoformat(),
+            'correlation_id': correlation_id
+        }
+        
         event = EventPublisher.publish_event(
             channel=channel,
             event_type=event_type,
-            data=payload,
-            source=source,
+            data=enhanced_payload,
+            source=source or 'unknown',
             correlation_id=correlation_id
         )
-        return event is not None
+        
+        if event:
+            logger.debug(f"Event published: {channel}.{event_type} [{correlation_id[:8]}...]")
+            return True
+        else:
+            logger.error(f"Failed to publish event: {channel}.{event_type}")
+            return False
+            
     except Exception as e:
-        logger.error(f"Failed to publish event: {e}")
+        logger.error(f"Error in enhanced event publishing: {e}")
         return False
 
 def execute_query(query, params=None, fetch_one=False):

@@ -1670,6 +1670,7 @@ dependencies = [
     { name = "pytest-mock" },
     { name = "pytz" },
     { name = "requests" },
+    { name = "schedule" },
     { name = "scipy" },
     { name = "sqlalchemy" },
     { name = "trafilatura" },
@@ -1698,6 +1699,7 @@ requires-dist = [
     { name = "pytest-mock", specifier = ">=3.14.0" },
     { name = "pytz", specifier = ">=2025.2" },
     { name = "requests", specifier = ">=2.32.3" },
+    { name = "schedule", specifier = ">=1.2.2" },
     { name = "scipy", specifier = ">=1.15.3" },
     { name = "sqlalchemy", specifier = ">=2.0.41" },
     { name = "trafilatura", specifier = ">=2.0.0" },
@@ -1729,6 +1731,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ab/3a/0316b28d0761c6734d6bc14e770d85506c986c85ffb239e688eeaab2c2bc/rich-13.9.4.tar.gz", hash = "sha256:439594978a49a09530cff7ebc4b5c7103ef57baf48d5ea3184f21d9a2befa098", size = 223149 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/19/71/39c7c0d87f8d4e6c020a393182060eaefeeae6c01dab6a84ec346f2567df/rich-13.9.4-py3-none-any.whl", hash = "sha256:6049d5e6ec054bf2779ab3358186963bac2ea89175919d699e378b99738c2a90", size = 242424 },
+]
+
+[[package]]
+name = "schedule"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/91/b525790063015759f34447d4cf9d2ccb52cdee0f1dd6ff8764e863bcb74c/schedule-1.2.2.tar.gz", hash = "sha256:15fe9c75fe5fd9b9627f3f19cc0ef1420508f9f9a46f45cd0769ef75ede5f0b7", size = 26452 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/a7/84c96b61fd13205f2cafbe263cdb2745965974bdf3e0078f121dfeca5f02/schedule-1.2.2-py3-none-any.whl", hash = "sha256:5bef4a2a0183abf44046ae0d164cadcac21b1db011bdd8102e4a0c1e91e06a7d", size = 12220 },
 ]
 
 [[package]]

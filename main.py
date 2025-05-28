@@ -124,6 +124,10 @@ def create_app():
 
     from common import models_db  # Import models after db init
     from features.models.new_schema import events  # Import enhanced event model
+    
+    # Initialize enhanced event system
+    from features.events.cleanup_service import cleanup_service
+    cleanup_service.start_cleanup_scheduler()
 
     socketio.init_app(app, cors_allowed_origins="*")
     register_feature_routes(app)
