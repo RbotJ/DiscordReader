@@ -1,6 +1,6 @@
 # A+ Trading App
 
-An advanced AI-powered options trading platform that leverages cutting-edge technology to provide intelligent market insights, comprehensive trading analysis, and dynamic monitoring capabilities.
+An advanced options trading platform that leverages cutting-edge technology to provide intelligent market insights, comprehensive trading analysis, and dynamic monitoring capabilities.
 
 ## Overview
 
