@@ -44,17 +44,11 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
     Returns:
         bool: True if event published successfully, False otherwise
     """
-    from flask import has_app_context
-    
     if not has_app_context():
-        import logging
-        logging.warning(f"Attempted to publish event {event_type} outside Flask application context")
+        logger.warning(f"Attempted to publish event {event_type} outside Flask application context")
         return False
     
     try:
-        from common.events.enhanced_publisher import EventPublisher
-        import uuid
-        
         # Generate correlation ID if not provided
         if correlation_id is None:
             correlation_id = str(uuid.uuid4())
@@ -70,27 +64,41 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
         # Add metadata to payload
         enhanced_payload = {
             **payload,
-            'published_at': datetime.utcnow().isoformat(),
-            'correlation_id': correlation_id
+            '_metadata': {
+                'timestamp': datetime.utcnow().isoformat(),
+                'source': source,
+                'correlation_id': correlation_id
+            }
         }
         
-        event = EventPublisher.publish_event(
-            channel=channel,
-            event_type=event_type,
-            data=enhanced_payload,
-            source=source or 'unknown',
-            correlation_id=correlation_id
-        )
+        # Insert event into database
+        query = text("""
+            INSERT INTO events (event_type, channel, payload, source, correlation_id, timestamp, created_at)
+            VALUES (:event_type, :channel, :payload, :source, :correlation_id, :timestamp, :created_at)
+        """)
         
-        if event:
-            logger.debug(f"Event published: {channel}.{event_type} [{correlation_id[:8]}...]")
-            return True
-        else:
-            logger.error(f"Failed to publish event: {channel}.{event_type}")
-            return False
-            
+        params = {
+            'event_type': event_type,
+            'channel': channel,
+            'payload': json.dumps(enhanced_payload),
+            'source': source,
+            'correlation_id': correlation_id,
+            'timestamp': datetime.utcnow(),
+            'created_at': datetime.utcnow()
+        }
+        
+        db.session.execute(query, params)
+        db.session.commit()
+        
+        logger.debug(f"Published event: {event_type} to channel: {channel}")
+        return True
+        
     except Exception as e:
-        logger.error(f"Error in enhanced event publishing: {e}")
+        logger.error(f"Failed to publish event {event_type}: {e}")
+        try:
+            db.session.rollback()
+        except:
+            pass
         return False
 
 def execute_query(query, params=None, fetch_one=False):
@@ -106,42 +114,48 @@ def execute_query(query, params=None, fetch_one=False):
         list or dict: Query results or None if an error occurred
     """
     try:
-        from sqlalchemy import text
+        result = db.session.execute(text(query), params or {})
         
-        # Handle different parameter formats with proper SQLAlchemy syntax
-        if params is None:
-            result = db.session.execute(text(query))
-        elif isinstance(params, (tuple, list)):
-            # For positional parameters
-            result = db.session.execute(text(query), params)
-        elif isinstance(params, dict):
-            result = db.session.execute(text(query), params)
+        if query.strip().upper().startswith('SELECT'):
+            if fetch_one:
+                row = result.fetchone()
+                return dict(row._mapping) if row else None
+            else:
+                rows = result.fetchall()
+                return [dict(row._mapping) for row in rows]
         else:
-            result = db.session.execute(text(query))
-        
-        if fetch_one:
-            row = result.fetchone()
-            return dict(row._mapping) if row else None
-        else:
-            rows = result.fetchall()
-            return [dict(row._mapping) for row in rows] if rows else []
+            db.session.commit()
+            return True
             
     except Exception as e:
-        logger.error(f"Error executing query: {e}")
+        logger.error(f"Database query failed: {e}")
         db.session.rollback()
         return None
 
 def get_latest_events(channel: str, since_timestamp=None, limit: int = 100):
     """Query the latest events for a given channel."""
     try:
-        from common.events.models import EventModel
-        query = db.session.query(EventModel).filter(EventModel.channel == channel)
-        
         if since_timestamp:
-            query = query.filter(EventModel.created_at > since_timestamp)
+            query = text("""
+                SELECT * FROM events 
+                WHERE channel = :channel AND timestamp > :since_timestamp
+                ORDER BY timestamp DESC 
+                LIMIT :limit
+            """)
+            params = {'channel': channel, 'since_timestamp': since_timestamp, 'limit': limit}
+        else:
+            query = text("""
+                SELECT * FROM events 
+                WHERE channel = :channel 
+                ORDER BY timestamp DESC 
+                LIMIT :limit
+            """)
+            params = {'channel': channel, 'limit': limit}
         
-        events = query.order_by(EventModel.created_at.desc()).limit(limit).all()
-        return [{"id": e.id, "event_type": e.event_type, "data": e.data, "created_at": e.created_at} for e in events]
+        result = db.session.execute(query, params)
+        rows = result.fetchall()
+        return [dict(row._mapping) for row in rows]
+        
     except Exception as e:
         logger.error(f"Failed to get latest events: {e}")
         return []
@@ -154,8 +168,9 @@ def check_database_connection():
         bool: True if connection is working, False otherwise
     """
     try:
-        result = execute_query("SELECT 1", fetch_one=True)
-        return result is not None and result[0] == 1
+        # Simple query to test connection
+        db.session.execute(text("SELECT 1"))
+        return True
     except Exception as e:
         logger.error(f"Database connection check failed: {e}")
         return False
