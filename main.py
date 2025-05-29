@@ -181,8 +181,11 @@ with app.app_context():
         
         # Start Discord bot in background after database is ready
         try:
+            print("🔄 About to start Discord bot...")
             start_discord_bot_background()
+            print("✅ Discord bot startup initiated")
         except Exception as e:
+            print(f"❌ Failed to start Discord bot: {e}")
             logging.error(f"Failed to start Discord bot: {e}")
         
     except Exception as e:
