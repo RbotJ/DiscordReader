@@ -1,0 +1,151 @@
+Here are a few ways to supercharge your Phase 5 plan—both in structure and process—to get rock-solid, slice-safe tests:
+
+1. Centralize Common Fixtures & Test Utilities
+Why: Reduces duplication and makes it trivial to spin up mocks or fakes in any slice.
+
+tests/conftest.py at repo root:
+
+python
+Copy
+Edit
+import pytest
+from features.discord_bot.dto import RawMessageDto
+from features.ingestion.service import IngestionService
+from features.ingestion.interfaces import IIngestionService
+from unittest.mock import AsyncMock
+
+@pytest.fixture
+def sample_raw_message():
+    return RawMessageDto(
+        message_id="123",
+        channel_id=999,
+        author_id="abc",
+        content="hello world",
+        timestamp=datetime.utcnow()
+    )
+
+@pytest.fixture
+def fake_ingestion_service():
+    svc = AsyncMock(spec=IIngestionService)
+    svc.ingest_raw_message = AsyncMock()
+    return svc
+Slice-specific conftest.py under tests/vertical_slices can inherit and extend (e.g. in-memory DB session, event‐bus stub).
+
+2. Enforce Contract-Driven Slice Tests
+Why: Each slice ships with its own consumer-driven “contract test” so you catch interface drift immediately.
+
+Discord slice has a test that treats any IIngestionService as a black box:
+
+python
+Copy
+Edit
+# tests/vertical_slices/test_discord_bot/test_bot_contract.py
+async def test_on_message_calls_ingestion(fake_ingestion_service, sample_raw_message, event_loop):
+    bot = TradingDiscordBot(ingestion_service=fake_ingestion_service, intents=…, token="x")
+    # simulate ready & message event
+    await bot._handle_message_event(sample_raw_message.to_discord_message())
+    fake_ingestion_service.ingest_raw_message.assert_awaited_once()
+Ingestion slice has a test that verifies it honors the RawMessageDto contract:
+
+python
+Copy
+Edit
+# tests/vertical_slices/test_ingestion/test_service_contract.py
+def test_ingest_raw_message_publishes_event(sample_raw_message, in_memory_event_bus, in_memory_db):
+    svc = IngestionService(db_session_factory=in_memory_db, event_publisher=in_memory_event_bus, validator=…)
+    asyncio.run(svc.ingest_raw_message(sample_raw_message))
+    assert in_memory_event_bus.published("MESSAGE_STORED", {"id": "123"})
+3. Automate Boundary Enforcement with a Simple Linter Rule
+Why: Prevents cross-slice imports before they even land in CI.
+
+Add a tiny script (e.g. scripts/check_imports.py) that scans your features folder for forbidden patterns:
+
+python
+Copy
+Edit
+import ast, pathlib, sys
+
+BAD = {
+    "features.discord_bot":     ["features.ingestion"],
+    "features.ingestion":       ["features.discord_bot"],
+}
+
+root = pathlib.Path(__file__).parent.parent / "features"
+errors = []
+
+for py in root.rglob("*.py"):
+    tree = ast.parse(py.read_text(), filename=str(py))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            for src, banned in BAD.items():
+                if src in str(py) and any(m.startswith(b) for b in banned for m in [mod]):
+                    errors.append(f"{py}: imports {mod}")
+if errors:
+    print("Boundary violations:\n" + "\n".join(errors))
+    sys.exit(1)
+Hook it into pre-commit or your CI pipeline so slices remain hermetically sealed.
+
+4. Parametrize & Data-Drive Your Tests
+Why: Quickly cover edge cases (empty messages, huge payloads, invalid content) without boilerplate.
+
+Example for ingestion service:
+
+python
+Copy
+Edit
+@pytest.mark.parametrize("content,valid", [
+    ("", False),
+    ("   ", False),
+    ("valid setup: BUY AAPL 150", True),
+    ("#aplus teardown", True),
+])
+def test_validation_driven(sample_raw_message, content, valid, validator):
+    raw = sample_raw_message._replace(content=content)
+    assert validator.validate(raw) is valid
+5. Slice-Level Coverage Gates & CI Reports
+Why: Ensures each slice hits its own minimum coverage (e.g. 80–90%) so no dead zones.
+
+In your CI config:
+
+yaml
+Copy
+Edit
+steps:
+  - run: pytest --cov=features/discord_bot --cov-fail-under=85
+  - run: pytest --cov=features/ingestion   --cov-fail-under=90
+This prevents a slice from slipping untested code into production.
+
+6. Lightweight Integration “Smoke” Harness
+Why: Verifies end-to-end wiring (Discord→Ingestion→DB→Event) without a full Discord gateway.
+
+Spin up an in-memory SQLite DB and a dummy event-bus, then:
+
+python
+Copy
+Edit
+def test_end_to_end_ingest(sample_raw_message, in_memory_db, in_memory_event_bus):
+    ingestion = IngestionService(…)
+    bot = TradingDiscordBot(ingestion_service=ingestion, …)
+    # Call the bot’s handler directly
+    asyncio.run(bot.on_message(sample_raw_message.to_discord_message()))
+    # Assert persistence + event
+    with in_memory_db() as s:
+        assert s.query(DiscordMessageModel).count() == 1
+    assert in_memory_event_bus.has_event("MESSAGE_STORED")
+Put this in tests/vertical_slices/test_workflow/.
+
+Summary of Improvements
+Shared fixtures for DRY tests
+
+Contract tests in each slice to prevent interface drift
+
+Automated import-boundary checks in CI
+
+Parametrized data-driven tests for edge cases
+
+Slice-specific coverage gates to enforce quality
+
+End-to-end smoke tests that run in memory
+
+With these enhancements, your vertical slices will stay perfectly decoupled, fully tested, and protected by both unit- and integration-level guards.

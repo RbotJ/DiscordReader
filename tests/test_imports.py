@@ -7,7 +7,7 @@ import pytest
 def test_discord_bot_imports():
     """Test that Discord bot modules can be imported cleanly."""
     try:
-        import features.discord_bot.simple_bot
+        import features.discord_bot.bot
         import features.discord_bot.dto
         import features.discord_bot.interfaces
         assert True
@@ -31,7 +31,7 @@ def test_vertical_slice_integration():
     try:
         from features.discord_bot.dto import RawMessageDto
         from features.ingestion.service import IngestionService
-        from features.discord_bot.simple_bot import SimpleTradingBot
+        from features.discord_bot.bot import TradingDiscordBot
         
         # Test basic instantiation without actual connections
         ingestion_service = IngestionService()
@@ -39,7 +39,7 @@ def test_vertical_slice_integration():
         # This should not raise import errors
         assert RawMessageDto is not None
         assert IngestionService is not None
-        assert SimpleTradingBot is not None
+        assert TradingDiscordBot is not None
         
     except ImportError as e:
         pytest.fail(f"Vertical slice integration failed: {e}")
