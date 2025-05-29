@@ -1,0 +1,112 @@
+📁 Recommended /common Directory Structure
+A well-structured /common directory serves as the foundation for shared infrastructure and utilities across your vertical slices. Here's a suggested organization:
+
+bash
+Copy
+Edit
+/common
+├── events/
+│   ├── __init__.py
+│   ├── models.py          # SQLAlchemy Event model
+│   ├── publisher.py       # publish_event(), flush_event_buffer()
+│   ├── consumer.py        # get_events_by_channel(), polling helpers
+│   └── constants.py       # EventChannels, EventTypes enums
+├── db/
+│   ├── __init__.py
+│   ├── session.py         # SQLAlchemy session management
+│   └── migrations/        # Alembic migration scripts
+├── logging/
+│   ├── __init__.py
+│   └── logger.py          # Logging configuration and utilities
+├── config/
+│   ├── __init__.py
+│   └── settings.py        # Application configuration management
+├── utils/
+│   ├── __init__.py
+│   └── helpers.py         # Miscellaneous utility functions
+└── middleware/
+    ├── __init__.py
+    └── error_handler.py   # Global error handling middleware
+This structure promotes clear separation of concerns and facilitates easy navigation and maintenance.
+
+🔍 Detailed Recommendations
+1. Consolidate Event Handling in /common/events
+Ensure that all event-related logic resides within the /common/events directory. This includes:
+
+Event Model: Define a single Event model in models.py to represent events in your PostgreSQL event bus.
+
+Publishing Utilities: Implement functions like publish_event() in publisher.py to standardize event emission.
+
+Consumption Utilities: Provide functions in consumer.py to retrieve and process events.
+
+Constants: Maintain event channel and type definitions in constants.py for consistency.
+
+This consolidation aligns with VSA by centralizing cross-cutting concerns, reducing redundancy, and enhancing maintainability.
+Reddit
++6
+LinkedIn
++6
+Medium
++6
+
+2. Enhance Database Session Management
+In /common/db/session.py, implement a robust session management system:
+
+python
+Copy
+Edit
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+This setup ensures consistent database interactions across your application.
+
+3. Implement Centralized Logging
+Create a logging configuration in /common/logging/logger.py:
+
+python
+Copy
+Edit
+import logging
+
+def setup_logger(name: str) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    # Configure handlers, formatters, etc.
+    return logger
+Centralized logging facilitates easier debugging and monitoring.
+
+4. Manage Configuration Settings
+Utilize /common/config/settings.py to manage application settings:
+
+python
+Copy
+Edit
+import os
+
+class Settings:
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+    # Add other settings as needed
+
+settings = Settings()
+This approach centralizes configuration, making it easier to manage different environments.
+
+5. Provide Utility Functions
+In /common/utils/helpers.py, include reusable utility functions that can be shared across slices, such as date formatting, data validation, etc.
+
+6. Implement Global Error Handling
+Create middleware in /common/middleware/error_handler.py to handle exceptions globally, ensuring consistent error responses and logging.
+
+✅ Summary of Benefits
+Improvement Area	Benefit
+Consolidated Event Handling	Reduces redundancy and enhances maintainability
+Centralized DB Management	Ensures consistent database interactions
+Unified Logging	Simplifies debugging and monitoring
+Central Config Management	Eases environment-specific configurations
+Shared Utilities	Promotes code reuse and DRY principles
+Global Error Handling	Provides consistent error responses
+
+Implementing these recommendations will align your /common directory with Vertical Slice Architecture principles, promoting a more modular, maintainable, and scalable codebase.
+
+If you need assistance with specific implementations or further refactoring, feel free to ask!

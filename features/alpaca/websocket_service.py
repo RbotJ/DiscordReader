@@ -279,7 +279,7 @@ class AlpacaWebSocketService:
                     self.last_prices[ticker] = price
                     
                     # Emit to dashboard via SocketIO
-                    from main import socketio
+                    from app import socketio
                     socketio.emit('ticker_update', {
                         'ticker': ticker,
                         'price': price,
@@ -308,7 +308,7 @@ class AlpacaWebSocketService:
                 
                 if ticker and (bid_price or ask_price):
                     # Emit quote to dashboard
-                    from main import socketio
+                    from app import socketio
                     socketio.emit('quote_update', {
                         'ticker': ticker,
                         'bid_price': bid_price,
