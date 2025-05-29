@@ -364,7 +364,7 @@ def validate_discord_credentials() -> bool:
     Returns:
         bool: True if credentials are valid and accessible
     """
-    return validate_discord_env()
+    return validate_discord_token()
 
 
 async def ensure_discord_connection() -> Optional[DiscordClientManager]:
