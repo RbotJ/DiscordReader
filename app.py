@@ -103,6 +103,23 @@ def register_socketio_events():
     def handle_disconnect():
         logging.info('Client disconnected')
 
+def start_discord_bot_background():
+    """Start Discord bot in background thread"""
+    import threading
+    
+    def run_bot():
+        try:
+            from features.discord_bot.bot import DiscordClientManager
+            client_manager = DiscordClientManager()
+            client_manager.start_bot()
+        except Exception as e:
+            logging.error(f"Discord bot failed to start: {e}")
+    
+    # Start bot in daemon thread so it doesn't block the main app
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    logging.info("Discord bot thread started")
+
 def create_app():
     app = Flask(__name__)
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
