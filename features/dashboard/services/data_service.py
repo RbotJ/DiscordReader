@@ -405,6 +405,9 @@ def _check_discord_status() -> Dict[str, Any]:
                 'today_messages': 0,
                 'last_error': 'DISCORD_BOT_TOKEN not configured'
             }
+        else:
+            # Token exists, check for activity
+            pass
         
         # Check for recent Discord bot events
         recent_bot_events = execute_query("""

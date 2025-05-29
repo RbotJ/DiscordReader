@@ -195,17 +195,17 @@ def start_discord_bot_background():
             asyncio.set_event_loop(loop)
             
             # Check if Discord credentials are available
-            from features.discord_bot.config.settings import get_discord_token
-            token = get_discord_token()
+            import os
+            token = os.environ.get('DISCORD_BOT_TOKEN')
             
             if not token:
                 logging.warning("Discord bot token not found - Discord integration disabled")
                 logging.info("Set DISCORD_BOT_TOKEN environment variable to enable Discord features")
                 return
             
-            # Initialize and connect bot
+            # Initialize and connect bot using your existing Discord setup
             from features.discord_bot.bot import DiscordClientManager
-            manager = DiscordClientManager(token=token)
+            manager = DiscordClientManager()
             
             logging.info("Starting Discord bot connection...")
             loop.run_until_complete(manager.connect())
