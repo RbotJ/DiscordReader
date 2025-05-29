@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from features.events.models import Event
+from common.events.models import Event
 from common.db import db
 
 logger = logging.getLogger(__name__)
