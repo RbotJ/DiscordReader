@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, List, Set, Any, Optional
 
 from common.event_constants import EventChannels
-from common.db import publish_event, subscribe_to_events
+from common.events import publish_event, subscribe_to_events
 from features.market.historical_data import get_historical_data
 from common.db import db
 from common.db_models import CandleModel
