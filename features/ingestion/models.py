@@ -23,6 +23,7 @@ class DiscordMessageModel(db.Model):
     """
     
     __tablename__ = 'discord_messages'
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     message_id = Column(String(64), unique=True, nullable=False, index=True)
