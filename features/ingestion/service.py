@@ -10,6 +10,7 @@ to provide a unified interface for message ingestion.
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import discord
 
 from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
@@ -20,6 +21,7 @@ from .interfaces import IIngestionService
 from common.db import db
 from common.events import publish_event
 from common.event_constants import EventChannels
+from common.models import DiscordMessageDTO
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,153 @@ class IngestionService(IIngestionService):
             'total_stored': 0,
             'total_errors': 0
         }
+
+    async def store_discord_message(self, message: DiscordMessageDTO) -> bool:
+        """
+        Stores a single Discord message if it doesn't already exist.
+        Returns True if stored, False if skipped.
+        
+        This is a low-level storage method focused on atomic operations
+        with optional validation, but no event publishing.
+        
+        Args:
+            message: Discord message DTO to store
+            
+        Returns:
+            bool: True if stored, False if skipped (duplicate) or failed
+        """
+        try:
+            # Check if message already exists (deduplication)
+            existing = DiscordMessageModel.query.filter_by(message_id=message.message_id).first()
+            if existing:
+                logger.debug(f"Message {message.message_id} already exists, skipping")
+                return False
+            
+            # Basic validation
+            if not message.message_id or not message.channel_id:
+                logger.warning(f"Invalid message data: missing required fields")
+                return False
+            
+            # Create new message model
+            message_model = DiscordMessageModel(
+                message_id=message.message_id,
+                channel_id=message.channel_id,
+                author_id=message.author_id,
+                author=getattr(message, 'author', 'unknown'),
+                content=message.content,
+                timestamp=message.created_at,
+                is_processed=False
+            )
+            
+            # Store in database
+            db.session.add(message_model)
+            db.session.commit()
+            
+            logger.debug(f"Successfully stored message {message.message_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error storing message {message.message_id}: {e}")
+            db.session.rollback()
+            return False
+
+    async def process_message_batch(self, messages: List[discord.Message]) -> Dict[str, Any]:
+        """
+        Process a batch of Discord messages with shared processing core.
+        
+        Args:
+            messages: List of Discord message objects
+            
+        Returns:
+            Dict[str, Any]: Result summary with statistics
+        """
+        results = []
+        errors_list = []
+        
+        for msg in messages:
+            try:
+                result = await self._process_single_message(msg)
+                results.append(result)
+            except Exception as e:
+                error_info = {
+                    'message_id': getattr(msg, 'id', 'unknown'),
+                    'error': str(e)
+                }
+                errors_list.append(error_info)
+                logger.error(f"Error processing message {getattr(msg, 'id', 'unknown')}: {e}")
+                results.append(False)
+        
+        # Calculate statistics
+        total = len(messages)
+        stored = sum(1 for r in results if r is True)
+        skipped = sum(1 for r in results if r is False)
+        errors = len(errors_list)
+        
+        return {
+            "total": total,
+            "stored": stored,
+            "skipped": skipped,
+            "errors": errors,
+            "errors_list": errors_list
+        }
+
+    async def process_realtime_message(self, message: discord.Message) -> bool:
+        """
+        Process a single real-time Discord message.
+        
+        Args:
+            message: Discord message object from real-time events
+            
+        Returns:
+            bool: True if processed successfully, False otherwise
+        """
+        try:
+            return await self._process_single_message(message)
+        except Exception as e:
+            logger.error(f"Error processing real-time message {getattr(message, 'id', 'unknown')}: {e}")
+            return False
+
+    async def _process_single_message(self, message: discord.Message) -> bool:
+        """
+        Shared processing core for both batch and real-time messages.
+        
+        Args:
+            message: Discord message object
+            
+        Returns:
+            bool: True if stored, False if skipped or failed
+        """
+        try:
+            # Convert Discord message to DTO
+            dto = self._convert_to_dto(message)
+            
+            # Use the store_discord_message method for actual storage
+            return await self.store_discord_message(dto)
+            
+        except Exception as e:
+            logger.error(f"Error in _process_single_message: {e}")
+            return False
+
+    def _convert_to_dto(self, message: discord.Message) -> DiscordMessageDTO:
+        """
+        Convert Discord message object to DiscordMessageDTO.
+        
+        Args:
+            message: Discord message object
+            
+        Returns:
+            DiscordMessageDTO: Converted message DTO
+        """
+        return DiscordMessageDTO(
+            message_id=str(message.id),
+            channel_id=str(message.channel.id),
+            author_id=str(message.author.id),
+            content=message.content or "",
+            created_at=message.created_at,
+            is_setup=False,  # Will be determined by downstream processing
+            processed=False,
+            embed_data={}  # Can be populated if needed
+        )
 
     async def ingest_raw_message(self, raw: RawMessageDto) -> None:
         """
@@ -111,6 +260,67 @@ class IngestionService(IIngestionService):
                 return False
         return True
 
+    async def _fetch_discord_messages(
+        self,
+        channel_id: str,
+        limit: int,
+        since: Optional[datetime] = None
+    ) -> List[discord.Message]:
+        """
+        Fetch Discord message objects directly from the Discord client.
+        
+        Args:
+            channel_id: Discord channel ID
+            limit: Maximum number of messages to fetch
+            since: Only fetch messages after this timestamp
+            
+        Returns:
+            List[discord.Message]: List of Discord message objects
+        """
+        try:
+            if not self.client_manager or not self.client_manager.is_connected():
+                logger.error("Discord client not available or not connected")
+                return []
+            
+            # Get channel from Discord client
+            channel = self.client_manager.get_channel(int(channel_id))
+            if not channel:
+                logger.error(f"Could not find channel {channel_id}")
+                return []
+            
+            messages = []
+            async for message in channel.history(limit=limit, after=since):
+                messages.append(message)
+            
+            logger.info(f"Fetched {len(messages)} messages from channel {channel_id}")
+            return messages
+            
+        except Exception as e:
+            logger.error(f"Error fetching Discord messages from channel {channel_id}: {e}")
+            return []
+
+    async def _emit_batch_completion_event(self, channel_id: str, batch_result: Dict[str, Any]) -> None:
+        """
+        Emit completion event for batch processing.
+        
+        Args:
+            channel_id: Discord channel ID that was processed
+            batch_result: Results from batch processing
+        """
+        try:
+            publish_event(
+                event_type="ingestion.batch.completed",
+                payload={
+                    'channel_id': channel_id,
+                    'statistics': batch_result,
+                    'timestamp': datetime.utcnow().isoformat()
+                },
+                channel=EventChannels.INGESTION_BATCH,
+                source="ingestion_service"
+            )
+        except Exception as e:
+            logger.error(f"Error emitting batch completion event: {e}")
+
     async def ingest_latest_messages(
         self,
         channel_id: str,
@@ -118,7 +328,7 @@ class IngestionService(IIngestionService):
         since: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
-        Ingest latest messages from a Discord channel.
+        Ingest latest messages from a Discord channel using new batch processing.
 
         Args:
             channel_id: Discord channel ID to fetch from
@@ -133,28 +343,34 @@ class IngestionService(IIngestionService):
             self.last_triggered = datetime.utcnow()
             logger.info(f"Starting message ingestion for channel {channel_id}")
 
-            # Step 1: Fetch messages
-            messages = await self._fetch_messages(channel_id, limit, since)
-            self.stats['total_fetched'] = len(messages)
+            # Step 1: Fetch messages using Discord client
+            if not await self._ensure_fetcher_ready():
+                raise RuntimeError("Could not initialize Discord fetcher")
+            
+            discord_messages = await self._fetch_discord_messages(channel_id, limit, since)
+            
+            # Step 2: Process batch using new batch processing method
+            batch_result = await self.process_message_batch(discord_messages)
+            
+            # Step 3: Emit events for successfully stored messages
+            if batch_result['stored'] > 0:
+                await self._emit_batch_completion_event(channel_id, batch_result)
 
-            # Step 2: Validate messages
-            valid_messages = self._validate_messages(messages)
-            self.stats['total_validated'] = len(valid_messages)
-
-            # Step 3: Store messages
-            stored_messages = await self._store_messages(valid_messages)
-            self.stats['total_stored'] = len(stored_messages)
-
-            # Step 4: Emit events for stored messages
-            await self._emit_message_events(stored_messages)
-
-            logger.info(f"Ingestion completed: {self.stats}")
-            return self._create_ingestion_result()
+            logger.info(f"Ingestion completed: {batch_result}")
+            return {
+                'status': 'completed',
+                'statistics': batch_result,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
         except Exception as e:
             logger.error(f"Error during message ingestion: {e}")
-            self.stats['total_errors'] += 1
-            raise
+            return {
+                'status': 'failed',
+                'error': str(e),
+                'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1},
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
     async def ingest_channel_history(
         self,
@@ -176,7 +392,7 @@ class IngestionService(IIngestionService):
         try:
             logger.info(f"Starting channel history ingestion for {channel_id} (source: {source})")
             
-            # Use the existing ingest_latest_messages method
+            # Use the enhanced ingest_latest_messages method with batch processing
             result = await self.ingest_latest_messages(
                 channel_id=channel_id,
                 limit=limit,
@@ -186,7 +402,7 @@ class IngestionService(IIngestionService):
             # Add source information to result
             if result:
                 result['source'] = source
-                result['success'] = True
+                result['success'] = result.get('status') == 'completed'
             
             return result
             
@@ -196,7 +412,7 @@ class IngestionService(IIngestionService):
                 'success': False,
                 'error': str(e),
                 'source': source,
-                'statistics': {'total_fetched': 0, 'total_stored': 0, 'total_errors': 1}
+                'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
             }
 
     async def ingest_single_message(
@@ -205,7 +421,7 @@ class IngestionService(IIngestionService):
         message_id: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Ingest a single message by ID.
+        Ingest a single message by ID using real-time processing.
 
         Args:
             channel_id: Discord channel ID
@@ -214,7 +430,36 @@ class IngestionService(IIngestionService):
         Returns:
             Optional[Dict[str, Any]]: Ingestion result or None if failed
         """
-        pass
+        try:
+            if not self.client_manager or not self.client_manager.is_connected():
+                logger.error("Discord client not available or not connected")
+                return None
+            
+            # Get channel from Discord client
+            channel = self.client_manager.get_channel(int(channel_id))
+            if not channel:
+                logger.error(f"Could not find channel {channel_id}")
+                return None
+            
+            # Fetch specific message
+            message = await channel.fetch_message(int(message_id))
+            if not message:
+                logger.error(f"Could not find message {message_id} in channel {channel_id}")
+                return None
+            
+            # Process the single message using real-time processing
+            success = await self.process_realtime_message(message)
+            
+            return {
+                'success': success,
+                'message_id': message_id,
+                'channel_id': channel_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error ingesting single message {message_id}: {e}")
+            return None
 
     async def _fetch_messages(
         self,
