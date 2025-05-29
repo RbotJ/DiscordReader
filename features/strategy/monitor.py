@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime, time
 from typing import Dict, List, Any, Optional, AsyncGenerator, Callable, Union, Tuple
 
-from common.events import publish_event, get_latest_events
+from common.db import publish_event, get_latest_events
 from common.event_constants import EventChannels
 from common.constants import SignalCategory
 
@@ -24,7 +24,6 @@ DEFAULT_AVG_VOLUME_PERIODS = 5   # Number of periods for volume average
 
 from common.db_models import SignalConfirmation
 from common.db import db
-from common.event_compat import event_client
 
 class Candle:
     """Simple candle data structure with OHLCV data"""

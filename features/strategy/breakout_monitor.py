@@ -11,9 +11,8 @@ import asyncio
 from datetime import datetime, time
 from typing import Dict, List, Any, Optional, AsyncGenerator, Tuple, Set, Union
 
-from common.events import publish_event
+from common.db import publish_event
 from common.event_constants import EventType, EventChannels
-from common.event_compat import event_client
 from features.setups.enhanced_parser import Signal, extract_unique_levels
 
 # Configure logger

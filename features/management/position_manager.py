@@ -27,10 +27,9 @@ from common.db_models import (
     PositionModel, OrderModel, SignalModel, NotificationModel,
     OptionsContractModel, MarketDataModel
 )
-from common.events import publish_event, EventChannels
-from common.db import db
+from common.events import EventChannels
+from common.db import db, publish_event
 from common.db_models import PositionModel
-from common.event_compat import event_client
 
 # Type variable for SQLAlchemy model instance
 Model = TypeVar('Model')
