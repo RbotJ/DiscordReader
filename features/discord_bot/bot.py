@@ -100,15 +100,50 @@ class TradingDiscordBot(discord.Client):
         logger.info(f"✅ Monitoring #{channel.name} ({channel.id}) in {guild.name}")
 
     async def on_message(self, message):
-        """Handle incoming messages from monitored channels."""
+        """Handle incoming messages with simplified real-time storage."""
         # Skip bot's own messages
-        if message.author == self.user:
+        if message.author.bot:
             return
             
         # Only process messages from aplus-setups channel
-        if str(message.channel.id) == self.aplus_setups_channel_id:
-            logger.info(f"Processing message from #aplus-setups: {message.id}")
-            await self._trigger_ingestion(message.channel.id)
+        if str(message.channel.id) != self.aplus_setups_channel_id:
+            return
+            
+        logger.info(f"New message in aplus-setups: {message.content[:100]}...")
+        
+        try:
+            # Store new message directly in database
+            from common.db import db
+            from sqlalchemy import text
+            
+            # Check if message already exists
+            existing = db.session.execute(
+                text("SELECT id FROM discord_messages WHERE message_id = :msg_id"),
+                {'msg_id': str(message.id)}
+            ).fetchone()
+            
+            if existing:
+                logger.debug(f"Message {message.id} already exists, skipping")
+                return
+            
+            # Insert new message
+            db.session.execute(text("""
+                INSERT INTO discord_messages (message_id, content, author_id, channel_id, created_at, processed)
+                VALUES (:msg_id, :content, :author_id, :channel_id, :created_at, false)
+            """), {
+                'msg_id': str(message.id),
+                'content': message.content,
+                'author_id': str(message.author.id),
+                'channel_id': str(message.channel.id),
+                'created_at': message.created_at
+            })
+            
+            db.session.commit()
+            logger.info(f"Stored new message: {message.id}")
+            
+        except Exception as e:
+            logger.error(f"Error storing new message {message.id}: {e}")
+            db.session.rollback()
 
     async def _scan_and_update_channels(self):
         """Scan all text channels and update database."""
