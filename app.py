@@ -196,17 +196,17 @@ with app.app_context():
         db.create_all()
         logging.info("Database tables initialized successfully")
         
-        # Start Discord bot in background after database is ready
-        try:
-            print("🔄 About to start Discord bot...")
-            start_discord_bot_background()
-            print("✅ Discord bot startup initiated")
-        except Exception as e:
-            print(f"❌ Failed to start Discord bot: {e}")
-            logging.error(f"Failed to start Discord bot: {e}")
-        
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
+    
+    # Start Discord bot in background (independent of database initialization)
+    try:
+        print("🔄 About to start Discord bot...")
+        start_discord_bot_background()
+        print("✅ Discord bot startup initiated")
+    except Exception as e:
+        print(f"❌ Failed to start Discord bot: {e}")
+        logging.error(f"Failed to start Discord bot: {e}")
 
 def start_discord_bot_background():
     """Start Discord bot in background thread"""
