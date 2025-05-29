@@ -119,15 +119,20 @@ def start_discord_bot_background():
             # Import dependencies - use the enhanced bot with catchup ingestion
             from features.discord_bot.bot import TradingDiscordBot
             
-            # Create bot with enhanced startup catchup functionality
-            bot = TradingDiscordBot()
+            # Create Flask app context for database access
+            from app import create_app
+            flask_app = create_app()
             
-            # Run bot in new event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            logging.info("🔄 Starting Discord bot...")
-            loop.run_until_complete(bot.start(token))
+            with flask_app.app_context():
+                # Create bot with enhanced startup catchup functionality
+                bot = TradingDiscordBot()
+                
+                # Run bot in new event loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                logging.info("🔄 Starting Discord bot...")
+                loop.run_until_complete(bot.start(token))
             
         except Exception as e:
             logging.error(f"Discord bot failed to start: {e}")

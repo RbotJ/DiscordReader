@@ -330,12 +330,12 @@ class DiscordClientManager:
         finally:
             self._is_connected = False
     
-    def get_client(self) -> Optional[TradingDiscordClient]:
+    def get_client(self) -> Optional[TradingDiscordBot]:
         """
         Get the active Discord client instance.
         
         Returns:
-            TradingDiscordClient: Active client or None if not connected
+            TradingDiscordBot: Active client or None if not connected
         """
         return self.client if self._is_connected else None
     
