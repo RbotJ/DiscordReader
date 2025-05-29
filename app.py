@@ -105,20 +105,18 @@ def register_socketio_events():
 
 def start_discord_bot_background():
     """Start Discord bot in background thread"""
-    import threading
-    
-    def run_bot():
-        try:
-            from features.discord_bot.bot import DiscordClientManager
-            client_manager = DiscordClientManager()
-            client_manager.start_bot()
-        except Exception as e:
-            logging.error(f"Discord bot failed to start: {e}")
-    
-    # Start bot in daemon thread so it doesn't block the main app
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    logging.info("Discord bot thread started")
+    try:
+        # Check if Discord token is available before attempting to start bot
+        token = os.environ.get("DISCORD_BOT_TOKEN")
+        if not token:
+            logging.warning("DISCORD_BOT_TOKEN not found in environment variables - Discord bot disabled")
+            return
+        
+        logging.info("Discord bot initialization temporarily disabled to fix startup issues")
+        # TODO: Re-enable Discord bot after fixing import issues
+        
+    except Exception as e:
+        logging.error(f"Discord bot failed to start: {e}")
 
 def create_app():
     app = Flask(__name__)

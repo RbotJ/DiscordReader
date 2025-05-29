@@ -41,7 +41,7 @@ class TradingDiscordBot(discord.Client):
         super().__init__(intents=intents, *args, **kwargs)
         self.ready_status = False
         self.aplus_setups_channel_id = None
-        self.ingestion_service = None
+        self.ingestion_service = IngestionService()
         self.client_manager = None
 
     async def on_ready(self):

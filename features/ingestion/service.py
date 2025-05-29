@@ -13,7 +13,7 @@ from datetime import datetime
 
 from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
-from features.models.new_schema import DiscordMessage as DiscordMessageModel
+from features.ingestion.models import DiscordMessageModel
 from common.db import publish_event
 from common.event_constants import EventChannels
 

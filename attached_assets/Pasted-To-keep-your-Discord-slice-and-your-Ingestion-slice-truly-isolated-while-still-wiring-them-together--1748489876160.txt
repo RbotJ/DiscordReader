@@ -1,0 +1,126 @@
+To keep your Discord slice and your Ingestion slice truly isolated—while still wiring them together at startup—follow this vertical-slice recipe:
+
+1. Define a narrow DTO and interface in the Discord slice
+
+# features/discord_bot/dto.py
+from dataclasses import dataclass
+from datetime import datetime
+
+@dataclass(frozen=True)
+class RawMessageDto:
+    message_id: str
+    channel_id: int
+    author_id: str
+    content: str
+    timestamp: datetime
+# features/discord_bot/interfaces.py
+from abc import ABC, abstractmethod
+from .dto import RawMessageDto
+
+class IIngestionService(ABC):
+    @abstractmethod
+    async def ingest_raw_message(self, raw: RawMessageDto) -> None:
+        ...
+No imports of database, parsing, or internal ingestion types here—only the DTO and the abstract contract.
+2. Implement the ingestion slice against that interface
+
+# features/ingestion/interfaces.py
+from abc import ABC, abstractmethod
+from features.discord_bot.dto import RawMessageDto
+
+class IIngestionService(ABC):
+    @abstractmethod
+    async def ingest_raw_message(self, raw: RawMessageDto) -> None:
+        ...
+# features/ingestion/service.py
+from features.discord_bot.dto import RawMessageDto
+from .interfaces import IIngestionService
+
+class IngestionService(IIngestionService):
+    def __init__(self, db_session_factory, event_publisher, validator):
+        self.db_session_factory = db_session_factory
+        self.event_publisher   = event_publisher
+        self.validator         = validator
+
+    async def ingest_raw_message(self, raw: RawMessageDto) -> None:
+        # 1. Validate
+        if not self.validator.validate(raw):
+            return
+
+        # 2. Store in DB
+        with self.db_session_factory() as session:
+            session.add(raw.to_model())
+            session.commit()
+
+        # 3. Emit event for downstream parsing
+        self.event_publisher.publish("MESSAGE_STORED", {"id": raw.message_id})
+No imports from discord.py or Discord slice modules—only the shared DTO and interface.
+3. Wire them up once, at application bootstrap
+
+# app.py (or your entrypoint)
+import os
+import asyncio
+from flask import Flask
+
+from features.ingestion.service import IngestionService
+from features.discord_bot.bot import TradingDiscordBot
+from features.discord_bot.interfaces import IIngestionService
+
+# --- Compose ingestion slice ---
+ingestion_service: IIngestionService = IngestionService(
+    db_session_factory=make_db_session,
+    event_publisher=event_bus,
+    validator=MessageValidator(),
+)
+
+# --- Compose Discord slice ---
+intents = discord.Intents.default()
+intents.message_content = True
+bot = TradingDiscordBot(
+    token=os.getenv("DISCORD_BOT_TOKEN"),
+    ingestion_service=ingestion_service,
+    intents=intents,
+)
+
+app = Flask(__name__)
+
+@app.before_first_request
+def start_bot():
+    # run the bot in background without blocking Flask
+    asyncio.create_task(bot.start_background())
+
+if __name__ == "__main__":
+    print("▶️  Starting DiscordReader from app.py")
+    start_bot()
+    app.run()
+4. Hand off in your bot’s event handler
+
+# features/discord_bot/bot.py
+from discord import Client, Message
+from .dto import RawMessageDto
+from .interfaces import IIngestionService
+
+class TradingDiscordBot(Client):
+    def __init__(self, token: str, ingestion_service: IIngestionService, **kwargs):
+        super().__init__(**kwargs)
+        self.token = token
+        self.ingestion = ingestion_service
+
+    async def on_ready(self):
+        print(f"✅ Connected as {self.user}")
+
+    async def on_message(self, msg: Message):
+        if msg.author == self.user:
+            return
+
+        if msg.channel.id == self.target_channel_id:
+            raw = RawMessageDto.from_discord(msg)
+            await self.ingestion.ingest_raw_message(raw)
+Discord slice only depends on IIngestionService and RawMessageDto.
+Ingestion slice only depends on IIngestionService and RawMessageDto.
+No circular imports or “features.ingestion.discord” modules.
+Why this works
+Single Responsibility: Each slice owns its own models/interfaces.
+Testability: You can unit-test TradingDiscordBot with a fake ingestion service, and test IngestionService with fake DTOs.
+Loose coupling: Only a thin abstraction (the interface) binds them; you can swap implementations without touching the other slice.
+That vertical-slice pattern will prevent module-not-found errors and keep your code cleanly decoupled.
