@@ -18,9 +18,13 @@ try:
 except ImportError:
     pass
 
-# Import new schema models
+# Import vertical slice models
 try:
-    from features.models.new_schema import *
+    from features.discord_bot.models import *
+    from features.events.models import *
+    from features.ingestion.models import *
+    from features.parsing.models import *
+    from features.strategy.models import *
 except ImportError:
     pass
 

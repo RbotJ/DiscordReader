@@ -13,7 +13,7 @@ from datetime import datetime
 
 from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
-from features.ingestion.models import DiscordMessageModel
+from features.discord_bot.models import DiscordChannel
 from features.discord_bot.dto import RawMessageDto
 from .interfaces import IIngestionService
 from common.db import db, publish_event
@@ -228,7 +228,7 @@ class IngestionService(IIngestionService):
             List[DiscordMessageModel]: Stored message models
         """
         from common.db import db
-        from features.models.new_schema.discord_channels import DiscordChannel
+        from features.discord_bot.models import DiscordChannel
 
         stored_messages = []
 

@@ -168,7 +168,6 @@ def create_app():
     initialize_db(app)
 
     from common import models_db  # Import models after db init
-    from features.models.new_schema import events  # Import enhanced event model
     
     # Initialize enhanced event system
     from features.events.cleanup_service import cleanup_service
