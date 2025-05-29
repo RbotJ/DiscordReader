@@ -24,12 +24,12 @@ class MessageFetcher:
     and pagination support. It uses the DiscordClientManager for actual API calls.
     """
     
-    def __init__(self, client_manager: DiscordClientManager):
+    def __init__(self, client_manager=None):
         """
-        Initialize message fetcher with Discord client manager.
+        Initialize message fetcher with optional client manager.
         
         Args:
-            client_manager: Discord client manager instance
+            client_manager: Optional client manager (for backward compatibility)
         """
         self.client_manager = client_manager
     
