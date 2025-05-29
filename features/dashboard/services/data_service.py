@@ -314,8 +314,16 @@ def get_system_status() -> Dict[str, Any]:
                 'latest_setup': ticker.get('latest_setup')
             })
         
-        # Get service status indicators
-        service_status = get_service_status()
+        # Get service status indicators - ensure this function is defined
+        try:
+            service_status = get_service_status()
+        except Exception as status_error:
+            logger.error(f"Error getting service status: {status_error}")
+            service_status = {
+                'discord_bot': {'status': 'error', 'last_error': str(status_error)},
+                'alpaca_market': {'status': 'unknown'}, 
+                'database': {'status': 'unknown'}
+            }
         
         return {
             'total_messages_count': total_messages_count,

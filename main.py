@@ -178,7 +178,10 @@ with app.app_context():
         logging.info("Database tables initialized successfully")
         
         # Start Discord bot in background after database is ready
-        start_discord_bot_background()
+        try:
+            start_discord_bot_background()
+        except Exception as e:
+            logging.error(f"Failed to start Discord bot: {e}")
         
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
