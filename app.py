@@ -170,7 +170,7 @@ def create_app():
     from common import models_db  # Import models after db init
     
     # Initialize enhanced event system
-    from features.events.cleanup_service import cleanup_service
+    from common.events.cleanup_service import cleanup_service
     cleanup_service.start_cleanup_scheduler()
     
     # Initialize Alpaca WebSocket for real-time ticker prices
@@ -206,8 +206,9 @@ app = create_app()
 # Component initialization on startup
 with app.app_context():
     try:
-        # Import new schema models to register them with SQLAlchemy
-        from features.models.new_schema import DiscordChannel, DiscordMessage, TradeSetup, ParsedLevel
+        # Import models to register them with SQLAlchemy
+        from features.discord_bot.models import DiscordChannel
+        from features.ingestion.models import DiscordMessageModel
         from features.strategy.models import *
         # Initialize database with new schema
         initialize_db(app)

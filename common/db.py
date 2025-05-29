@@ -49,7 +49,7 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
         return False
     
     try:
-        from features.events.enhanced_publisher import EventPublisher
+        from common.events.enhanced_publisher import EventPublisher
         import uuid
         
         # Generate correlation ID if not provided

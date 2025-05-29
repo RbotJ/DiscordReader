@@ -9,7 +9,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from features.events.enhanced_publisher import EventPublisher
+from common.events.enhanced_publisher import EventPublisher
 from common.event_constants import EventChannels, EventTypes
 from common.db import publish_event
 
@@ -251,7 +251,7 @@ class DiscordCorrelationService:
             Dict containing the complete flow information
         """
         try:
-            from features.events.query_service import EventQueryService
+            from common.events.query_service import EventQueryService
             
             events = EventQueryService.get_events_by_correlation(correlation_id)
             

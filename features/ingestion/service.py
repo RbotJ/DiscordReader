@@ -13,6 +13,7 @@ from datetime import datetime
 
 from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
+from .models import DiscordMessageModel
 from features.discord_bot.models import DiscordChannel
 from features.discord_bot.dto import RawMessageDto
 from .interfaces import IIngestionService
