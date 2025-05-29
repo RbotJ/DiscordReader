@@ -318,8 +318,48 @@ class IngestionService(IIngestionService):
                 channel=EventChannels.INGESTION_BATCH,
                 source="ingestion_service"
             )
+            
+            # Also emit individual message stored events for each successfully stored message
+            # This ensures downstream processing can pick up individual messages
+            if batch_result.get('stored', 0) > 0:
+                logger.debug(f"Emitted batch completion event for {batch_result['stored']} stored messages")
+                
         except Exception as e:
             logger.error(f"Error emitting batch completion event: {e}")
+
+    async def handle_realtime_message(self, message: discord.Message) -> None:
+        """
+        Handle a real-time Discord message from the bot's event listener.
+        
+        This method provides event publishing for real-time message processing
+        while using the core processing logic.
+        
+        Args:
+            message: Discord message object from real-time events
+        """
+        try:
+            # Process the message using real-time processing
+            success = await self.process_realtime_message(message)
+            
+            # Emit appropriate events based on success
+            if success:
+                publish_event(
+                    event_type="ingestion.message.stored",
+                    payload={
+                        'message_id': str(message.id),
+                        'channel_id': str(message.channel.id),
+                        'author': str(message.author),
+                        'content_length': len(message.content),
+                        'timestamp': datetime.utcnow().isoformat()
+                    },
+                    channel=EventChannels.INGESTION_MESSAGE,
+                    source="realtime_ingestion"
+                )
+            else:
+                logger.warning(f"Failed to process real-time message {message.id}")
+                
+        except Exception as e:
+            logger.error(f"Error handling real-time message {getattr(message, 'id', 'unknown')}: {e}")
 
     async def ingest_latest_messages(
         self,
