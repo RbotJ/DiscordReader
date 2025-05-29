@@ -15,8 +15,7 @@ from datetime import datetime, time as dt_time
 import pytz
 
 from flask_socketio import emit
-from common.event_constants import EventChannels, EventTypes
-from common.db import publish_event
+from common.events import EventChannels, EventTypes, publish_event_safe
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +84,7 @@ class AlpacaWebSocketService:
         logger.info(f"Alpaca WebSocket service started for tickers: {list(self.subscribed_tickers)}")
         
         # Publish startup event
-        publish_event(
+        publish_event_safe(
             event_type=EventTypes.INFO,
             payload={
                 'service': 'alpaca_websocket',
@@ -107,7 +106,7 @@ class AlpacaWebSocketService:
         logger.info("Alpaca WebSocket service stopped")
         
         # Publish shutdown event
-        publish_event(
+        publish_event_safe(
             event_type=EventTypes.INFO,
             payload={
                 'service': 'alpaca_websocket',
@@ -167,7 +166,7 @@ class AlpacaWebSocketService:
             logger.error(f"WebSocket connection error: {e}")
             
             # Publish error event
-            publish_event(
+            publish_event_safe(
                 event_type=EventTypes.ERROR,
                 payload={
                     'service': 'alpaca_websocket',
