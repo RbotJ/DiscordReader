@@ -6,7 +6,7 @@ Single Event model for PostgreSQL event bus system.
 
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime
-from common.db import db
+from common.db.session import db
 
 
 class Event(db.Model):
