@@ -200,6 +200,7 @@ class TestVerticalSliceIntegration:
                 embed_data={}
             )
             
-            result = asyncio.run(ingestion.store_discord_message(test_dto))
-            assert result is False
-            mock_session.rollback.assert_called()
+            with patch('features.ingestion.models.DiscordMessageModel'):
+                result = asyncio.run(ingestion.store_discord_message(test_dto))
+                assert result is False
+                mock_session.rollback.assert_called()
