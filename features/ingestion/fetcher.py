@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import discord
 
-from .discord import DiscordClientManager, ensure_discord_connection
+# Removed problematic import - DiscordClientManager now injected via dependency injection
 
 logger = logging.getLogger(__name__)
 

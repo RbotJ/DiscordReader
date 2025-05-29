@@ -1,0 +1,68 @@
+1. Root Cause: Legacy import of a non-existent module
+
+Your startup logs show:
+
+ERROR – Discord bot failed to start: No module named 'features.ingestion.discord'
+But in your repo’s README you only have:
+
+features/
+├── discord_bot/      # real-time Discord message monitoring …
+├── ingestion/        # message processing and storage services
+└── parsing/          # AI-powered setup extraction
+There is no features/ingestion/discord folder or module 
+GitHub
+. Somewhere in your code you’re still doing something like:
+
+from features.ingestion.discord import …
+That import must be removed or corrected.
+
+2. Clean up the import paths
+
+Search and remove any references to features.ingestion.discord.
+If you need something from the Discord slice inside ingestion, import it from features/discord_bot/ instead.
+Conversely, the Discord slice should depend only on an ingestion interface (not on concrete ingestion modules).
+Example fix
+If you previously had:
+
+# bad – this path no longer exists
+from features.ingestion.discord import DiscordIngestionService
+Change it to point at your actual ingestion implementation:
+
+# good – matches your folder structure
+from features.ingestion.service import IngestionService
+3. Enforce clear vertical-slice boundaries
+
+Adopt this pattern so each feature folder owns its code and public interface:
+
+features/
+├─ discord_bot/
+│   ├─ __init__.py
+│   ├─ bot.py                # TradingDiscordBot + on_message → hand off RawMessageDto
+│   ├─ dto.py                # RawMessageDto.from_discord()
+│   └─ interfaces.py         # IIngestionService abstraction
+└─ ingestion/
+    ├─ __init__.py
+    ├─ service.py            # IngestionService implements IIngestionService
+    └─ interfaces.py         # IIngestionService contract
+Discord slice imports only from features.discord_bot.* and features.ingestion.interfaces.
+Ingestion slice imports only from features.ingestion.* and the shared DTO (features.discord_bot.dto).
+No direct cross-imports like features.ingestion.discord.
+4. Double-check your Python packages
+
+Make sure both features/discord_bot/ and features/ingestion/ have an __init__.py file so Python will recognize them as modules. Missing __init__.py can also trigger “No module named …” errors.
+
+5. Add a quick integration test for import validation
+
+Create a tiny test (e.g. tests/test_imports.py) that simply does:
+
+def test_slices_import_cleanly():
+    import features.discord_bot.bot
+    import features.ingestion.service
+This will immediately catch any broken paths without spinning up the entire app.
+
+TL;DR
+Remove any features.ingestion.discord imports (they point to a folder that doesn’t exist).
+Correct them to features.ingestion.service (or whatever matches your actual file names).
+Reinforce vertical-slice isolation by using clear interfaces (features/discord_bot/interfaces.py ↔ features/ingestion/interfaces.py).
+Ensure every folder has __init__.py.
+Add a lightweight import test to catch typos early.
