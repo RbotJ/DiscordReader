@@ -11,6 +11,8 @@ import websockets
 from typing import Dict, Any, Optional, List
 from threading import Thread
 import time
+from datetime import datetime, time as dt_time
+import pytz
 
 from flask_socketio import emit
 from common.event_constants import EventChannels, EventTypes
@@ -31,18 +33,44 @@ class AlpacaWebSocketService:
         self.subscribed_tickers = set()
         self.last_prices = {}
         
+        # Trading hours: 4:00 AM to 10:30 AM Eastern Time
+        self.start_time = dt_time(4, 0)  # 4:00 AM
+        self.end_time = dt_time(10, 30)   # 10:30 AM
+        self.timezone = pytz.timezone('US/Eastern')
+        
         # WebSocket URLs
         self.ws_url = "wss://stream.data.alpaca.markets/v2/iex" if not paper_trading else "wss://stream.data.alpaca.markets/v2/iex"
+    
+    def is_trading_hours(self) -> bool:
+        """
+        Check if current time is within trading hours (4:00 AM - 10:30 AM ET).
+        
+        Returns:
+            bool: True if within trading hours, False otherwise
+        """
+        now_et = datetime.now(self.timezone)
+        current_time = now_et.time()
+        
+        # Skip weekends
+        if now_et.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            return False
+        
+        return self.start_time <= current_time <= self.end_time
     
     def start_price_streaming(self, tickers: List[str] = None):
         """
         Start WebSocket connection for real-time price streaming.
+        Only runs during trading hours (4:00 AM - 10:30 AM ET).
         
         Args:
             tickers: List of ticker symbols to subscribe to
         """
         if self.running:
             logger.warning("Alpaca WebSocket service already running")
+            return
+        
+        if not self.is_trading_hours():
+            logger.info("Outside trading hours (4:00 AM - 10:30 AM ET). WebSocket will not start.")
             return
         
         self.running = True
@@ -62,7 +90,8 @@ class AlpacaWebSocketService:
             payload={
                 'service': 'alpaca_websocket',
                 'status': 'started',
-                'subscribed_tickers': list(self.subscribed_tickers)
+                'subscribed_tickers': list(self.subscribed_tickers),
+                'trading_hours': f"{self.start_time} - {self.end_time} ET"
             },
             channel=EventChannels.SYSTEM,
             source='alpaca_websocket_service'
@@ -162,14 +191,22 @@ class AlpacaWebSocketService:
                 for ticker in self.subscribed_tickers:
                     await self._send_subscription(ticker)
                 
-                # Listen for messages
+                # Listen for messages with periodic time checks
                 async for message in websocket:
+                    # Check if we're still within trading hours
+                    if not self.is_trading_hours():
+                        logger.info("Trading hours ended (10:30 AM ET). Closing WebSocket connection.")
+                        await websocket.close()
+                        break
+                    
                     await self._handle_message(message)
                     
         except websockets.exceptions.ConnectionClosed:
             logger.info("WebSocket connection closed")
         except Exception as e:
             logger.error(f"WebSocket handler error: {e}")
+        finally:
+            self.running = False
     
     async def _authenticate(self):
         """Authenticate with Alpaca WebSocket."""
