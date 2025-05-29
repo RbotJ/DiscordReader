@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta
 
 from .query_service import EventQueryService
-from common.event_constants import EventChannels, EventTypes
+from .constants import EventChannels, EventTypes
 from common.events.publisher import publish_event_safe as publish_event
 
 logger = logging.getLogger(__name__)

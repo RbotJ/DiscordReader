@@ -12,7 +12,7 @@ from datetime import datetime, time
 from typing import Dict, List, Any, Optional, AsyncGenerator, Tuple, Set, Union
 
 from common.db import publish_event
-from common.event_constants import EventType, EventChannels
+from common.events.constants import EventTypes, EventChannels
 from features.setups.enhanced_parser import Signal, extract_unique_levels
 
 # Configure logger

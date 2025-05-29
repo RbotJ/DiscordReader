@@ -28,7 +28,7 @@ MAX_RISK_PERCENT = 2.0  # Maximum percentage of portfolio to risk per trade
 STOP_LOSS_BUFFER_PERCENT = 1.0  # Default buffer percentage for stop loss
 
 from common.events import publish_event, get_latest_events
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 
 class SignalProcessor:
     """Process trading signals and execute appropriate actions."""

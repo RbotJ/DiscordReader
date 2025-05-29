@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from common.db import get_latest_events, publish_event
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 from features.parsing.parser import MessageParser
 
 logger = logging.getLogger(__name__)

@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Dict, List, Set, Any, Optional
 
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 from common.events import publish_event, subscribe_to_events
 from features.market.historical_data import get_historical_data
 from common.db import db

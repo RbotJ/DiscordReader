@@ -19,7 +19,7 @@ from .parser import parse_setup_from_text
 from .store import SetupStorageService
 from features.ingestion.models import DiscordMessageModel
 from common.db import db
-from common.event_constants import EventChannels, EventType
+from common.events.constants import EventChannels, EventTypes
 from common.events import publish_event
 
 logger = logging.getLogger(__name__)

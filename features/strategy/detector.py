@@ -19,7 +19,7 @@ from common.db_models import (
 from features.market.client import (
     register_price_callback, initialize_clients, add_symbols_to_watchlist
 )
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 from common.db import publish_event, get_latest_events
 
 # Configure logger

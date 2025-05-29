@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 from typing import Dict, Any, List
 
 from common.events.query_service import EventQueryService
-from common.event_constants import EventChannels, EventTypes
+from common.events.constants import EventChannels, EventTypes
 
 logger = logging.getLogger(__name__)
 
