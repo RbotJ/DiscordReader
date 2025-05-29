@@ -14,13 +14,15 @@ from datetime import datetime
 from .fetcher import MessageFetcher, fetch_latest_messages
 from .validator import MessageValidator
 from features.ingestion.models import DiscordMessageModel
-from common.db import publish_event
+from features.discord_bot.dto import RawMessageDto
+from .interfaces import IIngestionService
+from common.db import db, publish_event
 from common.event_constants import EventChannels
 
 logger = logging.getLogger(__name__)
 
 
-class IngestionService:
+class IngestionService(IIngestionService):
     """
     Orchestrates the Discord message ingestion workflow.
 
@@ -45,6 +47,56 @@ class IngestionService:
             'total_stored': 0,
             'total_errors': 0
         }
+
+    async def ingest_raw_message(self, raw: RawMessageDto) -> None:
+        """
+        Ingest a single raw Discord message.
+        
+        Args:
+            raw: Raw message DTO from Discord
+        """
+        try:
+            logger.info(f"Ingesting raw message {raw.message_id}")
+            
+            # Check if message already exists
+            existing = DiscordMessageModel.query.filter_by(message_id=raw.message_id).first()
+            if existing:
+                logger.debug(f"Message {raw.message_id} already exists, skipping")
+                return
+            
+            # Create new message model
+            message = DiscordMessageModel(
+                message_id=raw.message_id,
+                channel_id=raw.channel_id,
+                author_id=raw.author_id,
+                author=raw.author_name,
+                content=raw.content,
+                timestamp=raw.timestamp,
+                is_processed=False
+            )
+            
+            # Store in database
+            db.session.add(message)
+            db.session.commit()
+            
+            # Publish event for downstream processing
+            publish_event(
+                event_type="discord.message.stored",
+                payload={
+                    "message_id": raw.message_id,
+                    "channel_id": raw.channel_id,
+                    "content_preview": raw.content[:100] + "..." if len(raw.content) > 100 else raw.content
+                },
+                channel=EventChannels.DISCORD_MESSAGE,
+                source="discord_ingestion"
+            )
+            
+            logger.info(f"Successfully ingested message {raw.message_id}")
+            
+        except Exception as e:
+            logger.error(f"Error ingesting raw message {raw.message_id}: {e}")
+            db.session.rollback()
+            raise
 
     async def _ensure_fetcher_ready(self) -> bool:
         """Ensure the message fetcher is ready with injected Discord client."""
