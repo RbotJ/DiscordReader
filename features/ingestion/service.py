@@ -17,7 +17,8 @@ from .models import DiscordMessageModel
 from features.discord_bot.models import DiscordChannel
 from features.discord_bot.dto import RawMessageDto
 from .interfaces import IIngestionService
-from common.db import db, publish_event
+from common.db import db
+from common.events import publish_event
 from common.event_constants import EventChannels
 
 logger = logging.getLogger(__name__)
@@ -435,8 +436,9 @@ async def ingest_messages(limit: int = 50) -> int:
     """
     from .fetcher import fetch_latest_messages
     from .validator import validate_message
-    from common.db import db, publish_event
-    from common.event_constants import EventChannels, EventType
+    from common.db import db
+    from common.events import publish_event
+    from common.event_constants import EventChannels, EventTypes
 
     try:
         # Fetch messages from Discord
@@ -456,7 +458,7 @@ async def ingest_messages(limit: int = 50) -> int:
 
             # Emit MESSAGE_STORED event
             publish_event(
-                event_type=EventType.INFO,
+                event_type=EventTypes.INFO,
                 payload={
                     'message_id': msg_model.message_id,
                     'channel_id': msg_model.channel_id,
