@@ -75,27 +75,25 @@ class TradingDiscordBot(discord.Client):
         except Exception as e:
             logger.error(f"Error during bot startup ingestion setup: {e}")
 
-    async def _discover_target_channel(self):
-        """Discover the target channel by name using dynamic discovery."""
-        if not self.guilds:
-            logger.error("❌ Bot is not connected to any Discord guilds")
-            return
+    async def _discover_and_sync_channels(self):
+        """Use channel manager for discovery and sync operations."""
+        try:
+            # Sync all channels with database
+            await self.channel_manager.sync_guild_channels(self)
             
-        # Use the first guild (assumes bot is only in one guild)
-        guild = self.guilds[0]
-        target_name = get_channel_name()
-        
-        # Find channel by name
-        channel = get(guild.text_channels, name=target_name)
-        
-        if not channel:
-            logger.error(f"❌ Couldn't find a channel called '{target_name}' in {guild.name}")
-            logger.info(f"Available channels: {[ch.name for ch in guild.text_channels]}")
-            return
+            # Discover target channel
+            target_name = get_channel_name()
+            self.aplus_setups_channel_id = await self.channel_manager.discover_target_channel(self, target_name)
             
-        # Store the discovered channel ID
-        self.aplus_setups_channel_id = str(channel.id)
-        logger.info(f"✅ Monitoring #{channel.name} ({channel.id}) in {guild.name}")
+            if self.aplus_setups_channel_id:
+                # Mark channel for listening
+                self.channel_manager.mark_channel_for_listening(self.aplus_setups_channel_id, True)
+                logger.info(f"✅ Target channel configured: {self.aplus_setups_channel_id}")
+            else:
+                logger.warning("❌ Could not find target channel for ingestion")
+                
+        except Exception as e:
+            logger.error(f"Error during channel discovery and sync: {e}")
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
@@ -106,29 +104,11 @@ class TradingDiscordBot(discord.Client):
         # Only process messages from aplus-setups channel
         if str(message.channel.id) == self.aplus_setups_channel_id:
             logger.info(f"Processing message from #aplus-setups: {message.id}")
+            # Update channel activity
+            self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
             await self._trigger_ingestion(message.channel.id)
 
-    async def _scan_and_update_channels(self):
-        """Scan all text channels and update database."""
-        from features.discord_bot.services.channel_monitor import ChannelMonitor
-        
-        try:
-            monitor = ChannelMonitor()
-            channels_updated = await monitor.scan_and_update_channels(self)
-            
-            # Find aplus-setups channel
-            for guild in self.guilds:
-                for channel in guild.text_channels:
-                    if channel.name == "aplus-setups":
-                        self.aplus_setups_channel_id = str(channel.id)
-                        logger.info(f"Found #aplus-setups channel: {self.aplus_setups_channel_id}")
-                        break
-                        
-            if not self.aplus_setups_channel_id:
-                logger.warning("Could not find #aplus-setups channel for ingestion")
-                
-        except Exception as e:
-            logger.error(f"Error scanning channels: {e}")
+
 
     async def _startup_catchup_ingestion(self):
         """Fetch and store recent Discord messages directly using bot connection."""
