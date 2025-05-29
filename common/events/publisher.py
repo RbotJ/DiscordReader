@@ -42,7 +42,7 @@ def publish_event(
         
         # Import here to avoid circular imports
         from sqlalchemy import text
-        from common.db import db
+        from common.db.session import db
         
         # Generate correlation ID if not provided
         if not correlation_id:
