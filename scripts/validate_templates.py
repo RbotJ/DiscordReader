@@ -184,7 +184,8 @@ def scan_templates() -> List[Path]:
     templates_dir = Path("templates")
     
     if not templates_dir.exists():
-        print("❌ ERROR: templates/ directory not found")
+        print("⚠️  WARNING: templates/ directory not found, creating it...")
+        templates_dir.mkdir(exist_ok=True)
         return templates
     
     for template_file in templates_dir.rglob("*.html"):

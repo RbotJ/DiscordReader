@@ -46,7 +46,7 @@ def validate_migrations():
         return False
     
     # Step 5: Validate schema integrity
-    if not run_command("python -c 'from common.db import db; db.create_all()'", 
+    if not run_command("python -c 'import sys; sys.path.append(\".\"); from main import app; from common.db import db; app.app_context().push(); db.create_all()'", 
                       "Validating schema integrity"):
         return False
     

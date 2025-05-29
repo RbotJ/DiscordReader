@@ -21,7 +21,7 @@ def scan_import_duplications():
             continue
             
         try:
-            with open(py_file, 'r') as f:
+            with open(py_file, 'r', encoding='utf-8') as f:
                 content = f.read()
             
             # Find import statements
@@ -35,7 +35,7 @@ def scan_import_duplications():
                 for match in matches:
                     imports_map[match].append(str(py_file))
                     
-        except Exception:
+        except (UnicodeDecodeError, PermissionError, FileNotFoundError):
             continue
     
     # Find commonly duplicated imports
