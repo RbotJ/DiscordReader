@@ -24,7 +24,7 @@ from app import app
 from common.db_models import MarketDataModel, WatchlistModel
 from app import db
 from common.events import publish_event
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 
 # Configure logger
 logger = logging.getLogger(__name__)

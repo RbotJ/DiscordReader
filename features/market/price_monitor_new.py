@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Set, Any, Optional
 
 from common.db import publish_event, get_latest_events
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 from features.alpaca.client import get_latest_quote, alpaca_market_client
 from common.events import update_price_cache, get_price_from_cache
 

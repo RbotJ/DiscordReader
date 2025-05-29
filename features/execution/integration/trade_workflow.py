@@ -21,7 +21,7 @@ from features.market.history import get_recent_candles
 from features.options.selector import select_best_option_contract
 
 from common.events import publish_event
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 
 # Configure logger
 logger = logging.getLogger(__name__)

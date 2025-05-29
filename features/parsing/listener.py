@@ -202,9 +202,9 @@ class MessageStoredListener:
             
             # Publish SETUP_PARSED event
             publish_event(
-                event_type=EventType.SETUP_PARSED,
-                channel=EventChannels.SETUP_CREATED,
-                data=event_payload
+                event_type=EventTypes.SETUP_PARSED,
+                payload=event_payload,
+                channel=EventChannels.SETUP_CREATED
             )
             
             logger.debug(f"Emitted SETUP_PARSED event for setup {setup.id}")
