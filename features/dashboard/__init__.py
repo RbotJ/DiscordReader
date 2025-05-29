@@ -12,6 +12,31 @@ dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
 # Import routes to register them with the Blueprint
 from . import api_routes
 
+# Add root dashboard route
+@dashboard_bp.route('/')
+def dashboard_home():
+    """Main dashboard home page."""
+    from flask import render_template
+    from .services.data_service import get_system_status
+    
+    try:
+        # Get system status data for the main dashboard
+        status_data = get_system_status()
+        
+        # Render the main dashboard template
+        return render_template('dashboard/status.html', **status_data)
+        
+    except Exception as e:
+        # Render template with error state
+        from .services.data_service import get_service_status
+        return render_template('dashboard/status.html', 
+                             error=str(e),
+                             total_messages_count=0,
+                             todays_messages_count=0,
+                             todays_setups=[],
+                             tickers_summary=[],
+                             service_status=get_service_status())
+
 # Add basic status route
 @dashboard_bp.route('/status')
 def status():
