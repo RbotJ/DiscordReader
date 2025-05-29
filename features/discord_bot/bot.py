@@ -55,14 +55,27 @@ class TradingDiscordBot(discord.Client):
         # Initialize channel monitoring service
         await self._scan_and_update_channels()
         
-        # Initialize ingestion service with this bot's client manager
-        if self.client_manager:
-            self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
-            logger.info("Ingestion service initialized with bot client")
+        # Log startup status for debugging
+        logger.info(f"Bot startup status - client_manager: {self.client_manager is not None}, aplus_channel: {self.aplus_setups_channel_id}")
+        
+        # Initialize ingestion service (don't require client_manager for basic functionality)
+        try:
+            if not self.client_manager:
+                logger.warning("No client_manager available, initializing ingestion service without it")
+                self.ingestion_service = IngestionService()
+            else:
+                self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
+                logger.info("Ingestion service initialized with bot client")
             
             # Trigger startup catch-up ingestion if target channel found
             if self.aplus_setups_channel_id:
+                logger.info(f"Triggering startup catchup ingestion for channel: {self.aplus_setups_channel_id}")
                 await self._startup_catchup_ingestion()
+            else:
+                logger.warning("No aplus-setups channel found, skipping catchup ingestion")
+                
+        except Exception as e:
+            logger.error(f"Error during bot startup ingestion setup: {e}")
 
     async def _discover_target_channel(self):
         """Discover the target channel by name using dynamic discovery."""

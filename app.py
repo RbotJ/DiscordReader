@@ -116,21 +116,11 @@ def start_discord_bot_background():
                 logging.warning("DISCORD_BOT_TOKEN not found in environment variables - Discord bot disabled")
                 return
             
-            # Import dependencies
-            from features.discord_bot.simple_bot import SimpleTradingBot
-            from features.ingestion.service import IngestionService
+            # Import dependencies - use the enhanced bot with catchup ingestion
+            from features.discord_bot.bot import TradingDiscordBot
             
-            # Create ingestion service
-            ingestion_service = IngestionService()
-            
-            # Get target channel ID from environment
-            target_channel_id = os.environ.get("DISCORD_CHANNEL_ID")
-            
-            # Create bot with dependency injection
-            bot = SimpleTradingBot(
-                ingestion_service=ingestion_service,
-                target_channel_id=target_channel_id
-            )
+            # Create bot with enhanced startup catchup functionality
+            bot = TradingDiscordBot()
             
             # Run bot in new event loop
             loop = asyncio.new_event_loop()
