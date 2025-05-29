@@ -13,11 +13,11 @@ from discord.ext import tasks
 from datetime import datetime
 
 from .config.settings import (
-    validate_discord_env, 
+    validate_discord_token, 
     get_discord_token, 
-    get_channel_id,
-    get_guild_id
+    get_channel_name
 )
+from discord.utils import get
 from features.ingestion.service import IngestionService
 from features.discord_bot.services.correlation_service import DiscordCorrelationService
 
@@ -45,6 +45,9 @@ class TradingDiscordBot(discord.Client):
         logger.info(f'Discord bot connected as {self.user}')
         self.ready_status = True
         
+        # Dynamic channel discovery
+        await self._discover_target_channel()
+        
         # Initialize channel monitoring service
         await self._scan_and_update_channels()
         
@@ -53,9 +56,31 @@ class TradingDiscordBot(discord.Client):
             self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
             logger.info("Ingestion service initialized with bot client")
             
-            # Trigger startup catch-up ingestion if aplus-setups channel found
+            # Trigger startup catch-up ingestion if target channel found
             if self.aplus_setups_channel_id:
                 await self._startup_catchup_ingestion()
+
+    async def _discover_target_channel(self):
+        """Discover the target channel by name using dynamic discovery."""
+        if not self.guilds:
+            logger.error("❌ Bot is not connected to any Discord guilds")
+            return
+            
+        # Use the first guild (assumes bot is only in one guild)
+        guild = self.guilds[0]
+        target_name = get_channel_name()
+        
+        # Find channel by name
+        channel = get(guild.text_channels, name=target_name)
+        
+        if not channel:
+            logger.error(f"❌ Couldn't find a channel called '{target_name}' in {guild.name}")
+            logger.info(f"Available channels: {[ch.name for ch in guild.text_channels]}")
+            return
+            
+        # Store the discovered channel ID
+        self.aplus_setups_channel_id = str(channel.id)
+        logger.info(f"✅ Monitoring #{channel.name} ({channel.id}) in {guild.name}")
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
@@ -205,8 +230,6 @@ class DiscordClientManager:
             token: Discord bot token. If None, will get from standardized environment variable.
         """
         self.token = token or get_discord_token()
-        self.channel_id = get_channel_id('default')
-        self.guild_id = get_guild_id()
         self.client: Optional[TradingDiscordBot] = None
         self._is_connected = False
         self._connection_task = None
@@ -220,10 +243,6 @@ class DiscordClientManager:
         """
         if not self.token:
             logger.error("Discord bot token not provided - check DISCORD_BOT_TOKEN environment variable")
-            return False
-        
-        if not self.channel_id:
-            logger.error("Discord channel ID not provided - check DISCORD_CHANNEL_ID environment variable")
             return False
         
         try:

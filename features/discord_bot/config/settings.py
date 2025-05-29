@@ -13,12 +13,11 @@ logger = logging.getLogger(__name__)
 # Required environment variables (standardized)
 REQUIRED_VARS = [
     'DISCORD_BOT_TOKEN',      # Standardized from DISCORD_TOKEN
-    'DISCORD_CHANNEL_ID',
-    'DISCORD_GUILD_ID'
 ]
 
 # Optional environment variables with defaults
 OPTIONAL_VARS = {
+    'DISCORD_CHANNEL_NAME': 'aplus-setups',
     'DISCORD_TEST_CHANNEL_ID': None,
     'DISCORD_SETUPS_CHANNEL_ID': None
 }
@@ -65,9 +64,19 @@ def get_discord_token() -> Optional[str]:
     """
     return os.environ.get('DISCORD_BOT_TOKEN')
 
+def get_channel_name() -> str:
+    """
+    Get the Discord channel name to monitor.
+    
+    Returns:
+        str: Channel name (defaults to 'aplus-setups' if not set)
+    """
+    return os.environ.get('DISCORD_CHANNEL_NAME', 'aplus-setups')
+
 def get_channel_id(channel_type: str = 'default') -> Optional[str]:
     """
-    Get the channel ID for a specific channel type.
+    DEPRECATED: Get the channel ID for a specific channel type.
+    Use dynamic channel discovery instead.
     
     Args:
         channel_type: Type of channel ('default', 'test', 'setups')
@@ -87,7 +96,8 @@ def get_channel_id(channel_type: str = 'default') -> Optional[str]:
 
 def get_guild_id() -> Optional[str]:
     """
-    Get the Discord guild ID from environment variables.
+    DEPRECATED: Get the Discord guild ID from environment variables.
+    Use dynamic guild discovery instead.
     
     Returns:
         str: Guild ID or None if not set
