@@ -133,57 +133,68 @@ class TradingDiscordBot(discord.Client):
             logger.error(f"Error scanning channels: {e}")
 
     async def _startup_catchup_ingestion(self):
-        """Trigger catch-up ingestion on startup using last message in database with correlation tracking."""
-        correlation_id = DiscordCorrelationService.generate_message_correlation_id()
-        
+        """Fetch and store recent Discord messages directly using bot connection."""
         try:
-            from features.ingestion.models import DiscordMessageModel
+            logger.info(f"Starting simplified message fetch for channel: {self.aplus_setups_channel_id}")
             
-            # Get timestamp of last message in database for aplus-setups channel
-            last_message = DiscordMessageModel.query.filter_by(
-                channel_id=self.aplus_setups_channel_id
-            ).order_by(DiscordMessageModel.timestamp.desc()).first()
+            # Get the Discord channel directly using bot's connection
+            channel = self.get_channel(int(self.aplus_setups_channel_id))
+            if not channel:
+                logger.error(f"Could not access channel {self.aplus_setups_channel_id}")
+                return
+                
+            # Fetch recent messages (50 for startup, configurable)
+            messages_fetched = 0
+            messages_stored = 0
             
-            since_timestamp = last_message.timestamp if last_message else None
+            async for message in channel.history(limit=50):
+                messages_fetched += 1
+                
+                # Skip bot messages
+                if message.author.bot:
+                    continue
+                    
+                try:
+                    # Store message directly in database
+                    from common.db import db
+                    
+                    # Check if message already exists
+                    from sqlalchemy import text
+                    existing = db.session.execute(
+                        text("SELECT id FROM discord_messages WHERE message_id = :msg_id"),
+                        {'msg_id': str(message.id)}
+                    ).fetchone()
+                    
+                    if existing:
+                        continue  # Skip duplicates
+                    
+                    # Insert new message
+                    db.session.execute(text("""
+                        INSERT INTO discord_messages (message_id, content, author_id, channel_id, created_at, processed)
+                        VALUES (:msg_id, :content, :author_id, :channel_id, :created_at, false)
+                    """), {
+                        'msg_id': str(message.id),
+                        'content': message.content,
+                        'author_id': str(message.author.id),
+                        'channel_id': str(message.channel.id),
+                        'created_at': message.created_at
+                    })
+                    
+                    db.session.commit()
+                    messages_stored += 1
+                    
+                    if messages_stored % 10 == 0:
+                        logger.info(f"Stored {messages_stored} messages so far...")
+                        
+                except Exception as msg_error:
+                    logger.error(f"Error storing message {message.id}: {msg_error}")
+                    db.session.rollback()
+                    continue
             
-            if since_timestamp:
-                logger.info(f"Starting catch-up ingestion since last message: {since_timestamp}")
-            else:
-                logger.info("No previous messages found, starting full ingestion")
-            
-            # Publish ingestion started event with correlation tracking
-            DiscordCorrelationService.publish_ingestion_started({
-                'channel_id': self.aplus_setups_channel_id,
-                'ingestion_type': 'startup_catchup',
-                'since_timestamp': since_timestamp.isoformat() if since_timestamp else None,
-                'limit': 200
-            }, correlation_id)
-            
-            # Trigger catch-up ingestion with larger limit for startup
-            result = await self.ingestion_service.ingest_latest_messages(
-                channel_id=self.aplus_setups_channel_id,
-                limit=200,  # Larger limit for catch-up
-                since=since_timestamp
-            )
-            
-            # Publish ingestion completed event with results
-            DiscordCorrelationService.publish_ingestion_completed({
-                **result.get('statistics', {}),
-                'channel_id': self.aplus_setups_channel_id,
-                'ingestion_type': 'startup_catchup'
-            }, correlation_id)
-            
-            logger.info(f"Startup catch-up ingestion completed: {result.get('statistics', {})}")
+            logger.info(f"Startup ingestion complete: {messages_fetched} fetched, {messages_stored} stored")
             
         except Exception as e:
-            logger.error(f"Error during startup catch-up ingestion: {e}")
-            # Publish error event
-            DiscordCorrelationService.publish_ingestion_completed({
-                'error': str(e),
-                'channel_id': self.aplus_setups_channel_id,
-                'ingestion_type': 'startup_catchup',
-                'success': False
-            }, correlation_id)
+            logger.error(f"Error during startup message fetch: {e}")
 
     async def _trigger_ingestion(self, channel_id: str):
         """Trigger message ingestion for a specific channel with correlation tracking."""
