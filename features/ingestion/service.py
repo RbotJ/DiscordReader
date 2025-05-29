@@ -155,6 +155,49 @@ class IngestionService(IIngestionService):
             self.stats['total_errors'] += 1
             raise
 
+    async def ingest_channel_history(
+        self,
+        channel_id: str,
+        limit: int = 50,
+        source: str = "manual"
+    ) -> Dict[str, Any]:
+        """
+        Ingest channel message history for startup catchup or bulk processing.
+
+        Args:
+            channel_id: Discord channel ID
+            limit: Maximum number of messages to fetch
+            source: Source of the ingestion request
+
+        Returns:
+            Dict[str, Any]: Ingestion results with statistics
+        """
+        try:
+            logger.info(f"Starting channel history ingestion for {channel_id} (source: {source})")
+            
+            # Use the existing ingest_latest_messages method
+            result = await self.ingest_latest_messages(
+                channel_id=channel_id,
+                limit=limit,
+                since=None  # Get all recent messages for history
+            )
+            
+            # Add source information to result
+            if result:
+                result['source'] = source
+                result['success'] = True
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error during channel history ingestion: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'source': source,
+                'statistics': {'total_fetched': 0, 'total_stored': 0, 'total_errors': 1}
+            }
+
     async def ingest_single_message(
         self,
         channel_id: str,

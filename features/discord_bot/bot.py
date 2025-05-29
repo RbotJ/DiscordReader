@@ -111,68 +111,29 @@ class TradingDiscordBot(discord.Client):
 
 
     async def _startup_catchup_ingestion(self):
-        """Fetch and store recent Discord messages directly using bot connection."""
+        """Trigger startup catchup ingestion using ingestion service."""
         try:
-            logger.info(f"Starting simplified message fetch for channel: {self.aplus_setups_channel_id}")
-            
-            # Get the Discord channel directly using bot's connection
-            channel = self.get_channel(int(self.aplus_setups_channel_id))
-            if not channel:
-                logger.error(f"Could not access channel {self.aplus_setups_channel_id}")
+            if not self.aplus_setups_channel_id:
+                logger.warning("No target channel available for startup catchup")
                 return
                 
-            # Fetch recent messages (50 for startup, configurable)
-            messages_fetched = 0
-            messages_stored = 0
+            logger.info(f"Starting startup catchup ingestion for channel: {self.aplus_setups_channel_id}")
             
-            async for message in channel.history(limit=50):
-                messages_fetched += 1
+            # Use ingestion service for startup catchup
+            result = await self.ingestion_service.ingest_channel_history(
+                channel_id=self.aplus_setups_channel_id,
+                limit=50,
+                source="startup_catchup"
+            )
+            
+            if result and result.get('success'):
+                stats = result.get('statistics', {})
+                logger.info(f"Startup ingestion complete: {stats}")
+            else:
+                logger.warning(f"Startup ingestion had issues: {result}")
                 
-                # Skip bot messages
-                if message.author.bot:
-                    continue
-                    
-                try:
-                    # Store message directly in database
-                    from common.db import db
-                    
-                    # Check if message already exists
-                    from sqlalchemy import text
-                    existing = db.session.execute(
-                        text("SELECT id FROM discord_messages WHERE message_id = :msg_id"),
-                        {'msg_id': str(message.id)}
-                    ).fetchone()
-                    
-                    if existing:
-                        continue  # Skip duplicates
-                    
-                    # Insert new message
-                    db.session.execute(text("""
-                        INSERT INTO discord_messages (message_id, content, author_id, channel_id, created_at, processed)
-                        VALUES (:msg_id, :content, :author_id, :channel_id, :created_at, false)
-                    """), {
-                        'msg_id': str(message.id),
-                        'content': message.content,
-                        'author_id': str(message.author.id),
-                        'channel_id': str(message.channel.id),
-                        'created_at': message.created_at
-                    })
-                    
-                    db.session.commit()
-                    messages_stored += 1
-                    
-                    if messages_stored % 10 == 0:
-                        logger.info(f"Stored {messages_stored} messages so far...")
-                        
-                except Exception as msg_error:
-                    logger.error(f"Error storing message {message.id}: {msg_error}")
-                    db.session.rollback()
-                    continue
-            
-            logger.info(f"Startup ingestion complete: {messages_fetched} fetched, {messages_stored} stored")
-            
         except Exception as e:
-            logger.error(f"Error during startup message fetch: {e}")
+            logger.error(f"Error during startup catchup ingestion: {e}")
 
     async def _trigger_ingestion(self, channel_id: str):
         """Trigger message ingestion for a specific channel with correlation tracking."""
