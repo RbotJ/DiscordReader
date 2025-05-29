@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from common.db import db, publish_event
 from features.parsing.models import SetupModel
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 
 logger = logging.getLogger(__name__)
 

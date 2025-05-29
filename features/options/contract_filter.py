@@ -16,7 +16,7 @@ import math
 from app import app, db
 from common.db_models import OptionsContractModel
 from common.events import publish_event, get_events
-from common.event_constants import EventType
+from common.events.constants import EventTypes
 
 # Configure logger
 logger = logging.getLogger(__name__)

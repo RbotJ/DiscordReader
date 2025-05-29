@@ -19,7 +19,7 @@ from common.db_models import (
     OptionsContractModel, MarketDataModel, TickerSetupModel, BiasModel
 )
 from common.events import publish_event
-from common.event_constants import EventType
+from common.events.constants import EventTypes
 from features.management.position_manager import get_position, close_position, close_position_partial
 
 # Configure logger
