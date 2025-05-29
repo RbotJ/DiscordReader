@@ -287,7 +287,7 @@ class AlpacaWebSocketService:
                     })
                     
                     # Publish price update event
-                    publish_event(
+                    publish_event_safe(
                         event_type=EventTypes.TICKER_DATA,
                         payload={
                             'ticker': ticker,
