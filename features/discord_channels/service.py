@@ -102,14 +102,13 @@ class DiscordChannelService:
                     
             else:
                 # Create new channel record
-                new_channel = DiscordChannel(
-                    channel_id=str(channel.id),
-                    channel_name=channel.name,
-                    guild_id=str(guild.id),
-                    guild_name=guild.name,
-                    channel_type="text",
-                    is_active=True
-                )
+                new_channel = DiscordChannel()
+                new_channel.channel_id = str(channel.id)
+                new_channel.channel_name = channel.name
+                new_channel.guild_id = str(guild.id)
+                new_channel.guild_name = guild.name
+                new_channel.channel_type = "text"
+                new_channel.is_active = True
                 db.session.add(new_channel)
                 self.stats['channels_added'] += 1
                 logger.info(f"Added new channel: #{channel.name} ({channel.id})")

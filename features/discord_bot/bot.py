@@ -17,9 +17,9 @@ from .config.settings import (
     get_discord_token, 
     get_channel_name
 )
-from discord.utils import get
 from features.ingestion.service import IngestionService
 from features.discord_bot.services.correlation_service import DiscordCorrelationService
+from features.discord_channels.channel_manager import ChannelManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +43,15 @@ class TradingDiscordBot(discord.Client):
         self.aplus_setups_channel_id = None
         self.ingestion_service = IngestionService()
         self.client_manager = None
+        self.channel_manager = ChannelManager()
 
     async def on_ready(self):
         """Bot startup - scan channels and initialize ingestion."""
         logger.info(f'Discord bot connected as {self.user}')
         self.ready_status = True
         
-        # Dynamic channel discovery
-        await self._discover_target_channel()
-        
-        # Initialize channel monitoring service
-        await self._scan_and_update_channels()
+        # Use channel manager for discovery and sync
+        await self._discover_and_sync_channels()
         
         # Log startup status for debugging
         logger.info(f"Bot startup status - client_manager: {self.client_manager is not None}, aplus_channel: {self.aplus_setups_channel_id}")
