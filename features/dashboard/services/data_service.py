@@ -59,37 +59,7 @@ def get_dashboard_summary() -> Dict[str, Any]:
             'error': str(e)
         }
 
-def get_discord_stats() -> Dict[str, Any]:
-    """
-    Get Discord message statistics.
-    
-    Returns:
-        Dictionary containing Discord stats
-    """
-    try:
-        # Import the necessary service from discord feature
-        from features.discord.message_publisher import get_message_stats
-        
-        # Get message statistics
-        stats = get_message_stats()
-        
-        # Get recent messages
-        from features.discord.message_consumer import get_recent_messages
-        recent_messages = get_recent_messages(limit=10)
-        
-        return {
-            'stats': stats,
-            'recent_messages': recent_messages,
-            'updated_at': datetime.datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting Discord stats: {e}")
-        return {
-            'stats': {},
-            'recent_messages': [],
-            'updated_at': datetime.datetime.now().isoformat(),
-            'error': str(e)
-        }
+# REMOVED: Legacy Discord stats function - use discord_bot directory instead
 
 def get_trade_monitor_data() -> Dict[str, Any]:
     """
