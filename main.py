@@ -6,6 +6,8 @@ It configures the application, initializes components,
 and sets up the routes.
 """
 
+print(f"▶️  Starting DiscordReader from {__file__}")
+
 import logging
 import os
 from datetime import datetime
@@ -193,6 +195,9 @@ def start_discord_bot_background():
     
     def run_bot():
         try:
+            print("🤖 Discord bot thread starting...")
+            logging.info("Discord bot thread starting...")
+            
             # Create new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -201,17 +206,28 @@ def start_discord_bot_background():
             import os
             token = os.environ.get('DISCORD_BOT_TOKEN')
             
+            print(f"🔑 Discord token check: {'Found' if token else 'Missing'}")
+            logging.info(f"Discord token check: {'Found' if token else 'Missing'}")
+            
             if not token:
                 logging.warning("Discord bot token not found - Discord integration disabled")
                 logging.info("Set DISCORD_BOT_TOKEN environment variable to enable Discord features")
                 return
             
             # Initialize and connect bot using your existing Discord setup
+            print("📦 Importing DiscordClientManager...")
             from features.discord_bot.bot import DiscordClientManager
-            manager = DiscordClientManager()
+            print("✅ Import successful")
             
+            print("🔧 Creating Discord manager...")
+            manager = DiscordClientManager()
+            print("✅ Manager created")
+            
+            print("🚀 Starting Discord bot connection...")
             logging.info("Starting Discord bot connection...")
-            loop.run_until_complete(manager.connect())
+            result = loop.run_until_complete(manager.connect())
+            print(f"🔗 Connection result: {result}")
+            logging.info(f"Discord bot connection result: {result}")
             
         except Exception as e:
             logging.error(f"Discord bot startup failed: {e}")

@@ -31,6 +31,10 @@ class TradingDiscordBot(discord.Client):
     """Discord bot for real-time message monitoring and channel management."""
 
     def __init__(self, *args, **kwargs):
+        import os
+        print(f"🤖 Instantiating Bot from {TradingDiscordBot.__module__!r} @ {os.path.abspath(__file__)}")
+        logging.getLogger().info(f"🤖 Instantiating Bot from {TradingDiscordBot.__module__!r} @ {os.path.abspath(__file__)}")
+        
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True

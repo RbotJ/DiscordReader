@@ -1,0 +1,45 @@
+Here are a few proven tricks to pin down whether you’re actually launching the code you think you are, and get that “bot connected” log to appear:
+
+1. Add a “heartbeat” print at module import
+At the very top of your main.py (or whatever file you think is the entry point), drop in:
+
+print(f"▶️  Starting DiscordReader from {__file__}")
+Then run your launch command. If you never see that line, you know you’re executing some other script.
+
+2. Log out the Bot class location
+Inside your bot subclass (e.g. in class TradingDiscordBot), add in the constructor or at class‐definition time:
+
+import os, logging
+logging.getLogger().info(
+    f"🤖  Instantiating Bot from {TradingDiscordBot.__module__!r} @ {os.path.abspath(__file__)}"
+)
+(or simply print(TradingDiscordBot.__module__, __file__))
+That way, once you do bot = TradingDiscordBot(...), you’ll see exactly which file path and module is being used.
+
+3. Verify your “run” invocation
+Are you doing:
+
+if __name__ == "__main__":
+    bot.run(os.getenv("DISCORD_BOT_TOKEN"))
+… or are you accidentally calling an old script, or using flask run with FLASK_APP=some_old_module?
+
+If you use flask run, check echo $FLASK_APP.
+If you do python main.py, make sure you’re in the project root and that there isn’t another main.py earlier on your PYTHONPATH.
+4. Check for a stale “installed” copy
+If at any point you did pip install . or pip install -e ., you may have an older version sitting in your site-packages.
+Run:
+
+pip uninstall DiscordReader
+pip uninstall discordreader   # try both name variants
+Then re-launch from your local folder.
+
+5. Simplify to a minimal repro
+Create a tiny script test_bot.py in your project root:
+
+import discord, os, logging
+logging.basicConfig(level=logging.DEBUG)
+
+print("→ test_bot.py at", __file__)
+bot = discord.Client(intents=discord.Intents.default())
+bot.run(os.getenv("DISCORD_BOT_TOKEN"))
+Run it with python test_bot.py. If that never logs in, you know the problem is either your token or your environment—at least it rules out any complexity in your larger app.
