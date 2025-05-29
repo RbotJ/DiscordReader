@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from sqlalchemy import desc, and_, or_
 
-from features.events.models import Event
+from .models import Event
 from common.db import db
 
 logger = logging.getLogger(__name__)

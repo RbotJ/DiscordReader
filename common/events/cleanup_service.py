@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from features.events.query_service import EventQueryService
+from .query_service import EventQueryService
 from common.event_constants import EventChannels, EventTypes
 from common.db import publish_event
 
