@@ -93,6 +93,10 @@ class EventTypes:
     TRADE_EXECUTED = "trade.executed"
     TRADE_FILLED = "trade.filled"
     
+    # Market data events
+    TICKER_DATA = "market.ticker.data"
+    PRICE_UPDATE = "market.price.update"
+    
     # System events
     ERROR = "system.error"
     WARNING = "system.warning"
