@@ -229,7 +229,7 @@ class ExitRulesEngine:
                     
                     # Publish to PostgreSQL event system for real-time updates
                     exit_event_data = {
-                        "event_type": EventType.POSITION_UPDATED,
+                        "event_type": EventTypes.TRADE_EXECUTED,
                         "symbol": position["symbol"],
                         "reason": combined_reason,
                         "timestamp": datetime.utcnow().isoformat()

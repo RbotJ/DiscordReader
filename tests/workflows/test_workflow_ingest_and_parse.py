@@ -17,7 +17,7 @@ from features.ingestion.service import IngestionService
 from features.parsing.parser import MessageParser
 from features.parsing.models import SetupModel
 from common.db import db, publish_event
-from common.event_constants import EventChannels
+from common.events.constants import EventChannels
 
 
 class TestWorkflowIngestAndParse:
