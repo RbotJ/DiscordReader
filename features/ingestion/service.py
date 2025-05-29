@@ -17,8 +17,7 @@ from .models import DiscordMessageModel
 from features.discord_bot.models import DiscordChannel
 from features.discord_bot.dto import RawMessageDto
 from .interfaces import IIngestionService
-from common.db import db
-# Import publish_event when needed to avoid circular imports
+from common.db import db, publish_event
 from common.event_constants import EventChannels
 
 logger = logging.getLogger(__name__)
@@ -60,31 +59,39 @@ class IngestionService(IIngestionService):
         try:
             logger.info(f"Ingesting raw message {raw.message_id}")
             
-            # Check if message already exists using raw SQL to avoid model issues
-            from sqlalchemy import text
-            existing = db.session.execute(
-                text("SELECT id FROM discord_messages WHERE message_id = :msg_id"),
-                {'msg_id': raw.message_id}
-            ).fetchone()
-            
+            # Check if message already exists
+            existing = DiscordMessageModel.query.filter_by(message_id=raw.message_id).first()
             if existing:
                 logger.debug(f"Message {raw.message_id} already exists, skipping")
                 return
             
-            # Insert new message using raw SQL to avoid constructor issues
-            db.session.execute(text("""
-                INSERT INTO discord_messages (message_id, channel_id, author_id, author, content, timestamp, is_processed, created_at)
-                VALUES (:msg_id, :channel_id, :author_id, :author, :content, :timestamp, false, NOW())
-            """), {
-                'msg_id': raw.message_id,
-                'channel_id': raw.channel_id,
-                'author_id': raw.author_id,
-                'author': raw.author_name,
-                'content': raw.content,
-                'timestamp': raw.timestamp
-            })
+            # Create new message model
+            message = DiscordMessageModel(
+                message_id=raw.message_id,
+                channel_id=raw.channel_id,
+                author_id=raw.author_id,
+                author=raw.author_name,
+                content=raw.content,
+                timestamp=raw.timestamp,
+                is_processed=False
+            )
             
+            # Store in database
+            db.session.add(message)
             db.session.commit()
+            
+            # Publish event for downstream processing
+            publish_event(
+                event_type="discord.message.stored",
+                payload={
+                    "message_id": raw.message_id,
+                    "channel_id": raw.channel_id,
+                    "content_preview": raw.content[:100] + "..." if len(raw.content) > 100 else raw.content
+                },
+                channel=EventChannels.DISCORD_MESSAGE,
+                source="discord_ingestion"
+            )
+            
             logger.info(f"Successfully ingested message {raw.message_id}")
             
         except Exception as e:
