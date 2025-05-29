@@ -1,0 +1,33 @@
+It looks like your Discord bot startup code in main.py still isn’t being executed at all—which almost certainly means that Replit is launching something else (likely via flask run), and never touches your main.py entrypoint. Here are a few ways to fix it:
+
+Understand Flask’s default fallback
+When you run flask run without setting FLASK_APP, Flask will automatically try to import app.py or wsgi.py, looking for an app (or application) instance or factory in them. It will never import main.py by default 
+Flask Documentation
+.
+Solution A: Rename your file
+Rename main.py → app.py (or wsgi.py).
+Ensure inside it you have:
+from features.discord_bot.bot import TradingDiscordBot
+app = Flask(__name__)
+# … your setup …
+if __name__ == "__main__":
+    print("▶️  Starting DiscordReader from app.py")
+    start_discord_bot_background()   # or however you launch it
+    app.run()
+Now flask run will pick up app.py, run your prints, and start the bot.
+Solution B: Explicitly point FLASK_APP at your entrypoint
+In your Replit “Secrets” or Environment settings add:
+FLASK_APP=main:app
+(assuming your main.py defines a Flask instance named app.)
+Then flask run will import main.py, find app, and run the block under if __name__ == "__main__": 
+Stack Overflow
+.
+Solution C: Bypass flask run entirely
+If you don’t actually need the Flask dev server to be reloading, switch your Replit “run” command to:
+python main.py
+That way, you’ll see your heartbeat print immediately—and you won’t be at the mercy of Flask’s CLI lookup logic.
+Quick Checklist
+🔍 Inspect your Replit entrypoint (.replit file) and see whether it’s running flask run or python app.py / python main.py.
+🔧 If using flask run, choose A or B above so it knows to load your code.
+✅ Confirm you get your ▶️ Starting DiscordReader from ... message immediately on launch.
+Once your main.py (or app.py) is actually the file being executed, your heartbeat prints and bot instantiation logs will appear, and you’ll be back on track to wire up start_discord_bot_background() properly. Let me know which approach you take and how it goes!
