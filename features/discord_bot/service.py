@@ -121,19 +121,27 @@ class BotService:
         """
         # Check if bot dependencies are available
         try:
-            from features.discord_bot.bot import TradingDiscordBot
-            # If we can import, check if token is available
+            from features.discord_bot.bot import get_client_manager
             import os
             token = os.getenv("DISCORD_BOT_TOKEN")
             if not token:
                 return 'disabled'
             
-            # Check if bot is actually connected (would need bot instance)
-            # For now, assume disconnected if we don't have recent activity
-            return 'disconnected'  # Will be 'connected' when bot is working
+            # Check if bot is actually connected by getting the client manager
+            client_manager = get_client_manager()
+            if client_manager and hasattr(client_manager, 'client') and client_manager.client:
+                if hasattr(client_manager.client, 'is_ready') and client_manager.client.is_ready():
+                    return 'connected'
+                elif hasattr(client_manager.client, 'is_closed') and not client_manager.client.is_closed():
+                    return 'connecting'
+            
+            return 'disconnected'
             
         except ImportError:
             return 'disabled'
+        except Exception as e:
+            logger.warning(f"Error checking bot status: {e}")
+            return 'disconnected'
     
     def _get_error_count(self) -> int:
         """Get error count from logs or events in the last hour."""
