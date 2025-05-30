@@ -1,0 +1,72 @@
+Status Tracker
+In your Discord slice, create a small helper to subscribe to the relevant events:
+
+python
+Copy
+Edit
+from datetime import datetime
+
+class BotStatus:
+    def __init__(self, bot):
+        self.is_online = False
+        self.last_ready = None
+        self.last_disconnect = None
+        self.reconnects = 0
+        self.latency_ms = None
+
+        bot.add_listener(self.on_ready)
+        bot.add_listener(self.on_disconnect)
+        bot.add_listener(self.on_resumed)
+        bot.loop.create_task(self._track_latency(bot))
+
+    async def on_ready(self):
+        self.is_online   = True
+        self.last_ready  = datetime.utcnow()
+
+    async def on_disconnect(self):
+        self.is_online      = False
+        self.last_disconnect = datetime.utcnow()
+
+    async def on_resumed(self):
+        self.reconnects += 1
+
+    async def _track_latency(self, bot):
+        while True:
+            # client.latency is in seconds
+            self.latency_ms = round(bot.latency * 1000)
+            await asyncio.sleep(5)  # adjust frequency
+Expose via API or SocketIO
+Hook up a Flask route or a SocketIO event to surface current status:
+
+python
+Copy
+Edit
+@app.route('/api/discord/status')
+def discord_status():
+    status = bot_status  # your instance
+    return {
+        "connected":    status.is_online,
+        "last_ready":   status.last_ready.isoformat() if status.last_ready else None,
+        "latency_ms":   status.latency_ms,
+        "reconnects":   status.reconnects
+    }
+Dashboard Display
+
+Indicator: Green/Red light for connected.
+
+Latency Gauge: Show current latency_ms and trend over time.
+
+Uptime Counter: “Online for Xh Ym” (use datetime.utcnow() - last_ready).
+
+Reconnects: Total reconnect attempts since last service restart.
+
+What you’re measuring, and why
+is_online catches hard disconnects.
+
+latency_ms alerts you to slowness in the Gateway channel (heartbeats).
+
+last_ready / uptime shows you how long the bot has run without interruption.
+
+reconnects tells you if the bot is flapping (dropping/reconnecting frequently).
+
+Together, they give you a concise “bot status” snapshot that you can graph, alert on, and use to troubleshoot any connectivity issues with Discord’s Gateway.

@@ -30,32 +30,26 @@ class BotService:
         """
         try:
             from common.db import db
+            from .status_tracker import get_status_tracker
             
-            # Get bot status from logs or events
-            status = self._get_bot_status()
-            
-            # Calculate uptime and get gateway metrics
-            uptime_seconds = 0
-            latency_ms = 0
-            
-            # Get real Discord client for gateway metrics
-            try:
-                from features.discord_bot.bot import get_discord_client
-                client_manager = get_discord_client()
-                if client_manager and hasattr(client_manager, 'client') and client_manager.client:
-                    client = client_manager.client
-                    if client.is_ready():
-                        # Get real gateway latency in milliseconds
-                        latency_ms = round(client.latency * 1000, 1)
-                        # Update last ready time if not set
-                        if not self._last_ready_time:
-                            self._last_ready_time = datetime.utcnow()
-                        uptime_seconds = int((datetime.utcnow() - self._last_ready_time).total_seconds())
-                    else:
-                        # Reset uptime if not ready
-                        self._last_ready_time = None
-            except:
-                pass
+            # Get real status from event-driven tracker
+            status_tracker = get_status_tracker()
+            if status_tracker:
+                tracker_status = status_tracker.get_status()
+                status = 'connected' if tracker_status['connected'] else 'disconnected'
+                uptime_seconds = tracker_status['uptime_seconds']
+                latency_ms = tracker_status['latency_ms'] or 0
+                last_ready = tracker_status['last_ready']
+                reconnects = tracker_status['reconnects']
+                last_activity = tracker_status['last_event']
+            else:
+                # Fallback to basic detection
+                status = self._get_bot_status()
+                uptime_seconds = 0
+                latency_ms = 0
+                last_ready = None
+                reconnects = 0
+                last_activity = None
             
             # Count messages processed today (if bot is processing)
             today = datetime.utcnow().date()

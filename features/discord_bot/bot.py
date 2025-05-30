@@ -50,6 +50,13 @@ class TradingDiscordBot(discord.Client):
         logger.info(f'Discord bot connected as {self.user}')
         self.ready_status = True
         
+        # Initialize status tracker and notify it of ready event
+        from .status_tracker import initialize_status_tracker, get_status_tracker
+        initialize_status_tracker(self)
+        tracker = get_status_tracker()
+        if tracker:
+            await tracker.on_ready()
+        
         # Use channel manager for discovery and sync
         await self._discover_and_sync_channels()
         
