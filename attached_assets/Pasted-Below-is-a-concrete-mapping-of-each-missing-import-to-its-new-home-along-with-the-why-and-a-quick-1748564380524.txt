@@ -1,0 +1,53 @@
+Below is a concrete mapping of each missing import to its new home, along with the “why” and a quick search-and-replace recipe so your Discord bot (and any other slice) will pick up the right modules.
+
+Old Import	Why it’s broken	New Import	Example Replacement
+from common.models import …	You no longer have a monolithic common/models.py.	Import only the model you need from its slice:	
+
+For messages → from features.ingestion.models import DiscordMessageModel
+
+For channels → from features.discord_bot.models import DiscordChannel | ```diff
+
+from common.models import DiscordMessage, DiscordChannel
+
+from features.ingestion.models import DiscordMessageModel
+
+from features.discord_bot.models import DiscordChannel
+
+|
+Copy
+Edit
+| `from common.parser_utils import parse_message`  | Parsers now live under `features/parsing/`.                | `from features.parsing.parser import parse_setup_message` (or whatever function you actually call)                                                         | ```diff
+- from common.parser_utils import parse_message
++ from features.parsing.parser import parse_setup_message
+```                                                                                                       |
+| `from common.db_models import …`   | All your SQLAlchemy models moved into each slice’s `models.py`. | Point at the slice that owns that table:  
+- In ingestion → `from features.ingestion.models import DiscordMessageModel`  
+- In parsing  → `from features.parsing.models import SetupModel` (etc.)                           | ```diff
+- from common.db_models import SetupModel
++ from features.parsing.models import SetupModel
+```                                                                                                       |
+| `from features.discord_channels.service import DiscordChannelService` | That class was renamed or moved.                         | The implementation now lives as **ChannelManager** in `features/discord_channels/channel_manager.py`:  
+```python
+from features.discord_channels.channel_manager import ChannelManager
+```                                                                                                        | ```diff
+- from features.discord_channels.service import DiscordChannelService
++ from features.discord_channels.channel_manager import ChannelManager
+```                                                                                                       |
+
+---
+
+### Steps to apply
+
+1. **Search your repo** for the broken imports. For example:
+   ```bash
+   grep -R "common.models" -n .
+   grep -R "common.parser_utils" -n .
+   grep -R "common.db_models"   -n .
+   grep -R "discord_channels.service" -n .
+Edit each occurrence using the table above.
+
+Run your import-sanity test (e.g. pytest tests/test_imports.py) to catch any left-overs.
+
+Restart your bot—you should now see it connect, scan channels via ChannelManager, and hand off messages to IngestionService without errors.
+
+With those replacements in place, your vertical slices will stay fully decoupled and your Discord bot startup will find every dependency in the right feature module.

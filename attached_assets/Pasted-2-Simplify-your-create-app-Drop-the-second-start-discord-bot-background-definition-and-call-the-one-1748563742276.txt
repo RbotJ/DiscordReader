@@ -1,0 +1,65 @@
+2. Simplify your create_app
+Drop the second start_discord_bot_background definition and call the one above, passing it your newly‐created app:
+
+python
+Copy
+Edit
+from flask import Flask
+from common.db import initialize_db
+from common.events.cleanup_service import cleanup_service
+
+def create_app():
+    app = Flask(__name__)
+    # … all your config, initialize_db, register routes, socketio, etc. …
+    initialize_db(app)
+    cleanup_service.start_cleanup_scheduler()
+    register_feature_routes(app)
+    register_web_routes(app)
+    register_socketio_events()
+    return app
+
+# build & wire everything
+app = create_app()
+
+# start the bot using the same function, now with proper dependencies
+start_discord_bot_background(app)
+
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+3. How the slices now stay isolated
+Discord slice only depends on:
+
+IIngestionService (the interface in features/discord_bot/interfaces.py)
+
+DiscordChannelService (interface or concrete, whichever you choose)
+
+Ingestion slice only depends on its own IIngestionService interface and DTOs
+
+Discord-Channels slice only speaks to its own models & DB
+
+Composition happens once in the start_discord_bot_background closure, and nowhere else
+
+Next steps
+Remove the extra start_discord_bot_background at the bottom of your file.
+
+Ensure all imports in your slices use only the interfaces/DTOs, not concrete modules in other slices.
+
+Run and look for your heartbeat in the logs:
+
+csharp
+Copy
+Edit
+▶️  Starting DiscordReader from /path/to/app.py
+🔄 Starting Discord bot...
+✅ Connected as YourBot#1234
+Adjust your TradingDiscordBot (or DiscordClientManager) signature to accept the two services (ingestion_service, channel_service) if you haven’t already.
+
+With this wiring in place, your bot will:
+
+Discover channels via DiscordChannelService
+
+Hand off each new message as a RawMessageDto to IngestionService
+
+Leave parsing, storage, and event publishing entirely within the ingestion slice
+
+Let me know if you need tweaks to the signatures or logging, or if you run into any new errors!

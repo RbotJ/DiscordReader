@@ -121,7 +121,7 @@ def start_discord_bot_background(app):
                 # Build your vertical slices
                 try:
                     from features.ingestion.service import IngestionService
-                    from features.discord_channels.service import DiscordChannelService
+                    from features.discord_channels.channel_manager import ChannelManager
                     from common.events.publisher import publish_event
                     from common.db import db
 
@@ -129,7 +129,7 @@ def start_discord_bot_background(app):
                     ingestion_svc = IngestionService()
 
                     # Channel slice
-                    channel_svc = DiscordChannelService()
+                    channel_svc = ChannelManager()
 
                     # Discord slice
                     from features.discord_bot.bot import TradingDiscordBot
@@ -182,7 +182,12 @@ def create_app():
 
     initialize_db(app)
 
-    from common import models_db  # Import models after db init
+    # Import feature-specific models instead of centralized models_db
+    try:
+        from features.ingestion.models import DiscordMessageModel
+        from features.discord_bot.models import DiscordChannel
+    except ImportError as e:
+        logging.warning(f"Could not import some models: {e}")
     
     # Initialize enhanced event system
     from common.events.cleanup_service import cleanup_service
