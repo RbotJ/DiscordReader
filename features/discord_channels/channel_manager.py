@@ -238,9 +238,9 @@ class ChannelManager:
                 db.text("SELECT COUNT(DISTINCT guild_id) FROM discord_channels WHERE is_active = true")
             ).scalar() or 0
             
-            # Get last sync time
+            # Get last sync time (using created_at since updated_at doesn't exist)
             last_sync_result = db.session.execute(
-                db.text("SELECT MAX(updated_at) FROM discord_channels")
+                db.text("SELECT MAX(created_at) FROM discord_channels")
             ).scalar()
             
             last_sync = last_sync_result.isoformat() if last_sync_result else None

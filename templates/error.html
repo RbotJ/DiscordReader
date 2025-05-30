@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Error - A+ Trading Dashboard{% endblock %}
+{% block page_title %}Dashboard Error{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <i data-feather="alert-triangle" class="text-warning mb-3" style="width: 48px; height: 48px;"></i>
+                <h4 class="mb-3">Service Unavailable</h4>
+                <p class="text-muted mb-4">{{ error }}</p>
+                <a href="{{ url_for('index') }}" class="btn btn-primary">
+                    <i data-feather="home" class="me-2"></i>
+                    Return to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

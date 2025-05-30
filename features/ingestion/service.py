@@ -21,7 +21,8 @@ from .interfaces import IIngestionService
 from common.db import db
 from common.events import publish_event
 from common.events.constants import EventChannels
-from common.models import DiscordMessageDTO
+from features.ingestion.models import DiscordMessageModel
+from features.ingestion.dto import DiscordMessageDTO
 
 logger = logging.getLogger(__name__)
 
