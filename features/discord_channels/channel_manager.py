@@ -214,3 +214,51 @@ class ChannelManager:
             logger.error(f"Error updating channel activity: {e}")
             db.session.rollback()
             return False
+
+    def get_metrics(self) -> dict:
+        """
+        Get channel management metrics for operational monitoring.
+        
+        Returns:
+            dict: Metrics data for dashboard consumption
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Query database for channel metrics
+            total_channels = db.session.execute(
+                db.text("SELECT COUNT(*) FROM discord_channels")
+            ).scalar() or 0
+            
+            monitored_channels = db.session.execute(
+                db.text("SELECT COUNT(*) FROM discord_channels WHERE is_listen = true")
+            ).scalar() or 0
+            
+            active_guilds = db.session.execute(
+                db.text("SELECT COUNT(DISTINCT guild_id) FROM discord_channels WHERE is_active = true")
+            ).scalar() or 0
+            
+            # Get last sync time
+            last_sync_result = db.session.execute(
+                db.text("SELECT MAX(updated_at) FROM discord_channels")
+            ).scalar()
+            
+            last_sync = last_sync_result.isoformat() if last_sync_result else None
+            
+            return {
+                'total_channels': total_channels,
+                'monitored_channels': monitored_channels,
+                'active_guilds': active_guilds,
+                'last_sync': last_sync,
+                'sync_status': 'ready' if total_channels > 0 else 'no_data'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting channel metrics: {e}")
+            return {
+                'total_channels': 0,
+                'monitored_channels': 0,
+                'active_guilds': 0,
+                'last_sync': None,
+                'sync_status': 'error'
+            }

@@ -15,40 +15,28 @@ discord_bp = Blueprint('discord_dashboard', __name__,
                        static_folder='static/discord',
                        url_prefix='/dashboard/discord')
 
-def get_bot_status():
-    """Get current bot connection status."""
-    # This will be enhanced when bot is properly connected
-    return {
-        'status': 'disabled',  # connected, disconnected, error, disabled
-        'last_ready': None,
-        'uptime_seconds': 0,
-        'error_message': 'Discord bot dependencies not available - bot disabled'
-    }
-
-def get_bot_metrics():
-    """Get bot performance metrics."""
-    return {
-        'uptime_seconds': 0,
-        'messages_processed_today': 0,
-        'messages_per_minute': 0,
-        'channels_monitored': 0,
-        'error_count_last_hour': 0,
-        'last_activity': None,
-        'connection_attempts': 0,
-        'successful_connections': 0
-    }
+def get_bot_service():
+    """Get bot service instance with proper error handling."""
+    try:
+        from features.discord_bot.service import BotService
+        return BotService()
+    except ImportError as e:
+        logger.warning(f"Could not import BotService: {e}")
+        return None
 
 @discord_bp.route('/')
 def overview():
     """Discord bot dashboard overview page."""
     try:
-        status = get_bot_status()
-        metrics = get_bot_metrics()
-        
-        return render_template('overview.html',
-                             status=status,
-                             metrics=metrics,
-                             current_time=datetime.utcnow())
+        service = get_bot_service()
+        if service:
+            metrics = service.get_metrics()
+            return render_template('overview.html',
+                                 metrics=metrics,
+                                 current_time=datetime.utcnow())
+        else:
+            return render_template('error.html', 
+                                 error="Bot service unavailable"), 500
     except Exception as e:
         logger.error(f"Error loading Discord dashboard: {e}")
         return render_template('error.html', error=str(e)), 500
@@ -57,14 +45,15 @@ def overview():
 def metrics():
     """API endpoint for Discord bot metrics."""
     try:
-        status = get_bot_status()
-        bot_metrics = get_bot_metrics()
-        
-        return jsonify({
-            'status': status,
-            'metrics': bot_metrics,
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        service = get_bot_service()
+        if service:
+            bot_metrics = service.get_metrics()
+            return jsonify({
+                'metrics': bot_metrics,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+        else:
+            return jsonify({'error': 'Bot service unavailable'}), 500
     except Exception as e:
         logger.error(f"Error getting Discord metrics: {e}")
         return jsonify({'error': str(e)}), 500
@@ -72,11 +61,23 @@ def metrics():
 @discord_bp.route('/health')
 def health():
     """Health check endpoint for Discord bot."""
-    status = get_bot_status()
-    is_healthy = status['status'] == 'connected'
-    
-    return jsonify({
-        'healthy': is_healthy,
-        'status': status['status'],
-        'timestamp': datetime.utcnow().isoformat()
-    }), 200 if is_healthy else 503
+    try:
+        service = get_bot_service()
+        if service:
+            metrics = service.get_metrics()
+            is_healthy = metrics['status'] == 'connected'
+            
+            return jsonify({
+                'healthy': is_healthy,
+                'status': metrics['status'],
+                'timestamp': datetime.utcnow().isoformat()
+            }), 200 if is_healthy else 503
+        else:
+            return jsonify({
+                'healthy': False,
+                'status': 'unavailable',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 503
+    except Exception as e:
+        logger.error(f"Error checking Discord health: {e}")
+        return jsonify({'error': str(e)}), 500

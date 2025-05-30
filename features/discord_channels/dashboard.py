@@ -24,36 +24,7 @@ def get_channel_manager():
         logger.warning(f"Could not import ChannelManager: {e}")
         return None
 
-def get_channel_metrics():
-    """Get channel management metrics from the service."""
-    manager = get_channel_manager()
-    if not manager:
-        return {
-            'total_channels': 0,
-            'monitored_channels': 0,
-            'active_guilds': 0,
-            'last_sync': None,
-            'sync_status': 'unavailable'
-        }
-    
-    try:
-        # Get metrics from the channel manager service
-        return {
-            'total_channels': 0,  # manager.get_total_channel_count()
-            'monitored_channels': 0,  # len(manager.get_monitored_channels())
-            'active_guilds': 0,  # manager.get_guild_count()
-            'last_sync': None,  # manager.get_last_sync_time()
-            'sync_status': 'ready'  # manager.get_sync_status()
-        }
-    except Exception as e:
-        logger.error(f"Error getting channel metrics: {e}")
-        return {
-            'total_channels': 0,
-            'monitored_channels': 0,
-            'active_guilds': 0,
-            'last_sync': None,
-            'sync_status': 'error'
-        }
+
 
 @channels_bp.route('/')
 def overview():

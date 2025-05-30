@@ -25,6 +25,18 @@ from common.models import DiscordMessageDTO
 
 logger = logging.getLogger(__name__)
 
+class IngestionMetrics:
+    """Metrics data structure for ingestion service."""
+    def __init__(self):
+        self.messages_processed_today = 0
+        self.processing_rate_per_minute = 0
+        self.validation_success_rate = 100.0
+        self.validation_failures_today = 0
+        self.last_processed_message = None
+        self.queue_depth = 0
+        self.avg_processing_time_ms = 0
+        self.status = 'ready'
+
 
 class IngestionService(IIngestionService):
     """
@@ -706,6 +718,67 @@ class IngestionService(IIngestionService):
 
         except Exception as e:
             logger.error(f"Error sending MESSAGE_STORED notification: {e}")
+
+    def get_metrics(self) -> dict:
+        """
+        Get ingestion pipeline metrics for operational monitoring.
+        
+        Returns:
+            dict: Metrics data for dashboard consumption
+        """
+        try:
+            # Query database for real metrics
+            from datetime import datetime, timedelta
+            from common.db import db
+            
+            today = datetime.utcnow().date()
+            hour_ago = datetime.utcnow() - timedelta(hours=1)
+            
+            # Count messages processed today
+            messages_today = db.session.execute(
+                db.text("SELECT COUNT(*) FROM discord_messages WHERE DATE(created_at) = :today"),
+                {'today': today}
+            ).scalar() or 0
+            
+            # Count recent processing activity (last hour)
+            recent_activity = db.session.execute(
+                db.text("SELECT COUNT(*) FROM discord_messages WHERE created_at >= :hour_ago"),
+                {'hour_ago': hour_ago}
+            ).scalar() or 0
+            
+            # Calculate processing rate
+            processing_rate = recent_activity
+            
+            # Get last processed message timestamp
+            last_message_result = db.session.execute(
+                db.text("SELECT MAX(created_at) FROM discord_messages")
+            ).scalar()
+            
+            last_processed = last_message_result.isoformat() if last_message_result else None
+            
+            return {
+                'messages_processed_today': messages_today,
+                'processing_rate_per_minute': processing_rate,
+                'validation_success_rate': 100.0,  # Could calculate from error logs
+                'validation_failures_today': 0,
+                'last_processed_message': last_processed,
+                'queue_depth': 0,  # Would need queue implementation
+                'avg_processing_time_ms': 0,  # Would need timing metrics
+                'status': 'ready'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting ingestion metrics: {e}")
+            return {
+                'messages_processed_today': 0,
+                'processing_rate_per_minute': 0,
+                'validation_success_rate': 0,
+                'validation_failures_today': 0,
+                'last_processed_message': None,
+                'queue_depth': 0,
+                'avg_processing_time_ms': 0,
+                'status': 'error'
+            }
 
 
 async def ingest_messages(limit: int = 50) -> int:

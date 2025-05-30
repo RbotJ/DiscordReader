@@ -1,0 +1,165 @@
+"""
+Discord Bot Service
+
+Service layer for Discord bot management, providing metrics and operational data
+without exposing internal bot implementation details.
+"""
+import logging
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class BotService:
+    """Service for Discord bot operational metrics and status management."""
+    
+    def __init__(self):
+        """Initialize the bot service."""
+        self._connection_attempts = 0
+        self._successful_connections = 0
+        self._last_ready_time = None
+        self._start_time = datetime.utcnow()
+    
+    def get_metrics(self) -> dict:
+        """
+        Get Discord bot metrics for operational monitoring.
+        
+        Returns:
+            dict: Metrics data for dashboard consumption
+        """
+        try:
+            from common.db import db
+            
+            # Get bot status from logs or events
+            status = self._get_bot_status()
+            
+            # Calculate uptime
+            uptime_seconds = 0
+            if self._last_ready_time:
+                uptime_seconds = int((datetime.utcnow() - self._last_ready_time).total_seconds())
+            
+            # Count messages processed today (if bot is processing)
+            today = datetime.utcnow().date()
+            messages_today = 0
+            if status == 'connected':
+                try:
+                    messages_today = db.session.execute(
+                        db.text("SELECT COUNT(*) FROM discord_messages WHERE DATE(created_at) = :today"),
+                        {'today': today}
+                    ).scalar() or 0
+                except Exception:
+                    pass
+            
+            # Get recent activity
+            hour_ago = datetime.utcnow() - timedelta(hours=1)
+            recent_activity = 0
+            try:
+                recent_activity = db.session.execute(
+                    db.text("SELECT COUNT(*) FROM discord_messages WHERE created_at >= :hour_ago"),
+                    {'hour_ago': hour_ago}
+                ).scalar() or 0
+            except Exception:
+                pass
+            
+            # Get monitored channels count
+            channels_monitored = 0
+            try:
+                channels_monitored = db.session.execute(
+                    db.text("SELECT COUNT(*) FROM discord_channels WHERE is_listen = true")
+                ).scalar() or 0
+            except Exception:
+                pass
+            
+            # Get last activity
+            last_activity = None
+            try:
+                last_message_result = db.session.execute(
+                    db.text("SELECT MAX(created_at) FROM discord_messages")
+                ).scalar()
+                if last_message_result:
+                    last_activity = last_message_result.isoformat()
+            except Exception:
+                pass
+            
+            return {
+                'status': status,
+                'uptime_seconds': uptime_seconds,
+                'messages_processed_today': messages_today,
+                'messages_per_minute': recent_activity,
+                'channels_monitored': channels_monitored,
+                'error_count_last_hour': self._get_error_count(),
+                'last_activity': last_activity,
+                'connection_attempts': self._connection_attempts,
+                'successful_connections': self._successful_connections,
+                'last_ready': self._last_ready_time.isoformat() if self._last_ready_time else None,
+                'error_message': self._get_error_message() if status in ['disabled', 'error'] else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting bot metrics: {e}")
+            return {
+                'status': 'error',
+                'uptime_seconds': 0,
+                'messages_processed_today': 0,
+                'messages_per_minute': 0,
+                'channels_monitored': 0,
+                'error_count_last_hour': 0,
+                'last_activity': None,
+                'connection_attempts': self._connection_attempts,
+                'successful_connections': self._successful_connections,
+                'last_ready': None,
+                'error_message': str(e)
+            }
+    
+    def _get_bot_status(self) -> str:
+        """
+        Determine current bot status based on available information.
+        
+        Returns:
+            str: One of 'connected', 'disconnected', 'error', 'disabled'
+        """
+        # Check if bot dependencies are available
+        try:
+            from features.discord_bot.bot import TradingDiscordBot
+            # If we can import, check if token is available
+            import os
+            token = os.getenv("DISCORD_BOT_TOKEN")
+            if not token:
+                return 'disabled'
+            
+            # Check if bot is actually connected (would need bot instance)
+            # For now, assume disconnected if we don't have recent activity
+            return 'disconnected'  # Will be 'connected' when bot is working
+            
+        except ImportError:
+            return 'disabled'
+    
+    def _get_error_count(self) -> int:
+        """Get error count from logs or events in the last hour."""
+        # Would need to implement error tracking
+        return 0
+    
+    def _get_error_message(self) -> Optional[str]:
+        """Get the current error message if bot is in error state."""
+        try:
+            import os
+            token = os.getenv("DISCORD_BOT_TOKEN")
+            if not token:
+                return "Discord bot token not found - bot disabled"
+            return "Discord bot dependencies not available - bot disabled"
+        except Exception:
+            return "Unknown error"
+    
+    def record_connection_attempt(self):
+        """Record a connection attempt."""
+        self._connection_attempts += 1
+    
+    def record_successful_connection(self):
+        """Record a successful connection."""
+        self._successful_connections += 1
+        self._last_ready_time = datetime.utcnow()
+    
+    def record_disconnection(self):
+        """Record a disconnection."""
+        self._last_ready_time = None
