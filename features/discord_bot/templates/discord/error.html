@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Bot Dashboard - Error</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .error-container { max-width: 600px; margin: 50px auto; text-align: center; }
+        .error-card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .error-icon { font-size: 4em; color: #f44336; margin-bottom: 20px; }
+        .error-title { font-size: 1.5em; color: #333; margin-bottom: 10px; }
+        .error-message { color: #666; margin-bottom: 20px; }
+        .back-btn { background-color: #5865f2; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-card">
+            <div class="error-icon">⚠</div>
+            <h1 class="error-title">Dashboard Error</h1>
+            <p class="error-message">{{ error }}</p>
+            <a href="/dashboard/discord" class="back-btn">Try Again</a>
+        </div>
+    </div>
+</body>
+</html>
