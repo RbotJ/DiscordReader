@@ -1,6 +1,5 @@
 """
-Discord Bot - Phase 2 Implementation
-
+Discord Bot 
 Real-time message monitoring with channel scanning and ingestion pipeline integration.
 Handles event-driven message processing and channel management.
 """
@@ -30,20 +29,20 @@ _global_client_manager = None
 class TradingDiscordBot(discord.Client):
     """Discord bot for real-time message monitoring and channel management."""
 
-    def __init__(self, *args, **kwargs):
-        import os
-        print(f"🤖 Instantiating Bot from {TradingDiscordBot.__module__!r} @ {os.path.abspath(__file__)}")
-        logging.getLogger().info(f"🤖 Instantiating Bot from {TradingDiscordBot.__module__!r} @ {os.path.abspath(__file__)}")
+    def __init__(self, ingestion_service=None, channel_manager=None, *args, **kwargs):
+        logger.debug("Instantiating Bot from %s @ %s", TradingDiscordBot.__module__, __file__)
         
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
         super().__init__(intents=intents, *args, **kwargs)
         self.ready_status = False
-        self.aplus_setups_channel_id = None
-        self.ingestion_service = IngestionService()
+        self.aplus_setups_channel_id: Optional[int] = None
+        
+        # Constructor injection for better testability
+        self.ingestion_service = ingestion_service or IngestionService()
+        self.channel_manager = channel_manager or ChannelManager()
         self.client_manager = None
-        self.channel_manager = ChannelManager()
 
     async def on_ready(self):
         """Bot startup - scan channels and initialize ingestion."""

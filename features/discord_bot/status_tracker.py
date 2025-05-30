@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional
 import logging
+from discord.ext import tasks
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +25,8 @@ class BotStatusTracker:
         self.latency_ms: Optional[float] = None
         self.last_event: Optional[datetime] = None
         
-        # Store bot reference and start latency tracking
+        # Store bot reference
         self._bot = bot
-        self._latency_task = None
-        
-        # Use asyncio to start latency tracking
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            self._latency_task = loop.create_task(self._track_latency(bot))
-        except Exception as e:
-            logger.warning(f"Could not start latency tracking: {e}")
     
     async def on_ready(self):
         """Handle bot ready event - gateway connection established."""
@@ -42,12 +34,20 @@ class BotStatusTracker:
         self.last_ready = datetime.utcnow()
         self.last_event = datetime.utcnow()
         logger.info(f"Bot status: Online at {self.last_ready}")
+        
+        # Start latency tracking task
+        if not self.track_latency.is_running():
+            self.track_latency.start()
     
     async def on_disconnect(self):
         """Handle bot disconnect event - gateway connection lost."""
         self.is_online = False
         self.last_disconnect = datetime.utcnow()
         logger.warning(f"Bot status: Disconnected at {self.last_disconnect}")
+        
+        # Stop latency tracking when disconnected
+        if self.track_latency.is_running():
+            self.track_latency.cancel()
     
     async def on_resumed(self):
         """Handle bot resumed event - connection restored after disconnect."""
@@ -59,17 +59,15 @@ class BotStatusTracker:
         """Track last event timestamp to detect silent failures."""
         self.last_event = datetime.utcnow()
     
-    async def _track_latency(self, bot):
-        """Continuously track gateway latency."""
-        while True:
-            try:
-                if bot and hasattr(bot, 'latency') and bot.latency is not None:
-                    # Convert from seconds to milliseconds
-                    self.latency_ms = round(bot.latency * 1000, 1)
-                await asyncio.sleep(5)  # Update every 5 seconds
-            except Exception as e:
-                logger.warning(f"Error tracking latency: {e}")
-                await asyncio.sleep(10)
+    @tasks.loop(seconds=5.0)
+    async def track_latency(self):
+        """Use discord.py's tasks.loop for periodic latency tracking."""
+        try:
+            if self._bot and hasattr(self._bot, 'latency') and self._bot.latency is not None:
+                # Convert from seconds to milliseconds
+                self.latency_ms = round(self._bot.latency * 1000, 1)
+        except Exception as e:
+            logger.warning(f"Error tracking latency: {e}")
     
     def get_status(self) -> dict:
         """
@@ -94,8 +92,8 @@ class BotStatusTracker:
     
     def cleanup(self):
         """Clean up background tasks."""
-        if self._latency_task and not self._latency_task.done():
-            self._latency_task.cancel()
+        if self.track_latency.is_running():
+            self.track_latency.cancel()
 
 
 # Global status tracker instance

@@ -1,0 +1,107 @@
+1. Prefer constructor-injection over new’ing services in __init__
+Right now you do:
+
+python
+Copy
+Edit
+self.ingestion_service = IngestionService()
+self.channel_manager  = ChannelManager()
+Instead, have your bootstrap code pass those in:
+
+python
+Copy
+Edit
+def __init__(self, ingestion_service, channel_manager, **kwargs):
+    super().__init__(**kwargs)
+    self.ingestion_service = ingestion_service
+    self.channel_manager   = channel_manager
+    …
+This lets you swap in fakes in tests, and keeps your slice boundary clear (Discord slice only knows the interface, not how the service is built).
+
+2. Unify channel-ID types
+You compare as strings here:
+
+python
+Copy
+Edit
+if str(message.channel.id) == self.aplus_setups_channel_id:
+but elsewhere you treat IDs as ints. Pick one (ideally int) and keep it consistent:
+
+python
+Copy
+Edit
+self.aplus_setups_channel_id: Optional[int] = None
+… 
+if message.channel.id == self.aplus_setups_channel_id:
+That avoids subtle bugs if someone passes in "12345" vs 12345.
+
+3. Use @tasks.loop for periodic latency tracking
+Rather than spawning your own background task, leverage discord.py’s built-in:
+
+python
+Copy
+Edit
+from discord.ext import tasks
+
+class BotStatusTracker:
+    @tasks.loop(seconds=5.0)
+    async def track_latency(self):
+        self.latency_ms = round(self._bot.latency * 1000)
+Start it in on_ready() (self.track_latency.start()), and cancel it in on_disconnect().
+
+4. Eliminate bare print() calls in favor of logging
+You have:
+
+python
+Copy
+Edit
+print(f"🤖 Instantiating Bot from {…}")
+Switch to:
+
+python
+Copy
+Edit
+logger.debug("Instantiating Bot from %s", __file__)
+so you can control verbosity centrally and capture everything in your log files.
+
+5. Fix DiscordClientManager.get_channel_id()
+You return self.channel_id, but that property is never set. Instead, you probably want to proxy through the bot’s aplus_setups_channel_id:
+
+python
+Copy
+Edit
+def get_channel_id(self):
+    return self.client.aplus_setups_channel_id if self.client else None
+6. Tighten your event wiring
+Right now your bot directly instantiates IngestionService and ChannelManager. If you move that into your start_discord_bot_background(app) composition, you’ll:
+
+Build ingestion_svc and channel_svc once
+
+Do bot = TradingDiscordBot(ingestion_svc, channel_svc, intents=…)
+
+Avoid any “missing dependencies” at runtime
+
+7. Refactor the status tracker initialization
+Instead of calling initialize_status_tracker(self) in on_ready, have your bootstrap do it immediately after you create the bot:
+
+python
+Copy
+Edit
+bot = TradingDiscordBot(…)
+initialize_status_tracker(bot)
+That way your tracker is always registered, even if on_ready is delayed.
+
+TL;DR
+Inject your services instead of new’ing them in the bot
+
+Consistently use int for channel IDs
+
+Use @tasks.loop for latency polling
+
+Drop print() in favor of structured logging
+
+Correct the get_channel_id() accessor
+
+Compose your slices once at startup, not scattered in methods
+
+With those tweaks, your Discord slice will remain perfectly vertical—fully testable, decoupled, and production-ready.
