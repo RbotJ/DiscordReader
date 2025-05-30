@@ -121,19 +121,18 @@ class BotService:
         """
         # Check if bot dependencies are available
         try:
-            from features.discord_bot.bot import get_client_manager
+            from features.discord_bot.bot import get_discord_client
             import os
             token = os.getenv("DISCORD_BOT_TOKEN")
             if not token:
                 return 'disabled'
             
             # Check if bot is actually connected by getting the client manager
-            client_manager = get_client_manager()
-            if client_manager and hasattr(client_manager, 'client') and client_manager.client:
-                if hasattr(client_manager.client, 'is_ready') and client_manager.client.is_ready():
-                    return 'connected'
-                elif hasattr(client_manager.client, 'is_closed') and not client_manager.client.is_closed():
-                    return 'connecting'
+            client_manager = get_discord_client()
+            if client_manager and client_manager.is_connected():
+                return 'connected'
+            elif client_manager and hasattr(client_manager, 'client') and client_manager.client:
+                return 'connecting'
             
             return 'disconnected'
             
