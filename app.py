@@ -140,10 +140,18 @@ def start_discord_bot_background(app):
                     )
 
                     logging.info("🔄 Starting Discord bot...")
+                    # Get token from environment
+                    from features.discord_bot.config.settings import get_discord_token
+                    token = get_discord_token()
+                    
+                    if not token:
+                        logging.error("Discord bot token not found in environment")
+                        return
+                    
                     # Boot the bot
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    loop.run_until_complete(bot.start())
+                    loop.run_until_complete(bot.start(token))
                     
                 except ImportError as e:
                     logging.error(f"Discord bot import error: {e}")
