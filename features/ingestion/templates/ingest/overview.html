@@ -14,9 +14,9 @@
                         <h5 class="card-title mb-1">Pipeline Status</h5>
                         <p class="text-muted mb-0">Message ingestion and processing</p>
                     </div>
-                    <span class="status-badge status-{{ metrics.status }}">
-                        <i data-feather="{% if metrics.status == 'ready' %}check-circle{% elif metrics.status == 'processing' %}refresh-cw{% else %}alert-circle{% endif %}" class="me-1"></i>
-                        {{ metrics.status|title }}
+                    <span class="status-badge status-{{ metrics['status'] }}">
+                        <i data-feather="{% if metrics['status'] == 'ready' %}check-circle{% elif metrics['status'] == 'processing' %}refresh-cw{% else %}alert-circle{% endif %}" class="me-1"></i>
+                        {{ metrics['status']|title }}
                     </span>
                 </div>
             </div>
@@ -30,7 +30,7 @@
         <div class="card metric-card">
             <div class="card-body text-center">
                 <i data-feather="message-square" class="text-primary mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics.messages_processed_today }}</h3>
+                <h3 class="mb-1">{{ metrics['messages_processed_today'] }}</h3>
                 <p class="text-muted mb-0">Processed Today</p>
             </div>
         </div>
@@ -41,7 +41,7 @@
         <div class="card metric-card">
             <div class="card-body text-center">
                 <i data-feather="activity" class="text-success mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics.processing_rate_per_minute }}</h3>
+                <h3 class="mb-1">{{ metrics['processing_rate_per_minute'] }}</h3>
                 <p class="text-muted mb-0">Per Minute</p>
             </div>
         </div>
@@ -52,7 +52,7 @@
         <div class="card metric-card">
             <div class="card-body text-center">
                 <i data-feather="check-circle" class="text-info mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics.validation_success_rate|round(1) }}%</h3>
+                <h3 class="mb-1">{{ metrics['validation_success_rate']|round(1) }}%</h3>
                 <p class="text-muted mb-0">Success Rate</p>
             </div>
         </div>
@@ -63,7 +63,7 @@
         <div class="card metric-card">
             <div class="card-body text-center">
                 <i data-feather="layers" class="text-warning mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics.queue_depth }}</h3>
+                <h3 class="mb-1">{{ metrics['queue_depth'] }}</h3>
                 <p class="text-muted mb-0">Queue Depth</p>
             </div>
         </div>
@@ -81,13 +81,13 @@
                 <div class="row">
                     <div class="col-6">
                         <div class="text-center">
-                            <h4 class="text-success">{{ metrics.avg_processing_time_ms }}</h4>
+                            <h4 class="text-success">{{ metrics['avg_processing_time_ms'] }}</h4>
                             <small class="text-muted">Avg Time (ms)</small>
                         </div>
                     </div>
                     <div class="col-6">
                         <div class="text-center">
-                            <h4 class="text-primary">{{ metrics.processing_rate_per_minute }}</h4>
+                            <h4 class="text-primary">{{ metrics['processing_rate_per_minute'] }}</h4>
                             <small class="text-muted">Messages/Min</small>
                         </div>
                     </div>
@@ -106,20 +106,20 @@
                 <div class="row">
                     <div class="col-6">
                         <div class="text-center">
-                            <h4 class="text-success">{{ metrics.validation_success_rate|round(1) }}%</h4>
+                            <h4 class="text-success">{{ metrics['validation_success_rate']|round(1) }}%</h4>
                             <small class="text-muted">Success Rate</small>
                         </div>
                     </div>
                     <div class="col-6">
                         <div class="text-center">
-                            <h4 class="text-danger">{{ metrics.validation_failures_today }}</h4>
+                            <h4 class="text-danger">{{ metrics['validation_failures_today'] }}</h4>
                             <small class="text-muted">Failures Today</small>
                         </div>
                     </div>
                 </div>
-                {% if metrics.last_processed_message %}
+                {% if metrics['last_processed_message'] %}
                 <div class="mt-3">
-                    <small class="text-muted">Last Processed: {{ metrics.last_processed_message }}</small>
+                    <small class="text-muted">Last Processed: {{ metrics['last_processed_message'] }}</small>
                 </div>
                 {% endif %}
             </div>
