@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 channels_bp = Blueprint('channels_dashboard', __name__,
-                        template_folder='templates/channels',
+                        template_folder='templates',
                         static_folder='static/channels',
                         url_prefix='/dashboard/channels')
 

@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 ingest_bp = Blueprint('ingest_dashboard', __name__,
-                      template_folder='templates/ingest',
+                      template_folder='templates',
                       static_folder='static/ingest',
                       url_prefix='/dashboard/ingestion')
 
