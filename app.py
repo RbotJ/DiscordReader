@@ -211,39 +211,11 @@ def create_app():
 
     return app
 
-# Application setup
+# Build & wire everything
 app = create_app()
 
-# Register socket events and features
-# (Functions unchanged from original, omitted here for brevity)
-# See full source if needed for `register_socketio_events`, `register_feature_routes`, etc.
-
-# Component initialization on startup
-with app.app_context():
-    try:
-        # Import models to register them with SQLAlchemy
-        from features.discord_bot.models import DiscordChannel
-        from features.ingestion.models import DiscordMessageModel
-        from features.strategy.models import *
-        # Initialize database with new schema
-        initialize_db(app)
-        
-        # Initialize database tables
-        from common.db import db
-        db.create_all()
-        logging.info("Database tables initialized successfully")
-        
-    except Exception as e:
-        logging.error(f"Error initializing database: {e}")
-    
-    # Start Discord bot in background (independent of database initialization)
-    try:
-        print("🔄 About to start Discord bot...")
-        start_discord_bot_background(app)
-        print("✅ Discord bot startup initiated")
-    except Exception as e:
-        print(f"❌ Failed to start Discord bot: {e}")
-        logging.error(f"Failed to start Discord bot: {e}")
+# Start the bot using the same function, now with proper dependencies
+start_discord_bot_background(app)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
