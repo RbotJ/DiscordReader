@@ -33,15 +33,18 @@ def overview():
         manager = get_channel_manager()
         if manager:
             metrics = manager.get_metrics()
-            return render_template('overview.html',
+            logger.info(f"Channel metrics: {metrics}")
+            logger.info(f"Metrics type: {type(metrics)}")
+            return render_template('channels/overview.html',
                                  metrics=metrics,
                                  current_time=datetime.utcnow())
         else:
-            return render_template('error.html', 
+            return render_template('channels/error.html', 
                                  error="Channel manager unavailable"), 500
     except Exception as e:
         logger.error(f"Error loading channels dashboard: {e}")
-        return render_template('error.html', error=str(e)), 500
+        logger.error(f"Exception type: {type(e)}")
+        return render_template('channels/error.html', error=str(e)), 500
 
 @channels_bp.route('/metrics.json')
 def metrics():

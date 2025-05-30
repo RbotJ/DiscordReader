@@ -33,15 +33,15 @@ def overview():
         service = get_ingestion_service()
         if service:
             metrics = service.get_metrics()
-            return render_template('overview.html',
+            return render_template('ingest/overview.html',
                                  metrics=metrics,
                                  current_time=datetime.utcnow())
         else:
-            return render_template('error.html', 
+            return render_template('ingest/error.html', 
                                  error="Ingestion service unavailable"), 500
     except Exception as e:
         logger.error(f"Error loading ingestion dashboard: {e}")
-        return render_template('error.html', error=str(e)), 500
+        return render_template('ingest/error.html', error=str(e)), 500
 
 @ingest_bp.route('/metrics.json')
 def metrics():
