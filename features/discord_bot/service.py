@@ -34,10 +34,28 @@ class BotService:
             # Get bot status from logs or events
             status = self._get_bot_status()
             
-            # Calculate uptime
+            # Calculate uptime and get gateway metrics
             uptime_seconds = 0
-            if self._last_ready_time:
-                uptime_seconds = int((datetime.utcnow() - self._last_ready_time).total_seconds())
+            latency_ms = 0
+            
+            # Get real Discord client for gateway metrics
+            try:
+                from features.discord_bot.bot import get_discord_client
+                client_manager = get_discord_client()
+                if client_manager and hasattr(client_manager, 'client') and client_manager.client:
+                    client = client_manager.client
+                    if client.is_ready():
+                        # Get real gateway latency in milliseconds
+                        latency_ms = round(client.latency * 1000, 1)
+                        # Update last ready time if not set
+                        if not self._last_ready_time:
+                            self._last_ready_time = datetime.utcnow()
+                        uptime_seconds = int((datetime.utcnow() - self._last_ready_time).total_seconds())
+                    else:
+                        # Reset uptime if not ready
+                        self._last_ready_time = None
+            except:
+                pass
             
             # Count messages processed today (if bot is processing)
             today = datetime.utcnow().date()
@@ -114,12 +132,11 @@ class BotService:
     
     def _get_bot_status(self) -> str:
         """
-        Determine current bot status based on available information.
+        Determine current bot status based on Discord gateway connection.
         
         Returns:
             str: One of 'connected', 'disconnected', 'error', 'disabled'
         """
-        # Check if bot dependencies are available
         try:
             from features.discord_bot.bot import get_discord_client
             import os
@@ -127,12 +144,15 @@ class BotService:
             if not token:
                 return 'disabled'
             
-            # Check if bot is actually connected by getting the client manager
+            # Check actual Discord client connection state
             client_manager = get_discord_client()
-            if client_manager and client_manager.is_connected():
-                return 'connected'
-            elif client_manager and hasattr(client_manager, 'client') and client_manager.client:
-                return 'connecting'
+            if client_manager and hasattr(client_manager, 'client') and client_manager.client:
+                client = client_manager.client
+                # Use Discord.py's built-in connection state checks
+                if client.is_ready():
+                    return 'connected'
+                elif not client.is_closed():
+                    return 'connecting'
             
             return 'disconnected'
             
