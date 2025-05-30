@@ -30,11 +30,15 @@ def get_channel_manager():
 def overview():
     """Discord channels dashboard overview page."""
     try:
-        metrics = get_channel_metrics()
-        
-        return render_template('overview.html',
-                             metrics=metrics,
-                             current_time=datetime.utcnow())
+        manager = get_channel_manager()
+        if manager:
+            metrics = manager.get_metrics()
+            return render_template('overview.html',
+                                 metrics=metrics,
+                                 current_time=datetime.utcnow())
+        else:
+            return render_template('error.html', 
+                                 error="Channel manager unavailable"), 500
     except Exception as e:
         logger.error(f"Error loading channels dashboard: {e}")
         return render_template('error.html', error=str(e)), 500
@@ -43,12 +47,15 @@ def overview():
 def metrics():
     """API endpoint for Discord channels metrics."""
     try:
-        channel_metrics = get_channel_metrics()
-        
-        return jsonify({
-            'metrics': channel_metrics,
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        manager = get_channel_manager()
+        if manager:
+            channel_metrics = manager.get_metrics()
+            return jsonify({
+                'metrics': channel_metrics,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+        else:
+            return jsonify({'error': 'Channel manager unavailable'}), 500
     except Exception as e:
         logger.error(f"Error getting channel metrics: {e}")
         return jsonify({'error': str(e)}), 500
@@ -56,11 +63,23 @@ def metrics():
 @channels_bp.route('/health')
 def health():
     """Health check endpoint for channel management."""
-    metrics = get_channel_metrics()
-    is_healthy = metrics['sync_status'] in ['ready', 'syncing']
-    
-    return jsonify({
-        'healthy': is_healthy,
-        'sync_status': metrics['sync_status'],
-        'timestamp': datetime.utcnow().isoformat()
-    }), 200 if is_healthy else 503
+    try:
+        manager = get_channel_manager()
+        if manager:
+            metrics = manager.get_metrics()
+            is_healthy = metrics['sync_status'] in ['ready', 'syncing']
+            
+            return jsonify({
+                'healthy': is_healthy,
+                'sync_status': metrics['sync_status'],
+                'timestamp': datetime.utcnow().isoformat()
+            }), 200 if is_healthy else 503
+        else:
+            return jsonify({
+                'healthy': False,
+                'sync_status': 'unavailable',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 503
+    except Exception as e:
+        logger.error(f"Error checking channel health: {e}")
+        return jsonify({'error': str(e)}), 500
