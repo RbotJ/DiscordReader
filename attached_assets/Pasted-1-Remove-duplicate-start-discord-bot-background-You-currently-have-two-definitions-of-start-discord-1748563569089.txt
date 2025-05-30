@@ -1,0 +1,69 @@
+1. Remove duplicate start_discord_bot_background
+You currently have two definitions of start_discord_bot_background. Pick one—here’s a cleaned‐up version that:
+
+Captures the Flask app (and thus the DB session, event bus, etc.) from the outer scope
+
+Instantiates exactly once your IngestionService and DiscordChannelService
+
+Injects them into your Discord client/manager
+
+python
+Copy
+Edit
+import threading
+import asyncio
+import logging
+import os
+
+def start_discord_bot_background(app):
+    """Start Discord bot in background thread."""
+    def run_bot():
+        try:
+            # 1) Ensure we're in Flask context so ingestion can access DB, events, etc.
+            with app.app_context():
+                # 2) Gather credentials & early exit if missing
+                token = os.getenv("DISCORD_BOT_TOKEN")
+                if not token:
+                    logging.warning("Discord token missing; bot disabled.")
+                    return
+
+                # 3) Build your vertical slices
+                from features.ingestion.service    import IngestionService
+                from features.ingestion.interfaces import IIngestionService
+                from features.discord_bot.dto      import RawMessageDto
+                from features.discord_bot.interfaces import IIngestionService as IDiscordIngest
+                from features.discord_channels.service import DiscordChannelService
+                from common.events.bus            import event_bus  # or however you publish
+                from common.db                    import db
+
+                # 3a) Ingestion slice
+                ingestion_svc: IIngestionService = IngestionService(
+                    db_session_factory=db.session_factory,
+                    event_publisher=event_bus,
+                    validator=YourValidator()     # whatever you use
+                )
+
+                # 3b) Channel slice
+                channel_svc = DiscordChannelService()
+
+                # 4) Discord slice
+                from features.discord_bot.bot import TradingDiscordBot
+                bot = TradingDiscordBot(
+                    token=token,
+                    ingestion_service=ingestion_svc,
+                    channel_service=channel_svc,
+                    intents=YourIntentsSetupHere()
+                )
+
+                logging.info("🔄 Starting Discord bot...")
+                # 5) Boot the bot
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(bot.start())
+
+        except Exception:
+            logging.exception("Discord bot startup failed")
+
+    t = threading.Thread(target=run_bot, daemon=True, name="DiscordBot")
+    t.start()
+    logging.info("Discord bot background thread launched")

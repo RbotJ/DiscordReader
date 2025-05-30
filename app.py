@@ -103,44 +103,59 @@ def register_socketio_events():
     def handle_disconnect():
         logging.info('Client disconnected')
 
-def start_discord_bot_background():
-    """Start Discord bot in background thread using vertical slice architecture"""
+def start_discord_bot_background(app):
+    """Start Discord bot in background thread."""
     import threading
     import asyncio
     
     def run_bot():
         try:
-            # Check if Discord token is available
-            token = os.environ.get("DISCORD_BOT_TOKEN")
-            if not token:
-                logging.warning("DISCORD_BOT_TOKEN not found in environment variables - Discord bot disabled")
-                return
-            
-            # Import dependencies - use the enhanced bot with catchup ingestion
-            from features.discord_bot.bot import TradingDiscordBot
-            
-            # Create Flask app context for database access
-            from app import create_app
-            flask_app = create_app()
-            
-            with flask_app.app_context():
-                # Create bot with enhanced startup catchup functionality
-                bot = TradingDiscordBot()
-                
-                # Run bot in new event loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                logging.info("🔄 Starting Discord bot...")
-                loop.run_until_complete(bot.start(token))
-            
-        except Exception as e:
-            logging.error(f"Discord bot failed to start: {e}")
-    
-    # Start bot in daemon thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    logging.info("Discord bot thread started")
+            # Ensure we're in Flask context so ingestion can access DB, events, etc.
+            with app.app_context():
+                # Gather credentials & early exit if missing
+                token = os.getenv("DISCORD_BOT_TOKEN")
+                if not token:
+                    logging.warning("Discord token missing; bot disabled.")
+                    return
+
+                # Build your vertical slices
+                try:
+                    from features.ingestion.service import IngestionService
+                    from features.discord_channels.service import DiscordChannelService
+                    from common.events.publisher import publish_event
+                    from common.db import db
+
+                    # Ingestion slice
+                    ingestion_svc = IngestionService()
+
+                    # Channel slice
+                    channel_svc = DiscordChannelService()
+
+                    # Discord slice
+                    from features.discord_bot.bot import TradingDiscordBot
+                    bot = TradingDiscordBot(
+                        token=token,
+                        ingestion_service=ingestion_svc,
+                        channel_service=channel_svc
+                    )
+
+                    logging.info("🔄 Starting Discord bot...")
+                    # Boot the bot
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(bot.start())
+                    
+                except ImportError as e:
+                    logging.error(f"Discord bot import error: {e}")
+                    logging.warning("Discord bot dependencies not available - bot disabled")
+                    return
+
+        except Exception:
+            logging.exception("Discord bot startup failed")
+
+    t = threading.Thread(target=run_bot, daemon=True, name="DiscordBot")
+    t.start()
+    logging.info("Discord bot background thread launched")
 
 def create_app():
     app = Flask(__name__)
@@ -224,61 +239,11 @@ with app.app_context():
     # Start Discord bot in background (independent of database initialization)
     try:
         print("🔄 About to start Discord bot...")
-        start_discord_bot_background()
+        start_discord_bot_background(app)
         print("✅ Discord bot startup initiated")
     except Exception as e:
         print(f"❌ Failed to start Discord bot: {e}")
         logging.error(f"Failed to start Discord bot: {e}")
-
-def start_discord_bot_background():
-    """Start Discord bot in background thread"""
-    import asyncio
-    import threading
-    
-    def run_bot():
-        try:
-            print("🤖 Discord bot thread starting...")
-            logging.info("Discord bot thread starting...")
-            
-            # Create new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            # Check if Discord credentials are available
-            import os
-            token = os.environ.get('DISCORD_BOT_TOKEN')
-            
-            print(f"🔑 Discord token check: {'Found' if token else 'Missing'}")
-            logging.info(f"Discord token check: {'Found' if token else 'Missing'}")
-            
-            if not token:
-                logging.warning("Discord bot token not found - Discord integration disabled")
-                logging.info("Set DISCORD_BOT_TOKEN environment variable to enable Discord features")
-                return
-            
-            # Initialize and connect bot using your existing Discord setup
-            print("📦 Importing DiscordClientManager...")
-            from features.discord_bot.bot import DiscordClientManager
-            print("✅ Import successful")
-            
-            print("🔧 Creating Discord manager...")
-            manager = DiscordClientManager()
-            print("✅ Manager created")
-            
-            print("🚀 Starting Discord bot connection...")
-            logging.info("Starting Discord bot connection...")
-            result = loop.run_until_complete(manager.connect())
-            print(f"🔗 Connection result: {result}")
-            logging.info(f"Discord bot connection result: {result}")
-            
-        except Exception as e:
-            logging.error(f"Discord bot startup failed: {e}")
-            logging.info("Discord integration disabled - application will continue without bot features")
-    
-    # Start bot in daemon thread (won't block Flask shutdown)
-    bot_thread = threading.Thread(target=run_bot, daemon=True, name="DiscordBot")
-    bot_thread.start()
-    logging.info("Discord bot initialization started in background thread")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
