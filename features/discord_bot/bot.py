@@ -62,14 +62,19 @@ class TradingDiscordBot(discord.Client):
         # Log startup status for debugging
         logger.info(f"Bot startup status - client_manager: {self.client_manager is not None}, aplus_channel: {self.aplus_setups_channel_id}")
         
-        # Initialize ingestion service (don't require client_manager for basic functionality)
+        # Initialize ingestion service with proper client manager wiring
         try:
+            # Create a simple client manager that wraps this bot instance
+            from features.discord_bot.client_manager import DiscordClientManager
             if not self.client_manager:
-                logger.warning("No client_manager available, initializing ingestion service without it")
-                self.ingestion_service = IngestionService()
-            else:
-                self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
-                logger.info("Ingestion service initialized with bot client")
+                logger.info("Creating client manager wrapper for ingestion service")
+                self.client_manager = DiscordClientManager()
+                self.client_manager.client = self
+                self.client_manager._is_connected = True
+            
+            # Initialize ingestion service with client manager
+            self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
+            logger.info("Ingestion service initialized with bot client")
             
             # Trigger startup catch-up ingestion if target channel found
             if self.aplus_setups_channel_id:
