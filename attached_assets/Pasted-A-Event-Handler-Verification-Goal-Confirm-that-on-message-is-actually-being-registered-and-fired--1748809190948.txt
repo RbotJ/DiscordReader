@@ -1,0 +1,64 @@
+A. Event Handler Verification
+Goal: Confirm that on_message is actually being registered and fired, and that no filter is silencing it.
+
+Add Debug Prints in on_message
+In your bot class (e.g. features/discord_bot/bot.py), find the on_message method and temporarily add an early print/log line:
+
+python
+Copy
+Edit
+class TradingDiscordBot(discord.Client):
+    async def on_message(self, msg: discord.Message):
+        print(f"[DEBUG on_message] Author={msg.author}, Channel={msg.channel.name}, Content={msg.content!r}")
+        # … existing logic …
+Redeploy on Replit and open a real Discord client in your server.
+
+Type a message in the “aplus-setups” channel (or whatever target channel you configured).
+
+Watch the Replit console: if you never see [DEBUG on_message], then Discord isn’t sending that event to your handler.
+
+Verify Intents and Permissions
+
+In your TradingDiscordBot constructor (or wherever you build your Intents), confirm you did:
+
+python
+Copy
+Edit
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guilds = True
+intents.members = False    # not needed for basic messages
+client = TradingDiscordBot(intents=intents)
+In Discord’s Developer Portal (under your Bot → Privileged Gateway Intents), make sure Message Content Intent is toggled on. Without it, on_message fires only for messages that mention the bot or are DMs.
+
+Check Channel‐Specific Filters
+If your code checks if msg.channel.id != SOME_ID: return, make sure SOME_ID matches exactly the numeric ID of “aplus-setups.”
+
+In the Replit shell, fetch the channel IDs your bot sees:
+
+python
+Copy
+Edit
+python
+>>> from flask import Flask
+>>> from app import create_app
+>>> from features.discord_bot.bot import TradingDiscordBot
+>>> from common.db import db
+>>> import os, asyncio
+
+>>> app = create_app()
+>>> token = os.environ.get("DISCORD_BOT_TOKEN")
+>>> bot = TradingDiscordBot(intents=discord.Intents.default())
+>>> loop = asyncio.get_event_loop()
+>>> loop.run_until_complete(bot.login(token))
+>>> loop.run_until_complete(bot.connect(reconnect=False))
+>>> # Once connected, list all text channels
+>>> for guild in bot.guilds:
+...     print("Guild:", guild.name)
+...     for ch in guild.text_channels:
+...         print(f"  • {ch.name} (ID={ch.id})")
+Confirm the ID you compare against in code matches exactly one of those ch.id values.
+
+Test a Filter‐Free Stub
+As a sanity check, temporarily remove any channel-ID check so every message hits your on_message. This ensures no bug in the filter logic is silencing it. If stub logs start appearing, the issue is your filter; if still no logs, the problem is upstream (Intents, login, or registration).
+

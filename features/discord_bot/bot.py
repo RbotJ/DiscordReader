@@ -108,16 +108,29 @@ class TradingDiscordBot(discord.Client):
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
+        # Add debug logging as per troubleshooting guide
+        print(f"[DEBUG on_message] Author={message.author}, Channel={message.channel.name}, Content={message.content!r}")
+        logger.debug(f"Message received: author={message.author}, channel={message.channel.name} (ID={message.channel.id}), target_channel_id={self.aplus_setups_channel_id}")
+        
         # Skip bot's own messages
         if message.author == self.user:
+            logger.debug("Skipping bot's own message")
             return
+        
+        # Notify status tracker of message activity
+        from .status_tracker import get_status_tracker
+        tracker = get_status_tracker()
+        if tracker:
+            await tracker.on_message(message)
             
-        # Only process messages from aplus-setups channel
-        if str(message.channel.id) == self.aplus_setups_channel_id:
+        # Only process messages from aplus-setups channel (fix type comparison)
+        if message.channel.id == self.aplus_setups_channel_id:
             logger.info(f"Processing message from #aplus-setups: {message.id}")
             # Update channel activity
             self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
             await self._trigger_ingestion(message.channel.id)
+        else:
+            logger.debug(f"Message from {message.channel.name} (ID={message.channel.id}) doesn't match target channel {self.aplus_setups_channel_id}")
 
 
 
