@@ -147,7 +147,7 @@ class TradingDiscordBot(discord.Client):
         self._reset_if_needed()
         
         # Count all messages in target channel (live metrics)
-        if message.channel.id == self.aplus_setups_channel_id:
+        if str(message.channel.id) == str(self.aplus_setups_channel_id):
             self._messages_today += 1
             
             # Count trigger messages separately
@@ -164,7 +164,7 @@ class TradingDiscordBot(discord.Client):
             await tracker.on_message(message)
             
         # Only process messages from aplus-setups channel (fix type comparison)
-        if message.channel.id == self.aplus_setups_channel_id:
+        if str(message.channel.id) == str(self.aplus_setups_channel_id):
             logger.info(f"Processing message from #aplus-setups: {message.id}")
             # Update channel activity
             self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
