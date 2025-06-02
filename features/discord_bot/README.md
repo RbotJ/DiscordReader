@@ -1,19 +1,32 @@
-# Discord Bot Feature - Real-time Message Monitoring
+# Discord Bot Feature - Live Operational Monitoring
 
-The Discord Bot feature provides real-time message monitoring, channel scanning, and ingestion pipeline integration with complete correlation tracking.
+The Discord Bot feature provides real-time message monitoring with live metrics dashboard, in-memory message counting, and trading alert detection for comprehensive operational visibility.
 
 ## Overview
 
-This feature implements a Discord bot that automatically monitors trading channels, detects new messages, and triggers the ingestion pipeline with full correlation tracking for operational visibility.
+This feature implements a Discord bot with live operational metrics that monitors trading channels, counts messages in real-time, detects trading alerts, and provides an operational dashboard independent of database storage for maximum reliability.
 
 ## Key Components
 
 ### Discord Bot (`bot.py`)
-- **TradingDiscordBot class**: Main Discord client with real-time monitoring
-- **Channel scanning**: Automatic discovery of #aplus-setups channels
-- **Startup catch-up**: Process messages since last recorded timestamp
-- **Real-time triggers**: Immediate ingestion on new messages
-- **Correlation tracking**: End-to-end flow visibility
+- **TradingDiscordBot class**: Main Discord client with live metrics tracking
+- **In-memory counters**: Real-time message counting (`_messages_today`, `_triggers_today`)
+- **Trading alert detection**: Keyword-based classification of trading-related messages
+- **Daily reset functionality**: Automatic counter reset at midnight
+- **Channel monitoring**: Monitors configured target channel for message activity
+- **Flask integration**: Bot instance stored in `app.config['DISCORD_BOT']` for API access
+
+### Live Metrics API (`api.py`)
+- **Real-time endpoint**: `/api/discord/metrics` returns live bot status and counters
+- **Connection status**: Bot connectivity, latency, and health monitoring
+- **Message metrics**: Live counts of daily messages and trading alerts
+- **Database-independent**: Metrics work regardless of database connectivity issues
+
+### Operational Dashboard (`dashboard.py`)
+- **Real-time dashboard**: `/dashboard/discord/` with live metrics display
+- **Auto-refresh**: Frontend updates every 5 seconds via JavaScript
+- **Live counters**: Messages Today and Trading Alerts with "Live" indicators
+- **Connection monitoring**: Real-time bot status and latency display
 
 ### Configuration (`config/settings.py`)
 - **Environment validation**: Discord token and configuration checks
@@ -37,33 +50,39 @@ This feature implements a Discord bot that automatically monitors trading channe
 - **Dependency injection**: Receive ingestion service via constructor
 - **Error handling**: Robust error management with event logging
 
-## Database Integration
+## Live Metrics System
 
-### Discord Channels Table
-```sql
-CREATE TABLE discord_channels (
-  id SERIAL PRIMARY KEY,
-  channel_id VARCHAR(255) UNIQUE NOT NULL,
-  channel_name VARCHAR(255),
-  guild_id VARCHAR(255),
-  is_monitored BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+### In-Memory Counters
+The bot maintains real-time metrics in memory for immediate operational visibility:
+
+```python
+class TradingDiscordBot:
+    def __init__(self):
+        self._messages_today = 0          # Total messages received today
+        self._triggers_today = 0          # Trading alerts detected today
+        self._last_reset_date = None      # Last counter reset date
+        self.aplus_setups_channel_id = None  # Target channel ID
 ```
 
-### Discord Messages Table
-```sql
-CREATE TABLE discord_messages (
-  id SERIAL PRIMARY KEY,
-  message_id VARCHAR(255) UNIQUE NOT NULL,
-  channel_id VARCHAR(255) NOT NULL,
-  author_id VARCHAR(255),
-  content TEXT,
-  timestamp TIMESTAMP WITH TIME ZONE,
-  processed BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+### Trading Alert Detection
+Messages are classified as trading alerts using keyword matching:
+```python
+TRADING_KEYWORDS = [
+    'breakout', 'breakdown', 'bounce', 'rejection',
+    'calls', 'puts', 'strike', 'expiry', 'target',
+    'stop', 'entry', 'exit', 'alert', 'signal'
+]
+```
+
+### Daily Reset Logic
+Counters automatically reset at midnight to track daily activity:
+```python
+def _check_daily_reset(self):
+    today = datetime.now().date()
+    if self._last_reset_date != today:
+        self._messages_today = 0
+        self._triggers_today = 0
+        self._last_reset_date = today
 ```
 
 ## Event Publishing
@@ -98,6 +117,27 @@ Parsing Completed → correlation_id: abc-123
 Setup Created → correlation_id: abc-123
 ```
 
+## API Endpoints
+
+### Live Metrics API
+**GET** `/api/discord/metrics`
+
+Returns real-time bot status and message counters:
+```json
+{
+  "connected": true,
+  "latency_ms": 38,
+  "live_messages_today": 15,
+  "triggers_today": 3,
+  "target_channel_id": "1372012942848954388",
+  "last_reset_date": "2025-06-02"
+}
+```
+
+### Dashboard Routes
+- **GET** `/dashboard/discord/` - Live operational dashboard
+- **GET** `/dashboard/discord/metrics.json` - Dashboard metrics endpoint
+
 ## Configuration
 
 ### Environment Variables
@@ -110,38 +150,63 @@ DISCORD_GUILD_ID=your_guild_id
 DISCORD_CHANNEL_ID=your_channel_id
 ```
 
-### Bot Permissions
-Required Discord bot permissions:
-- **Read Messages**: View channel content
-- **Read Message History**: Access historical messages
-- **Use Slash Commands**: Future command support
+### Flask Integration
+The bot instance is stored in Flask app configuration for API access:
+```python
+# In app.py startup
+app.config['DISCORD_BOT'] = bot
+
+# In API endpoints
+bot = current_app.config.get('DISCORD_BOT')
+if bot:
+    metrics = {
+        'connected': bot.is_ready(),
+        'live_messages_today': bot._messages_today,
+        'triggers_today': bot._triggers_today
+    }
+```
 
 ## Usage Examples
 
-### Manual Bot Management
+### Accessing Live Metrics
 ```python
-from features.discord_bot.bot import get_global_client_manager
+from flask import current_app
 
-# Start bot
-manager = get_global_client_manager()
-if manager:
-    success = await manager.start_bot()
-    print(f"Bot started: {success}")
-
-# Check bot status
-if manager and manager.bot:
-    ready = manager.bot.is_ready()
-    print(f"Bot ready: {ready}")
+# Get bot instance from Flask app
+bot = current_app.config.get('DISCORD_BOT')
+if bot:
+    print(f"Connected: {bot.is_ready()}")
+    print(f"Messages today: {bot._messages_today}")
+    print(f"Trading alerts: {bot._triggers_today}")
+    print(f"Target channel: {bot.aplus_setups_channel_id}")
 ```
 
-### Correlation Flow Tracing
-```python
-from features.discord_bot.services.correlation_service import DiscordCorrelationService
+### Frontend Live Updates
+```javascript
+// JavaScript for real-time dashboard updates
+async function updateLiveMetrics() {
+    try {
+        const response = await fetch('/api/discord/metrics');
+        const data = await response.json();
+        
+        document.getElementById('live-messages-today').textContent = data.live_messages_today || 0;
+        document.getElementById('trigger-messages-today').textContent = data.triggers_today || 0;
+    } catch (error) {
+        console.error('Error fetching live metrics:', error);
+    }
+}
 
-# Get complete flow for a correlation ID
-flow = DiscordCorrelationService.get_message_correlation_flow('abc-123-def-456')
-print(f"Flow status: {flow['status']}")
-print(f"Completed stages: {flow['completed_stages']}")
+// Update every 5 seconds
+setInterval(updateLiveMetrics, 5000);
+```
+
+### Manual Counter Reset
+```python
+# Force reset counters (normally automatic at midnight)
+if bot:
+    bot._messages_today = 0
+    bot._triggers_today = 0
+    bot._last_reset_date = datetime.now().date()
 ```
 
 ## Integration Points
@@ -152,34 +217,38 @@ print(f"Completed stages: {flow['completed_stages']}")
 - **Error isolation**: Ingestion failures don't crash the bot
 
 ### Dashboard Integration
-- **Real-time status**: Bot status displayed in operational dashboard
-- **Event monitoring**: All bot events visible in event analytics
-- **Correlation flows**: Complete message-to-setup journeys tracked
+- **Live operational dashboard**: Real-time metrics at `/dashboard/discord/`
+- **Auto-refresh frontend**: Updates every 5 seconds without page reload
+- **Visual indicators**: "Live" badges distinguish real-time from historical data
+- **Connection monitoring**: Real-time status, latency, and health display
 
-### Event System Integration
-- **Structured publishing**: All events follow enhanced event schema
-- **Correlation linking**: Related events connected via correlation IDs
-- **Health monitoring**: Bot health tracked through event patterns
+### Flask App Integration
+- **Bot storage**: Instance stored in `app.config['DISCORD_BOT']` for API access
+- **Route registration**: API and dashboard blueprints registered in `app.py`
+- **Background operation**: Bot runs in separate thread while Flask serves requests
+- **Graceful fallback**: Application continues if bot fails to start
 
 ## Bot Lifecycle
 
 ### Startup Sequence
 1. **Environment validation**: Check required Discord credentials
-2. **Channel scanning**: Discover and catalog available channels
-3. **Database updates**: Update discord_channels table
-4. **Catch-up ingestion**: Process messages since last recorded timestamp
-5. **Real-time monitoring**: Begin monitoring for new messages
+2. **Flask integration**: Store bot instance in `app.config['DISCORD_BOT']`
+3. **Channel discovery**: Scan guilds for #aplus-setups channels
+4. **Counter initialization**: Set up in-memory message counters
+5. **Real-time monitoring**: Begin monitoring target channel for new messages
 
 ### Runtime Operations
-- **Message detection**: Immediate response to new messages in monitored channels
-- **Ingestion triggers**: Automatic ingestion of new message batches
-- **Error handling**: Graceful error recovery with event logging
-- **Health monitoring**: Regular status checks and reporting
+- **Live message counting**: Increment counters for each message received
+- **Trading alert detection**: Classify messages using keyword matching
+- **Daily reset**: Automatic counter reset at midnight
+- **API availability**: Serve live metrics via `/api/discord/metrics`
+- **Dashboard updates**: Real-time frontend updates every 5 seconds
 
-### Shutdown Sequence
-- **Graceful disconnect**: Clean Discord connection closure
-- **Final events**: Publish bot shutdown events
-- **Service cleanup**: Clean up background services and threads
+### Operational Benefits
+- **Database independence**: Metrics work even during database outages
+- **Real-time visibility**: Immediate operational insights without delays
+- **Lightweight operation**: In-memory counters minimize performance impact
+- **Reliable monitoring**: Bot status always available through live API
 
 ## Error Handling
 
@@ -200,40 +269,47 @@ print(f"Completed stages: {flow['completed_stages']}")
 
 ## Monitoring & Debugging
 
-### Bot Health Checks
+### Live Metrics Monitoring
+```bash
+# Check real-time bot status
+curl http://localhost:5000/api/discord/metrics
+
+# Expected response
+{
+  "connected": true,
+  "latency_ms": 38,
+  "live_messages_today": 15,
+  "triggers_today": 3,
+  "target_channel_id": "1372012942848954388",
+  "last_reset_date": "2025-06-02"
+}
+```
+
+### Dashboard Monitoring
+- **Live dashboard**: Visit `/dashboard/discord/` for real-time operational view
+- **Auto-refresh**: Metrics update every 5 seconds automatically
+- **Visual indicators**: "Live" badges show real-time data vs historical
+- **Connection status**: Real-time bot connectivity and latency display
+
+### Bot Health Verification
 ```python
-# Check if bot is connected and ready
-if manager and manager.bot:
-    connected = manager.bot.is_ready()
-    channel_id = manager.bot.aplus_setups_channel_id
-    print(f"Bot connected: {connected}, Monitoring: {channel_id}")
+from flask import current_app
+
+# Check bot status in Flask context
+bot = current_app.config.get('DISCORD_BOT')
+if bot:
+    print(f"Bot ready: {bot.is_ready()}")
+    print(f"Latency: {bot.latency * 1000:.0f}ms")
+    print(f"Target channel: {bot.aplus_setups_channel_id}")
+    print(f"Daily messages: {bot._messages_today}")
+    print(f"Trading alerts: {bot._triggers_today}")
 ```
 
-### Event Analysis
-```sql
--- Recent bot events
-SELECT event_type, source, data, created_at 
-FROM events 
-WHERE source = 'discord_bot' 
-ORDER BY created_at DESC 
-LIMIT 10;
-
--- Correlation flow completion
-SELECT 
-    correlation_id,
-    COUNT(*) as event_count,
-    MAX(created_at) as last_event
-FROM events 
-WHERE correlation_id IS NOT NULL
-GROUP BY correlation_id
-ORDER BY last_event DESC;
-```
-
-### Performance Monitoring
-- **Message processing time**: Track time from message to setup creation
-- **Ingestion success rates**: Monitor successful vs failed ingestions
-- **Channel activity**: Track message volume by channel
-- **Bot uptime**: Monitor connection stability and uptime
+### Performance Characteristics
+- **Memory footprint**: Minimal - only stores daily counters
+- **Response time**: Sub-millisecond metric access from memory
+- **Reliability**: Independent of database connectivity
+- **Real-time updates**: 5-second refresh cycle for operational visibility
 
 ## Security Considerations
 
@@ -249,5 +325,5 @@ ORDER BY last_event DESC;
 
 ---
 
-*Last updated: 2025-05-28*
-*Feature status: Production ready with complete correlation tracking*
+*Last updated: 2025-06-02*
+*Feature status: Production ready with live operational metrics and real-time dashboard*
