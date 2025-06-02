@@ -6,7 +6,9 @@ An advanced options trading platform that leverages cutting-edge technology to p
 
 The A+ Trading App is designed for traders who receive setup messages from Discord communities and want to automatically process and monitor trading signals. The application features:
 
-- **Discord Bot Integration** - Real-time message monitoring and ingestion
+- **Discord Bot Integration** - Real-time message monitoring with live metrics dashboard
+- **Live Discord Monitoring** - In-memory message counting and trading alert detection
+- **Operational Dashboard** - Real-time Discord bot status at `/dashboard/discord/`
 - **Advanced Message Parsing** - AI-powered extraction of trading signals and setups
 - **Enhanced Event System** - Complete operational telemetry with correlation tracking
 - **Real-time Market Data** - Live ticker prices via Alpaca WebSocket integration
@@ -22,7 +24,11 @@ The application follows a vertical-slice architecture, organized by features rat
 /  
 ├── features/
 │   ├── dashboard/        # Interactive monitoring dashboard with event analytics
-│   ├── discord_bot/      # Real-time Discord message monitoring and ingestion
+│   ├── discord_bot/      # Discord bot with live metrics, status tracking, and operational dashboard
+│   │   ├── api.py        # Live metrics API endpoints (/api/discord/metrics)
+│   │   ├── bot.py        # Core bot with in-memory message counting
+│   │   ├── dashboard.py  # Real-time operational dashboard (/dashboard/discord/)
+│   │   └── status_tracker.py # Connection status and health monitoring
 │   ├── events/           # Enhanced PostgreSQL event bus with correlation tracking
 │   ├── alpaca/           # WebSocket integration for real-time market data
 │   ├── models/           # Database models organized by feature
@@ -65,6 +71,9 @@ ALPACA_API_BASE_URL=https://paper-api.alpaca.markets
 # Database Configuration
 DATABASE_URL=postgresql://username:password@localhost:5432/dbname
 
+# Discord Bot Configuration
+DISCORD_BOT_TOKEN=your_discord_bot_token
+
 # Application Configuration
 SESSION_SECRET=your_secret_key
 ```
@@ -90,6 +99,16 @@ python main.py
 4. Access the web interface at http://localhost:5000
 
 ## Features
+
+### Discord Bot Monitoring
+
+Real-time Discord integration with operational visibility:
+- **Live Message Counting** - In-memory tracking of daily message volume
+- **Trading Alert Detection** - Automatic classification of trading-related messages using keyword matching
+- **Real-time Dashboard** - Live operational metrics at `/dashboard/discord/` with 5-second refresh
+- **Status Monitoring** - Connection health, latency tracking, and uptime metrics
+- **Live Metrics API** - RESTful endpoint at `/api/discord/metrics` for integration
+- **Database-Independent Operation** - Metrics persist in memory, unaffected by database issues
 
 ### Setup Message Parsing
 
