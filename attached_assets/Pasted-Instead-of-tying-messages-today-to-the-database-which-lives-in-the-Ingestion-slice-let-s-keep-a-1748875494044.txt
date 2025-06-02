@@ -1,0 +1,132 @@
+Instead of tying “messages today” to the database (which lives in the Ingestion slice), let’s keep all “live stream” counters purely in the Discord‐Bot slice. That way, even if ingestion or storage is broken, you still see how many messages actually hit the bot. Below are two alternative metrics and how to implement them in-slice:
+
+1. Live Messages Received (per day)
+What to measure:
+A simple counter of every on_message event your bot sees in the target channel, reset at midnight (UTC or your preferred timezone). This tells you “how many messages actually came in,” regardless of whether they get stored downstream.
+
+How to implement (Discord slice only):
+
+In your bot’s constructor, initialize a daily counter and a “last reset” timestamp:
+
+python
+Copy
+Edit
+class TradingDiscordBot(discord.Client):
+    def __init__(self, ..., **kwargs):
+        super().__init__(**kwargs)
+        self._messages_today = 0
+        self._last_reset_date = datetime.utcnow().date()
+
+    async def on_ready(self):
+        # existing logic…
+        self._reset_if_needed()
+
+    def _reset_if_needed(self):
+        today = datetime.utcnow().date()
+        if today != self._last_reset_date:
+            self._messages_today = 0
+            self._last_reset_date = today
+In your on_message handler, increment (and reset if day has changed) before any filters:
+
+python
+Copy
+Edit
+async def on_message(self, message):
+    # 1) Reset counter at midnight UTC
+    self._reset_if_needed()
+
+    # 2) Only count messages in your target channel
+    if message.channel.id == self.target_channel_id:
+        self._messages_today += 1
+        # … existing ingestion trigger logic …
+    ```
+Expose an API endpoint under /api/discord/metrics (or similar) that reads this in-memory value:
+
+python
+Copy
+Edit
+@app.route('/api/discord/metrics')
+def discord_metrics():
+    bot: TradingDiscordBot = current_app.config['DISCORD_BOT']
+    return jsonify({
+        "live_messages_today": bot._messages_today,
+        # … other metrics … 
+    })
+Your dashboard now fetches "live_messages_today" and shows a real count—even if nothing is in discord_messages yet.
+
+2. Message “Triggers” (filtered count)
+What to measure:
+If you want to focus on the messages that actually “trigger” your trading-workflow (for example, messages that parse successfully or contain certain keywords), count those separately. This lets you see “how many actionable messages arrived,” not just raw totals.
+
+How to implement (Discord slice only):
+
+Define a simple “trigger” predicate inside your bot (e.g. message.content.startswith("BUY") or “passed parse validation”):
+
+python
+Copy
+Edit
+class TradingDiscordBot(discord.Client):
+    # … existing init …
+
+    def _is_trigger_message(self, message):
+        # Example: only count messages that mention a ticker and price
+        return "@" in message.content or "BUY" in message.content
+
+    async def on_message(self, message):
+        self._reset_if_needed()
+
+        if message.channel.id == self.target_channel_id:
+            # Always count raw
+            self._messages_today += 1
+
+            # Now track triggered messages
+            if self._is_trigger_message(message):
+                self._triggers_today += 1
+                # e.g. send to ingestion or parsing logic
+                raw = RawMessageDto.from_discord(message)
+                await self.ingestion_service.ingest_raw_message(raw)
+In the constructor, also initialize _triggers_today = 0 and reset alongside _messages_today in _reset_if_needed().
+
+Extend the same /api/discord/metrics endpoint to include "triggers_today": bot._triggers_today.
+
+On your dashboard, show both “Raw messages” (all) and “Triggers” (only those matching your business logic).
+
+Putting It in Your Vertical Slice
+Discord slice owns these in-memory counters (_messages_today, _triggers_today) and the reset logic.
+
+No database calls are needed here—this lives entirely in the bot process.
+
+The API endpoint (/api/discord/metrics) also lives in the Discord slice’s Blueprint or in your main app.py but only references the bot instance (injected via app.config['DISCORD_BOT'] or a similar pattern).
+
+Ingestion slice remains responsible for pulling from the bot when a trigger happens, but does not drive these two metrics.
+
+Example: Dashboard JSON
+When your front end polls /api/discord/metrics, you’ll get something like:
+
+json
+Copy
+Edit
+{
+  "connected": true,
+  "latency_ms": 42,
+  "live_messages_today": 37,
+  "triggers_today": 5
+}
+connected ← from bot.is_ready()
+
+latency_ms ← from round(bot.latency*1000)
+
+live_messages_today ← raw on_message count
+
+triggers_today ← count of messages that passed _is_trigger_message
+
+Why This Stays in-Slice
+You’re measuring only what the bot “sees” in real time.
+
+No reliance on ingestion or database writes (which can lag or fail).
+
+Any filtering/“trigger” logic lives in the bot code—so this metric can’t drift if downstream changes break ingestion.
+
+The API route is in your Discord slice (or in a shared “metrics” blueprint that merely reads from the bot), so there’s zero coupling to the Ingestion or Channels slices for these two numbers.
+
+With these two metrics—“live messages today” and “message triggers today”—you’ll immediately know if the Discord event stream is alive, regardless of what happens in your DB or ingestion pipeline.

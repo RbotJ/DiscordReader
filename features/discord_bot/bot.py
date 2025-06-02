@@ -43,11 +43,37 @@ class TradingDiscordBot(discord.Client):
         self.ingestion_service = ingestion_service or IngestionService()
         self.channel_manager = channel_manager or ChannelManager()
         self.client_manager = None
+        
+        # Live metrics counters (in-memory, Discord slice only)
+        self._messages_today = 0
+        self._triggers_today = 0
+        self._last_reset_date = datetime.utcnow().date()
+
+    def _reset_if_needed(self):
+        """Reset daily counters at midnight UTC."""
+        today = datetime.utcnow().date()
+        if today != self._last_reset_date:
+            self._messages_today = 0
+            self._triggers_today = 0
+            self._last_reset_date = today
+            logger.info(f"Daily metrics counters reset for {today}")
+
+    def _is_trigger_message(self, message):
+        """Determine if a message qualifies as a trigger for business logic."""
+        content = message.content.lower()
+        # Count messages with trading-related content as triggers
+        return any(keyword in content for keyword in [
+            '@everyone', 'spy', 'nvda', 'tsla', 'qqq', 'aapl', 
+            'buy', 'sell', 'breakdown', 'breakout', 'target'
+        ])
 
     async def on_ready(self):
         """Bot startup - scan channels and initialize ingestion."""
         logger.info(f'Discord bot connected as {self.user}')
         self.ready_status = True
+        
+        # Reset counters if needed on startup
+        self._reset_if_needed()
         
         # Initialize status tracker and notify it of ready event
         from .status_tracker import initialize_status_tracker, get_status_tracker
@@ -116,6 +142,20 @@ class TradingDiscordBot(discord.Client):
         if message.author == self.user:
             logger.debug("Skipping bot's own message")
             return
+        
+        # Reset counters if needed (daily reset)
+        self._reset_if_needed()
+        
+        # Count all messages in target channel (live metrics)
+        if message.channel.id == self.aplus_setups_channel_id:
+            self._messages_today += 1
+            
+            # Count trigger messages separately
+            if self._is_trigger_message(message):
+                self._triggers_today += 1
+                logger.debug(f"Trigger message detected. Today: {self._messages_today} total, {self._triggers_today} triggers")
+            else:
+                logger.debug(f"Regular message counted. Today: {self._messages_today} total, {self._triggers_today} triggers")
         
         # Notify status tracker of message activity
         from .status_tracker import get_status_tracker
