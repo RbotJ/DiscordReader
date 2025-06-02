@@ -136,7 +136,7 @@ class TradingDiscordBot(discord.Client):
         """Handle incoming messages from monitored channels."""
         # Add debug logging as per troubleshooting guide
         print(f"[DEBUG on_message] Author={message.author}, Channel={message.channel.name}, Content={message.content!r}")
-        logger.debug(f"Message received: author={message.author}, channel={message.channel.name} (ID={message.channel.id}), target_channel_id={self.aplus_setups_channel_id}")
+        logger.debug(f"Message received: channel.id={message.channel.id!r} ({type(message.channel.id)}), target_channel_id={self.aplus_setups_channel_id!r} ({type(self.aplus_setups_channel_id)})")
         
         # Skip bot's own messages
         if message.author == self.user:
