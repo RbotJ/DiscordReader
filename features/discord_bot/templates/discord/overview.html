@@ -41,24 +41,26 @@
         </div>
     </div>
     
-    <!-- Messages Today -->
+    <!-- Live Messages Today -->
     <div class="col-md-3 mb-4">
         <div class="card metric-card">
             <div class="card-body text-center">
                 <i data-feather="message-square" class="text-success mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics['messages_processed_today'] }}</h3>
+                <h3 class="mb-1" id="live-messages-today">--</h3>
                 <p class="text-muted mb-0">Messages Today</p>
+                <small class="text-success">Live</small>
             </div>
         </div>
     </div>
     
-    <!-- Processing Rate -->
+    <!-- Trigger Messages -->
     <div class="col-md-3 mb-4">
         <div class="card metric-card">
             <div class="card-body text-center">
                 <i data-feather="activity" class="text-info mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics['messages_per_minute'] }}</h3>
-                <p class="text-muted mb-0">Per Minute</p>
+                <h3 class="mb-1" id="trigger-messages-today">--</h3>
+                <p class="text-muted mb-0">Trading Alerts</p>
+                <small class="text-info">Live</small>
             </div>
         </div>
     </div>
@@ -132,9 +134,48 @@
 </div>
 
 <script>
-// Auto-refresh every 30 seconds
-setTimeout(() => {
-    window.location.reload();
-}, 30000);
+// Live metrics updating
+async function updateLiveMetrics() {
+    try {
+        const response = await fetch('/api/discord/metrics');
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Update live message counts
+            document.getElementById('live-messages-today').textContent = data.live_messages_today || 0;
+            document.getElementById('trigger-messages-today').textContent = data.triggers_today || 0;
+            
+            // Update connection status if elements exist
+            const statusElements = document.querySelectorAll('.status-badge');
+            statusElements.forEach(element => {
+                if (data.connected) {
+                    element.className = 'status-badge status-connected';
+                    element.innerHTML = '<i data-feather="check-circle" class="me-1"></i>Connected';
+                } else {
+                    element.className = 'status-badge status-disconnected';
+                    element.innerHTML = '<i data-feather="x-circle" class="me-1"></i>Disconnected';
+                }
+            });
+            
+            // Re-initialize feather icons
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+        } else {
+            console.warn('Failed to fetch live metrics:', response.status);
+        }
+    } catch (error) {
+        console.error('Error fetching live metrics:', error);
+        // Show fallback values
+        document.getElementById('live-messages-today').textContent = '--';
+        document.getElementById('trigger-messages-today').textContent = '--';
+    }
+}
+
+// Update immediately on page load
+document.addEventListener('DOMContentLoaded', updateLiveMetrics);
+
+// Update every 5 seconds for real-time feel
+setInterval(updateLiveMetrics, 5000);
 </script>
 {% endblock %}
