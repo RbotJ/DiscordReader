@@ -201,21 +201,27 @@ def create_app():
     from common.events.cleanup_service import cleanup_service
     cleanup_service.start_cleanup_scheduler()
     
-    # Initialize Alpaca WebSocket for real-time ticker prices
-    try:
-        from features.alpaca.websocket_service import initialize_websocket_service
-        websocket_service = initialize_websocket_service(
-            api_key=app.config.get("ALPACA_API_KEY"),
-            api_secret=app.config.get("ALPACA_API_SECRET"),
-            paper_trading=app.config.get("PAPER_TRADING", True)
-        )
-        if websocket_service:
-            # Start with common tickers for real-time price updates
-            common_tickers = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA']
-            websocket_service.start_price_streaming(common_tickers)
-            logging.info("Alpaca WebSocket service initialized for real-time prices")
-    except Exception as e:
-        logging.warning(f"Could not initialize Alpaca WebSocket service: {e}")
+    # Initialize Alpaca WebSocket for real-time ticker prices (optional)
+    # Use ENABLE_LIVE_PRICE_STREAM=true to enable (default: disabled)
+    live_stream_enabled = app.config.get("ENABLE_LIVE_PRICE_STREAM", "false").lower() == "true"
+    
+    if live_stream_enabled:
+        try:
+            from features.alpaca.websocket_service import initialize_websocket_service
+            websocket_service = initialize_websocket_service(
+                api_key=app.config.get("ALPACA_API_KEY"),
+                api_secret=app.config.get("ALPACA_API_SECRET"),
+                paper_trading=app.config.get("PAPER_TRADING", True)
+            )
+            if websocket_service:
+                # Start with common tickers for real-time price updates
+                common_tickers = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA']
+                websocket_service.start_price_streaming(common_tickers)
+                logging.info("Alpaca WebSocket service initialized for real-time prices")
+        except Exception as e:
+            logging.warning(f"Could not initialize Alpaca WebSocket service: {e}")
+    else:
+        logging.info("Live price streaming disabled (ENABLE_LIVE_PRICE_STREAM=false)")
 
     socketio.init_app(app, cors_allowed_origins="*")
     register_feature_routes(app)
