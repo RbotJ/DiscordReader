@@ -83,7 +83,13 @@ def register_feature_routes(app):
     except ImportError as e:
         logging.warning(f"Could not register enhanced dashboard API routes: {e}")
     
-
+    # Register Discord API routes directly
+    try:
+        from features.discord_bot.api import discord_api_bp
+        app.register_blueprint(discord_api_bp)
+        logging.info("Discord API routes registered successfully")
+    except ImportError as e:
+        logging.warning(f"Could not register Discord API routes: {e}")
 
 def register_web_routes(app):
     """Register main web routes"""
@@ -141,6 +147,9 @@ def start_discord_bot_background(app):
                         ingestion_service=ingestion_svc,
                         channel_service=channel_svc
                     )
+                    
+                    # Store bot instance in app config for API access
+                    app.config['DISCORD_BOT'] = bot
 
                     logging.info("🔄 Starting Discord bot...")
                     # Get token from environment
