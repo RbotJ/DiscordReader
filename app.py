@@ -56,6 +56,10 @@ def register_feature_routes(app):
         import features.dashboard.api_routes as dashboard_api
         register_feature('dashboard', dashboard_api)
         
+        # Register Discord bot feature
+        import features.discord_bot as discord_bot
+        register_feature('discord_bot', discord_bot)
+        
         # Bootstrap all registered routes
         bootstrap_routes(app)
         logging.info("All feature routes registered successfully via Route Registry")
@@ -79,8 +83,7 @@ def register_feature_routes(app):
     except ImportError as e:
         logging.warning(f"Could not register enhanced dashboard API routes: {e}")
     
-    # Discord admin routes not yet implemented
-    # Future: Add Discord bot management interface
+
 
 def register_web_routes(app):
     """Register main web routes"""
