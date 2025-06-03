@@ -73,17 +73,16 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
         
         # Insert event into database
         query = text("""
-            INSERT INTO events (event_type, channel, payload, source, correlation_id, timestamp, created_at)
-            VALUES (:event_type, :channel, :payload, :source, :correlation_id, :timestamp, :created_at)
+            INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
+            VALUES (:event_type, :channel, :data, :source, :correlation_id, :created_at)
         """)
         
         params = {
             'event_type': event_type,
             'channel': channel,
-            'payload': json.dumps(enhanced_payload),
+            'data': enhanced_payload,
             'source': source,
             'correlation_id': correlation_id,
-            'timestamp': datetime.utcnow(),
             'created_at': datetime.utcnow()
         }
         
