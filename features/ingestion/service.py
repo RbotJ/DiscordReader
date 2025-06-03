@@ -13,7 +13,8 @@ from datetime import datetime
 import discord
 
 from .fetcher import MessageFetcher, fetch_latest_messages
-from .validator import MessageValidator
+from .validator import MessageValidator, validate_message
+from .store import message_store
 from .models import DiscordMessageModel
 from features.discord_bot.models import DiscordChannel
 from features.discord_bot.dto import RawMessageDto
@@ -65,6 +66,55 @@ class IngestionService(IIngestionService):
             'total_errors': 0
         }
 
+    def store_raw_message(self, message: Dict[str, Any]) -> bool:
+        """
+        Store a raw Discord message with validation, deduplication, and event emission.
+        
+        This is the core ingestion method that follows the clean interface:
+        validate → check duplicate → store → emit event
+        
+        Args:
+            message: Raw Discord message dictionary
+            
+        Returns:
+            bool: True if stored successfully, False if skipped or failed
+        """
+        try:
+            # Step 1: Validate message
+            if not validate_message(message):
+                logger.debug(f"Message {message.get('id')} failed validation, skipping")
+                return False
+            
+            # Step 2: Check for duplicates
+            message_id = str(message.get('id'))
+            if message_store.is_duplicate(message_id):
+                logger.debug(f"Message {message_id} is duplicate, skipping")
+                return False
+            
+            # Step 3: Store in database
+            if not message_store.insert_message(message):
+                logger.error(f"Failed to store message {message_id}")
+                return False
+            
+            # Step 4: Emit MESSAGE_STORED event
+            publish_event(
+                event_type="discord.message.stored",
+                payload={
+                    "message_id": message_id,
+                    "channel_id": str(message.get('channel_id')),
+                    "content_preview": str(message.get('content', ''))[:100] + "..." if len(str(message.get('content', ''))) > 100 else str(message.get('content', ''))
+                },
+                channel=EventChannels.DISCORD_MESSAGE,
+                source="ingestion_service"
+            )
+            
+            logger.debug(f"Successfully stored and emitted event for message {message_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in store_raw_message for {message.get('id')}: {e}")
+            return False
+
     async def store_discord_message(self, message: DiscordMessageDTO) -> bool:
         """
         Stores a single Discord message if it doesn't already exist.
@@ -80,38 +130,35 @@ class IngestionService(IIngestionService):
             bool: True if stored, False if skipped (duplicate) or failed
         """
         try:
-            # Check if message already exists (deduplication)
-            existing = DiscordMessageModel.query.filter_by(message_id=message.message_id).first()
-            if existing:
-                logger.debug(f"Message {message.message_id} already exists, skipping")
-                return False
-            
             # Basic validation
             if not message.message_id or not message.channel_id:
                 logger.warning(f"Invalid message data: missing required fields")
                 return False
             
-            # Create new message model
-            message_model = DiscordMessageModel(
-                message_id=message.message_id,
-                channel_id=message.channel_id,
-                author_id=message.author_id,
-                author=getattr(message, 'author', 'unknown'),
-                content=message.content,
-                timestamp=message.created_at,
-                is_processed=False
-            )
+            # Check for duplicates using store layer
+            if message_store.is_duplicate(message.message_id):
+                logger.debug(f"Message {message.message_id} already exists, skipping")
+                return False
             
-            # Store in database
-            db.session.add(message_model)
-            db.session.commit()
+            # Convert DTO to dict for store layer
+            message_dict = {
+                'id': message.message_id,
+                'channel_id': message.channel_id,
+                'author_id': message.author_id,
+                'author': getattr(message, 'author', 'unknown'),
+                'content': message.content,
+                'timestamp': message.created_at.isoformat() if message.created_at else datetime.utcnow().isoformat()
+            }
             
-            logger.debug(f"Successfully stored message {message.message_id}")
-            return True
+            # Use store layer for insertion
+            success = message_store.insert_message(message_dict)
+            if success:
+                logger.debug(f"Successfully stored message {message.message_id}")
+            
+            return success
             
         except Exception as e:
             logger.error(f"Error storing message {message.message_id}: {e}")
-            db.session.rollback()
             return False
 
     async def process_message_batch(self, messages: List[discord.Message]) -> Dict[str, Any]:
