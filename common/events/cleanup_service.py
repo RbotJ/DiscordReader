@@ -60,7 +60,7 @@ class EventCleanupService:
         # Publish shutdown event
         publish_event(
             event_type=EventTypes.INFO,
-            payload={'service': 'event_cleanup', 'status': 'stopped'},
+            data={'service': 'event_cleanup', 'status': 'stopped'},
             channel=EventChannels.SYSTEM,
             source='event_cleanup_service'
         )
@@ -79,7 +79,7 @@ class EventCleanupService:
             # Publish cleanup completion event
             publish_event(
                 event_type=EventTypes.INFO,
-                payload={
+                data={
                     'cleanup_completed': True,
                     'events_deleted': deleted_count,
                     'duration_seconds': duration,
@@ -97,7 +97,7 @@ class EventCleanupService:
             # Publish cleanup error event
             publish_event(
                 event_type=EventTypes.ERROR,
-                payload={
+                data={
                     'cleanup_failed': True,
                     'error': str(e),
                     'cleanup_date': datetime.utcnow().isoformat()

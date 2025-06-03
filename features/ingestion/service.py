@@ -99,7 +99,7 @@ class IngestionService(IIngestionService):
             # Step 4: Emit MESSAGE_STORED event
             publish_event(
                 event_type="discord.message.stored",
-                payload={
+                data={
                     "message_id": message_id,
                     "channel_id": str(message.get('channel_id')),
                     "content_preview": str(message.get('content', ''))[:100] + "..." if len(str(message.get('content', ''))) > 100 else str(message.get('content', ''))
