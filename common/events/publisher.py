@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def publish_event(
     event_type: str, 
-    payload: dict, 
+    data: dict, 
     channel: str = "default", 
     source: str = None, 
     correlation_id: str = None
@@ -26,7 +26,7 @@ def publish_event(
     
     Args:
         event_type: Type of event (e.g. 'parsing.setup.parsed')
-        payload: Event data payload (dict)
+        data: Event data (dict)
         channel: Event channel (e.g. 'parsing:setup')
         source: Source service/module (e.g. 'discord_parser')
         correlation_id: UUID string for tracing related events

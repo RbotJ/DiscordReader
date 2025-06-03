@@ -19,7 +19,7 @@ class Event(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
     event_type = Column(String(100), nullable=False, index=True)
     channel = Column(String(50), nullable=False, index=True)
-    payload = Column(Text, nullable=True)
+    data = Column(Text, nullable=True)
     source = Column(String(50), nullable=True)
     correlation_id = Column(String(36), nullable=True, index=True)
     timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
@@ -34,7 +34,7 @@ class Event(db.Model):
             'id': self.id,
             'event_type': self.event_type,
             'channel': self.channel,
-            'payload': self.payload,
+            'data': self.data,
             'source': self.source,
             'correlation_id': self.correlation_id,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
