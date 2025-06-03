@@ -56,7 +56,7 @@ class DiscordCorrelationService:
             
             return publish_event(
                 event_type=EventTypes.DISCORD_RECEIVED,
-                payload=enhanced_data,
+                data=enhanced_data,
                 channel=EventChannels.DISCORD_MESSAGE,
                 source='discord_bot',
                 correlation_id=correlation_id
@@ -93,7 +93,7 @@ class DiscordCorrelationService:
             
             return publish_event(
                 event_type=EventTypes.DISCORD_PROCESSED,
-                payload=enhanced_data,
+                data=enhanced_data,
                 channel=EventChannels.DISCORD_MESSAGE,
                 source='discord_bot',
                 correlation_id=correlation_id
@@ -127,7 +127,7 @@ class DiscordCorrelationService:
             
             return publish_event(
                 event_type=EventTypes.CATCHUP_STARTED,
-                payload=enhanced_data,
+                data=enhanced_data,
                 channel=EventChannels.INGESTION_BATCH,
                 source='discord_ingestion',
                 correlation_id=correlation_id
@@ -161,7 +161,7 @@ class DiscordCorrelationService:
             
             return publish_event(
                 event_type=EventTypes.CATCHUP_COMPLETED,
-                payload=enhanced_data,
+                data=enhanced_data,
                 channel=EventChannels.INGESTION_BATCH,
                 source='discord_ingestion',
                 correlation_id=correlation_id
@@ -195,7 +195,7 @@ class DiscordCorrelationService:
             
             return publish_event(
                 event_type=EventTypes.SETUP_PARSED,
-                payload=enhanced_data,
+                data=enhanced_data,
                 channel=EventChannels.PARSING_SETUP,
                 source='discord_parser',
                 correlation_id=correlation_id
@@ -229,7 +229,7 @@ class DiscordCorrelationService:
             
             return publish_event(
                 event_type=EventTypes.SETUP_CREATED,
-                payload=enhanced_data,
+                data=enhanced_data,
                 channel=EventChannels.SETUP_CREATED,
                 source='setup_processor',
                 correlation_id=correlation_id
