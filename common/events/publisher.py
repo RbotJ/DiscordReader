@@ -52,7 +52,7 @@ def publish_event(
         event_data = {
             'event_type': event_type,
             'channel': channel,
-            'payload': payload,
+            'data': data,
             'source': source or 'unknown',
             'correlation_id': correlation_id,
             'timestamp': datetime.utcnow(),
@@ -61,17 +61,16 @@ def publish_event(
         
         # Insert into events table
         query = text("""
-            INSERT INTO events (event_type, channel, payload, source, correlation_id, timestamp, created_at)
-            VALUES (:event_type, :channel, :payload, :source, :correlation_id, :timestamp, :created_at)
+            INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
+            VALUES (:event_type, :channel, :data, :source, :correlation_id, :created_at)
         """)
         
         db.session.execute(query, {
             'event_type': event_data['event_type'],
             'channel': event_data['channel'],
-            'payload': str(payload) if not isinstance(payload, str) else payload,
+            'data': str(data) if not isinstance(data, str) else data,
             'source': event_data['source'],
             'correlation_id': event_data['correlation_id'],
-            'timestamp': event_data['timestamp'],
             'created_at': event_data['created_at']
         })
         
@@ -91,7 +90,7 @@ def publish_event(
 
 def publish_event_safe(
     event_type: str, 
-    payload: dict, 
+    data: dict, 
     channel: str = "default", 
     source: str = None, 
     correlation_id: str = None
@@ -102,7 +101,7 @@ def publish_event_safe(
     
     Args:
         event_type: Type of event
-        payload: Event data payload
+        data: Event data
         channel: Event channel
         source: Source service/module
         correlation_id: UUID string for tracing
@@ -111,10 +110,10 @@ def publish_event_safe(
         bool: True if published or logged successfully
     """
     if has_app_context():
-        return publish_event(event_type, payload, channel, source, correlation_id)
+        return publish_event(event_type, data, channel, source, correlation_id)
     else:
         # Log the event when Flask context is not available
-        logger.info(f"Event [{event_type}] on channel [{channel}] from [{source}]: {payload}")
+        logger.info(f"Event [{event_type}] on channel [{channel}] from [{source}]: {data}")
         return True
 
 

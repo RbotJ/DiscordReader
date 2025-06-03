@@ -30,13 +30,13 @@ def initialize_db(app):
         logger.error(f"Failed to initialize database: {e}")
         return False
 
-def publish_event(event_type: str, payload: dict, channel: str = "default", source: str = None, correlation_id: str = None):
+def publish_event(event_type: str, data: dict, channel: str = "default", source: str = None, correlation_id: str = None):
     """
     Enhanced event publishing wrapper with richer metadata and traceability.
     
     Args:
         event_type: Type of event (e.g. 'parsing.setup.parsed')
-        payload: Event data payload (dict)
+        data: Event data (dict)
         channel: Event channel (e.g. 'parsing:setup')
         source: Source service/module (e.g. 'discord_parser')
         correlation_id: UUID string for tracing related events
@@ -61,9 +61,9 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
                 logger.warning(f"Invalid correlation_id format: {correlation_id}, generating new one")
                 correlation_id = str(uuid.uuid4())
         
-        # Add metadata to payload
-        enhanced_payload = {
-            **payload,
+        # Add metadata to data
+        enhanced_data = {
+            **data,
             '_metadata': {
                 'timestamp': datetime.utcnow().isoformat(),
                 'source': source,
@@ -80,7 +80,7 @@ def publish_event(event_type: str, payload: dict, channel: str = "default", sour
         params = {
             'event_type': event_type,
             'channel': channel,
-            'data': enhanced_payload,
+            'data': enhanced_data,
             'source': source,
             'correlation_id': correlation_id,
             'created_at': datetime.utcnow()

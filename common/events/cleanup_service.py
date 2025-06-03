@@ -42,7 +42,7 @@ class EventCleanupService:
         # Publish startup event
         publish_event(
             event_type=EventTypes.INFO,
-            payload={'service': 'event_cleanup', 'status': 'started'},
+            data={'service': 'event_cleanup', 'status': 'started'},
             channel=EventChannels.SYSTEM,
             source='event_cleanup_service'
         )
