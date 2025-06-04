@@ -89,7 +89,7 @@ def get_latest_events(channel: str, since_timestamp=None, limit: int = 100):
             {
                 "id": e.id, 
                 "event_type": e.event_type, 
-                "payload": e.payload, 
+                "data": e.data, 
                 "created_at": e.created_at,
                 "source": e.source,
                 "correlation_id": e.correlation_id
