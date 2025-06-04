@@ -735,7 +735,7 @@ class IngestionService(IIngestionService):
 
             publish_event(
                 event_type="MESSAGE_STORED",
-                payload=event_payload,
+                data=event_payload,
                 channel=EventChannels.DISCORD_MESSAGE
             )
 
@@ -760,7 +760,7 @@ class IngestionService(IIngestionService):
 
             # Send PostgreSQL NOTIFY
             db.session.execute(
-                f"NOTIFY message_stored, '{payload}'"
+                db.text(f"NOTIFY message_stored, '{payload}'")
             )
             db.session.commit()
 
@@ -902,7 +902,7 @@ async def ingest_messages(limit: int = 50) -> int:
             # Emit MESSAGE_STORED event
             publish_event(
                 event_type=EventTypes.INFO,
-                payload={
+                data={
                     'message_id': msg_model.message_id,
                     'channel_id': msg_model.channel_id,
                     'content': msg_model.content,
