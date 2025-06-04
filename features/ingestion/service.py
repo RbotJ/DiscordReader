@@ -788,14 +788,10 @@ class IngestionService(IIngestionService):
                 {'today': today}
             ).scalar() or 0
             
-            # Count recent processing activity (last hour)
-            recent_activity = db.session.execute(
-                db.text("SELECT COUNT(*) FROM discord_messages WHERE created_at >= :hour_ago"),
-                {'hour_ago': hour_ago}
+            # Count total messages stored in database
+            total_messages = db.session.execute(
+                db.text("SELECT COUNT(*) FROM discord_messages")
             ).scalar() or 0
-            
-            # Calculate processing rate
-            processing_rate = recent_activity
             
             # Get last processed message timestamp
             last_message_result = db.session.execute(
@@ -806,7 +802,7 @@ class IngestionService(IIngestionService):
             
             return {
                 'messages_processed_today': messages_today,
-                'processing_rate_per_minute': processing_rate,
+                'total_messages_stored': total_messages,
                 'validation_success_rate': 100.0,  # Could calculate from error logs
                 'validation_failures_today': 0,
                 'last_processed_message': last_processed,
@@ -819,7 +815,7 @@ class IngestionService(IIngestionService):
             logger.error(f"Error getting ingestion metrics: {e}")
             return {
                 'messages_processed_today': 0,
-                'processing_rate_per_minute': 0,
+                'total_messages_stored': 0,
                 'validation_success_rate': 0,
                 'validation_failures_today': 0,
                 'last_processed_message': None,
