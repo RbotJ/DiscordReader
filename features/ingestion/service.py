@@ -293,7 +293,7 @@ class IngestionService(IIngestionService):
             # Publish event for downstream processing
             publish_event(
                 event_type="discord.message.stored",
-                payload={
+                data={
                     "message_id": raw.message_id,
                     "channel_id": raw.channel_id,
                     "content_preview": raw.content[:100] + "..." if len(raw.content) > 100 else raw.content
@@ -370,7 +370,7 @@ class IngestionService(IIngestionService):
         try:
             publish_event(
                 event_type="ingestion.batch.completed",
-                payload={
+                data={
                     'channel_id': channel_id,
                     'statistics': batch_result,
                     'timestamp': datetime.utcnow().isoformat()
@@ -405,7 +405,7 @@ class IngestionService(IIngestionService):
             if success:
                 publish_event(
                     event_type="ingestion.message.stored",
-                    payload={
+                    data={
                         'message_id': str(message.id),
                         'channel_id': str(message.channel.id),
                         'author': str(message.author),
@@ -679,7 +679,7 @@ class IngestionService(IIngestionService):
 
                 publish_event(
                     event_type="MESSAGE_STORED",
-                    payload=event_payload,
+                    data=event_payload,
                     channel=EventChannels.DISCORD_MESSAGE
                 )
 
@@ -735,7 +735,7 @@ class IngestionService(IIngestionService):
 
             publish_event(
                 event_type="MESSAGE_STORED",
-                payload=event_payload,
+                data=event_payload,
                 channel=EventChannels.DISCORD_MESSAGE
             )
 
@@ -901,7 +901,7 @@ async def ingest_messages(limit: int = 50) -> int:
             # Emit MESSAGE_STORED event
             publish_event(
                 event_type=EventTypes.INFO,
-                payload={
+                data={
                     'message_id': msg_model.message_id,
                     'channel_id': msg_model.channel_id,
                     'content': msg_model.content,
