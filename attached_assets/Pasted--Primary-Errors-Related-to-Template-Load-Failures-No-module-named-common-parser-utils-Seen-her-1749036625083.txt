@@ -1,0 +1,97 @@
+🔥 Primary Errors Related to Template Load Failures
+❌ No module named 'common.parser_utils'
+Seen here:
+
+vbnet
+Copy
+Edit
+ERROR - Error registering feature routes: No module named 'common.parser_utils'
+Impact: Any route that tries to import common.parser_utils will fail. That means Flask cannot register all routes, so templates relying on those routes won't render.
+
+❌ No module named 'features.discord_bot.client_manager'
+Seen here:
+
+vbnet
+Copy
+Edit
+ERROR - Error during bot startup ingestion setup: No module named 'features.discord_bot.client_manager'
+Impact: This breaks the Discord bot ingestion setup, but is not directly blocking your frontend templates unless you rely on real-time data from Discord in your web UI.
+
+✅ Fix Plan for Template Errors
+✅ Step 1: Fix Missing common.parser_utils Import
+Check any file that does this:
+
+python
+Copy
+Edit
+from common import parser_utils
+Or:
+
+python
+Copy
+Edit
+from common.parser_utils import ...
+Likely issue: That file no longer exists after a refactor.
+
+Fix Options:
+
+🔍 Search your repo for parser_utils.py — is it in features/parsing/ now?
+
+✅ Update imports to:
+
+python
+Copy
+Edit
+from features.parsing import parser_utils
+🧹 Or if deprecated, delete the import line and refactor whatever depended on it.
+
+✅ Step 2: Confirm Templates Are Linked to Working Routes
+For any route like this:
+
+python
+Copy
+Edit
+@blueprint.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html", recent_messages=fetch_recent_messages())
+Make sure:
+
+The blueprint was registered
+
+The view doesn’t crash from bad imports
+
+The recent_messages variable is not missing or None
+
+✅ Step 3: Check Gunicorn Logs for Template Tracebacks
+Right now, your logs don’t show template-specific errors like:
+
+bash
+Copy
+Edit
+jinja2.exceptions.UndefinedError: ...
+If the template fails silently, try:
+
+Accessing the route directly in the browser
+
+Turning on debug logs for Flask
+
+bash
+Copy
+Edit
+export FLASK_DEBUG=1
+✅ Step 4: Optional Debug Helper
+Temporarily wrap your route to confirm what’s passed to the template:
+
+python
+Copy
+Edit
+@app.route("/test")
+def test():
+    data = {"recent_messages": ["Test Message"]}
+    print("[DEBUG] Template context:", data)
+    return render_template("dashboard.html", **data)
+✅ Summary
+Issue	Fix
+No module named 'common.parser_utils'	Update or remove the import
+No module named 'features.discord_bot.client_manager'	Same — stub out or delete usage
+Templates not rendering	Check that the route is loading, returning context, and not failing silently
