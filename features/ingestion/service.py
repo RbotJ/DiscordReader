@@ -824,6 +824,47 @@ class IngestionService(IIngestionService):
                 'status': 'error'
             }
 
+    def get_recent_messages(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get recent stored messages for dashboard review.
+        
+        Args:
+            limit: Maximum number of messages to retrieve
+            
+        Returns:
+            List of message dictionaries with essential fields
+        """
+        try:
+            from common.db import db
+            
+            # Query recent messages ordered by creation time
+            result = db.session.execute(
+                db.text("""
+                    SELECT message_id, channel_id, author, content, timestamp, created_at
+                    FROM discord_messages 
+                    ORDER BY created_at DESC 
+                    LIMIT :limit
+                """),
+                {'limit': limit}
+            ).fetchall()
+            
+            messages = []
+            for row in result:
+                messages.append({
+                    'message_id': row.message_id,
+                    'channel_id': row.channel_id,
+                    'author': row.author,
+                    'content': row.content[:200] + '...' if len(row.content) > 200 else row.content,
+                    'timestamp': row.timestamp.isoformat() if row.timestamp else None,
+                    'created_at': row.created_at.isoformat() if row.created_at else None
+                })
+            
+            return messages
+            
+        except Exception as e:
+            logger.error(f"Error retrieving recent messages: {e}")
+            return []
+
 
 async def ingest_messages(limit: int = 50) -> int:
     """

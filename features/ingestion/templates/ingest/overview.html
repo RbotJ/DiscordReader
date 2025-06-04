@@ -36,13 +36,13 @@
         </div>
     </div>
     
-    <!-- Processing Rate -->
+    <!-- Total Messages Stored -->
     <div class="col-md-3 mb-4">
         <div class="card metric-card">
             <div class="card-body text-center">
-                <i data-feather="activity" class="text-success mb-2" style="width: 32px; height: 32px;"></i>
-                <h3 class="mb-1">{{ metrics['processing_rate_per_minute'] }}</h3>
-                <p class="text-muted mb-0">Per Minute</p>
+                <i data-feather="database" class="text-success mb-2" style="width: 32px; height: 32px;"></i>
+                <h3 class="mb-1">{{ metrics['total_messages_stored'] }}</h3>
+                <p class="text-muted mb-0">Total Messages Stored</p>
             </div>
         </div>
     </div>
@@ -87,8 +87,8 @@
                     </div>
                     <div class="col-6">
                         <div class="text-center">
-                            <h4 class="text-primary">{{ metrics['processing_rate_per_minute'] }}</h4>
-                            <small class="text-muted">Messages/Min</small>
+                            <h4 class="text-primary">{{ metrics['total_messages_stored'] }}</h4>
+                            <small class="text-muted">Total Stored</small>
                         </div>
                     </div>
                 </div>
@@ -127,7 +127,128 @@
     </div>
 </div>
 
+<!-- Stored Messages Review Section -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Stored Messages Review</h6>
+                <div>
+                    <select id="messageSelect" class="form-select form-select-sm" style="min-width: 200px;">
+                        <option value="">Select a message to view details</option>
+                        {% for message in recent_messages %}
+                        <option value="{{ message.message_id }}" data-content="{{ message.content|e }}" data-author="{{ message.author|e }}" data-timestamp="{{ message.timestamp }}">
+                            {{ message.author }} - {{ message.timestamp[:19] if message.timestamp else 'No timestamp' }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if recent_messages %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Message ID</th>
+                                <th>Author</th>
+                                <th>Content Preview</th>
+                                <th>Timestamp</th>
+                                <th>Stored At</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for message in recent_messages[:10] %}
+                            <tr class="message-row" data-message-id="{{ message.message_id }}">
+                                <td>
+                                    <small class="text-monospace">{{ message.message_id }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ message.author }}</span>
+                                </td>
+                                <td>
+                                    <div class="text-truncate" style="max-width: 300px;">
+                                        {{ message.content }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <small>{{ message.timestamp[:19] if message.timestamp else 'N/A' }}</small>
+                                </td>
+                                <td>
+                                    <small>{{ message.created_at[:19] if message.created_at else 'N/A' }}</small>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Message Detail View -->
+                <div id="messageDetail" class="mt-4" style="display: none;">
+                    <h6>Message Details</h6>
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>Author:</strong> <span id="detailAuthor"></span><br>
+                                    <strong>Timestamp:</strong> <span id="detailTimestamp"></span><br>
+                                    <strong>Message ID:</strong> <span id="detailMessageId" class="text-monospace"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Channel ID:</strong> <span id="detailChannelId" class="text-monospace"></span>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <strong>Full Content:</strong>
+                                <div id="detailContent" class="mt-2 p-3 bg-white border rounded" style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i data-feather="inbox" class="mb-2" style="width: 48px; height: 48px;"></i>
+                    <p>No stored messages found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// Message selection functionality
+document.getElementById('messageSelect').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const messageDetail = document.getElementById('messageDetail');
+    
+    if (selectedOption.value) {
+        // Show message details
+        document.getElementById('detailAuthor').textContent = selectedOption.dataset.author;
+        document.getElementById('detailTimestamp').textContent = selectedOption.dataset.timestamp || 'N/A';
+        document.getElementById('detailMessageId').textContent = selectedOption.value;
+        document.getElementById('detailContent').textContent = selectedOption.dataset.content;
+        
+        // Find channel ID from table row
+        const messageRow = document.querySelector(`tr[data-message-id="${selectedOption.value}"]`);
+        if (messageRow) {
+            // You can extend this to show channel ID if needed
+            document.getElementById('detailChannelId').textContent = 'Available in database';
+        }
+        
+        messageDetail.style.display = 'block';
+        
+        // Highlight selected row
+        document.querySelectorAll('.message-row').forEach(row => row.classList.remove('table-warning'));
+        if (messageRow) {
+            messageRow.classList.add('table-warning');
+        }
+    } else {
+        messageDetail.style.display = 'none';
+        document.querySelectorAll('.message-row').forEach(row => row.classList.remove('table-warning'));
+    }
+});
+
 // Auto-refresh every 30 seconds
 setTimeout(() => {
     window.location.reload();

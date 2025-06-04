@@ -33,8 +33,10 @@ def overview():
         service = get_ingestion_service()
         if service:
             metrics = service.get_metrics()
+            recent_messages = service.get_recent_messages(limit=20)
             return render_template('ingest/overview.html',
                                  metrics=metrics,
+                                 recent_messages=recent_messages,
                                  current_time=datetime.utcnow())
         else:
             return render_template('ingest/error.html', 
