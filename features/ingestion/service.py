@@ -840,7 +840,7 @@ class IngestionService(IIngestionService):
             # Query recent messages ordered by creation time
             result = db.session.execute(
                 db.text("""
-                    SELECT message_id, channel_id, author, content, timestamp, created_at
+                    SELECT message_id, channel_id, author_id, content, created_at
                     FROM discord_messages 
                     ORDER BY created_at DESC 
                     LIMIT :limit
@@ -853,9 +853,9 @@ class IngestionService(IIngestionService):
                 messages.append({
                     'message_id': row.message_id,
                     'channel_id': row.channel_id,
-                    'author': row.author,
+                    'author': row.author_id,  # Using author_id as author display
                     'content': row.content[:200] + '...' if len(row.content) > 200 else row.content,
-                    'timestamp': row.timestamp.isoformat() if row.timestamp else None,
+                    'timestamp': row.created_at.isoformat() if row.created_at else None,
                     'created_at': row.created_at.isoformat() if row.created_at else None
                 })
             
