@@ -32,9 +32,13 @@ def register_all_blueprints(app):
     blueprints_to_register = []
     
     try:
-        # Market features
-        from features.market.api_routes import bp as market_bp
-        blueprints_to_register.append(('market', market_bp))
+        # Market features - check both api.py and api_routes.py
+        try:
+            from features.market.api_routes import bp as market_bp
+            blueprints_to_register.append(('market', market_bp))
+        except ImportError:
+            from features.market.api import bp as market_bp
+            blueprints_to_register.append(('market', market_bp))
         
         # Execution features  
         from features.execution.api_routes import bp as execution_bp
@@ -49,11 +53,11 @@ def register_all_blueprints(app):
         blueprints_to_register.append(('account', account_bp))
         
         # Alpaca features
-        from features.alpaca.api import bp as alpaca_bp
+        from features.alpaca.api import alpaca_bp as alpaca_bp
         blueprints_to_register.append(('alpaca', alpaca_bp))
         
         # Parsing features
-        from features.parsing.api import bp as parsing_bp
+        from features.parsing.api import parsing_bp as parsing_bp
         blueprints_to_register.append(('parsing', parsing_bp))
         
         # Register all blueprints
