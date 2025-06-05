@@ -28,10 +28,8 @@ class DiscordMessageModel(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
     message_id = Column(String(64), unique=True, nullable=False, index=True)
     channel_id = Column(String(64), nullable=False, index=True)
-    author = Column(String(255), nullable=False)
     author_id = Column(String(64), nullable=True)
     content = Column(Text, nullable=False)
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     
     # Message metadata
     is_forwarded = Column(Boolean, default=False)
@@ -50,7 +48,7 @@ class DiscordMessageModel(db.Model):
     
     def __repr__(self) -> str:
         """String representation of the message model."""
-        return f"<DiscordMessage {self.message_id} from {self.author}>"
+        return f"<DiscordMessage {self.message_id} from {self.author_id}>"
     
     @classmethod
     def from_dict(cls, message_data: Dict[str, Any]) -> 'DiscordMessageModel':
