@@ -171,7 +171,7 @@ def store_option_chain(chain: List[Dict[str, Any]]) -> int:
 
     stored_count = 0
     try:
-        with app.app_context():
+        with current_app.app_context():
             for contract in chain:
                 existing = db.session.query(OptionsContractModel).filter_by(
                     symbol=contract["symbol"]
@@ -214,7 +214,7 @@ def store_option_chain(chain: List[Dict[str, Any]]) -> int:
 def select_options_for_signal(signal_id: int) -> List[Dict[str, Any]]:
     """Select appropriate options contracts for a trading signal."""
     try:
-        with app.app_context():
+        with current_app.app_context():
             signal = db.session.query(SignalModel).filter_by(id=signal_id).first()
             if not signal:
                 logger.warning(f"Signal {signal_id} not found")
