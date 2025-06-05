@@ -6,7 +6,7 @@ The DiscordChannel model is maintained in features.discord_channels.models.
 """
 
 # Import from canonical location to avoid model duplication
-from features.discord_channels.models import DiscordChannel
+from common.models import DiscordMessageDTO
 
 # Re-export for backward compatibility
 __all__ = ['DiscordChannel']

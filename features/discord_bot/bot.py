@@ -16,9 +16,8 @@ from .config.settings import (
     get_discord_token, 
     get_channel_name
 )
-from features.ingestion.service import IngestionService
 from features.discord_bot.services.correlation_service import DiscordCorrelationService
-from features.discord_channels.channel_manager import ChannelManager
+from common.events.bus import publish_cross_slice_event
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,8 @@ class TradingDiscordBot(discord.Client):
         self.aplus_setups_channel_id: Optional[int] = None
         
         # Constructor injection for better testability
-        self.ingestion_service = ingestion_service or IngestionService()
-        self.channel_manager = channel_manager or ChannelManager()
+        self.ingestion_service = ingestion_service
+        self.channel_manager = channel_manager
         self.client_manager = None
         
         # Live metrics counters (in-memory, Discord slice only)

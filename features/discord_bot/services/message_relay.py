@@ -8,7 +8,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from features.ingestion.service import IngestionService
+from common.events.bus import publish_cross_slice_event
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 class MessageRelay:
     """Service for relaying messages between Discord bot and internal systems."""
 
-    def __init__(self, ingestion_service: IngestionService):
+    def __init__(self, ingestion_service=None):
         """
         Initialize message relay.
         
         Args:
-            ingestion_service: Configured ingestion service instance
+            ingestion_service: Configured ingestion service instance (optional)
         """
         self.ingestion_service = ingestion_service
         self.relay_stats = {
