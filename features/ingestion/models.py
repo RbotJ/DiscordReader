@@ -74,8 +74,7 @@ class DiscordMessageModel(db.Model):
         return cls(
             message_id=str(message_data['id']),
             channel_id=str(message_data['channel_id']),
-            author=str(message_data['author']),
-            author_id=str(message_data.get('author_id', '')),
+            author_id=str(message_data.get('author_id', message_data.get('author', ''))),
             content=str(message_data['content']),
             timestamp=timestamp,
             is_forwarded=message_data.get('is_forwarded', False),
