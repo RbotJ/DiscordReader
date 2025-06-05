@@ -91,12 +91,13 @@ class TradingDiscordBot(discord.Client):
         # Initialize ingestion service with proper client manager wiring
         try:
             # Create a simple client manager that wraps this bot instance
-            from features.discord_bot.client_manager import DiscordClientManager
             if not self.client_manager:
                 logger.info("Creating client manager wrapper for ingestion service")
                 self.client_manager = DiscordClientManager()
                 self.client_manager.client = self
                 self.client_manager._is_connected = True
+                # Set channel_id from bot's configured channel
+                self.client_manager.channel_id = str(self.aplus_setups_channel_id) if self.aplus_setups_channel_id else None
             
             # Initialize ingestion service with client manager
             self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
@@ -185,7 +186,7 @@ class TradingDiscordBot(discord.Client):
             
             # Use ingestion service for startup catchup
             result = await self.ingestion_service.ingest_channel_history(
-                channel_id=self.aplus_setups_channel_id,
+                channel_id=str(self.aplus_setups_channel_id),
                 limit=50,
                 source="startup_catchup"
             )
@@ -253,14 +254,16 @@ class DiscordClientManager:
     Manages the Discord bot lifecycle and provides access to ingestion services.
     """
     
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, channel_id: Optional[str] = None):
         """
         Initialize Discord client manager.
         
         Args:
             token: Discord bot token. If None, will get from standardized environment variable.
+            channel_id: Target Discord channel ID for operations.
         """
         self.token = token or get_discord_token()
+        self.channel_id = channel_id
         self.client: Optional[TradingDiscordBot] = None
         self._is_connected = False
         self._connection_task = None
@@ -370,6 +373,34 @@ class DiscordClientManager:
             Optional[str]: Channel ID or None if not configured
         """
         return self.channel_id
+    
+    def get_channel(self, channel_id: int):
+        """
+        Get a Discord channel by ID through the bot client.
+        
+        Args:
+            channel_id: Discord channel ID
+            
+        Returns:
+            Discord channel object or None if not found
+        """
+        if not self.client:
+            return None
+        return self.client.get_channel(channel_id)
+    
+    async def fetch_channel(self, channel_id: int):
+        """
+        Fetch a Discord channel by ID through the bot client.
+        
+        Args:
+            channel_id: Discord channel ID
+            
+        Returns:
+            Discord channel object or None if not found
+        """
+        if not self.client:
+            return None
+        return await self.client.fetch_channel(channel_id)
 
 
 def get_discord_client() -> DiscordClientManager:
