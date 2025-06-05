@@ -13,7 +13,8 @@ from datetime import datetime, timedelta
 import time
 import threading
 
-from app import app, db
+from flask import current_app
+from common.db import db
 from common.db_models import (
     PositionModel, OrderModel, SignalModel, NotificationModel,
     OptionsContractModel, MarketDataModel, TickerSetupModel, BiasModel

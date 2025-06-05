@@ -12,7 +12,8 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, date, timedelta
 import math
 
-from app import app, db
+from flask import current_app
+from common.db import db
 from common.db_models import OptionsContractModel
 from common.utils import calculate_risk_reward
 from features.management.position_manager import calculate_position_size

@@ -13,7 +13,8 @@ from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timedelta, date
 import math
 
-from app import app, db
+from flask import current_app
+from common.db import db
 from common.db_models import OptionsContractModel
 from common.events import publish_event, get_events
 from common.events.constants import EventTypes

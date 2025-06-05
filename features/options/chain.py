@@ -12,7 +12,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, date
 import math
 
-from app import app, db
+from flask import current_app
+from common.db import db
 from common.db_models import OptionsContractModel, SignalModel
 from features.market.client import initialize_clients
 from common.events import cache_data, get_from_cache, publish_event
@@ -70,8 +71,8 @@ def initialize_options_clients() -> bool:
     """Initialize Alpaca clients for options data."""
     global trading_client, data_client, options_client
 
-    api_key = os.environ.get("ALPACA_API_KEY", app.config.get("ALPACA_API_KEY", ""))
-    api_secret = os.environ.get("ALPACA_API_SECRET", app.config.get("ALPACA_API_SECRET", ""))
+    api_key = os.environ.get("ALPACA_API_KEY", current_app.config.get("ALPACA_API_KEY", ""))
+    api_secret = os.environ.get("ALPACA_API_SECRET", current_app.config.get("ALPACA_API_SECRET", ""))
 
     if not api_key or not api_secret:
         logger.error("Alpaca API credentials not set")
