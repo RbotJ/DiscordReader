@@ -131,7 +131,7 @@ def start_discord_bot_background(app):
                 try:
                     from features.ingestion.service import IngestionService
                     from features.discord_channels.channel_manager import ChannelManager
-                    from common.db import publish_event
+                    from common.events.publisher import publish_event
                     from common.db import db
 
                     # Ingestion slice

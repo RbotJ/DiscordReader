@@ -91,7 +91,7 @@ class TradingDiscordBot(discord.Client):
         # Initialize ingestion service with proper client manager wiring
         try:
             # Create a simple client manager that wraps this bot instance
-            # DiscordClientManager is defined in this same file
+            from features.discord_bot.client_manager import DiscordClientManager
             if not self.client_manager:
                 logger.info("Creating client manager wrapper for ingestion service")
                 self.client_manager = DiscordClientManager()

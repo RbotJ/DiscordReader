@@ -293,7 +293,7 @@ class IngestionService(IIngestionService):
             # Publish event for downstream processing
             publish_event(
                 event_type="discord.message.stored",
-                data={
+                payload={
                     "message_id": raw.message_id,
                     "channel_id": raw.channel_id,
                     "content_preview": raw.content[:100] + "..." if len(raw.content) > 100 else raw.content
@@ -370,7 +370,7 @@ class IngestionService(IIngestionService):
         try:
             publish_event(
                 event_type="ingestion.batch.completed",
-                data={
+                payload={
                     'channel_id': channel_id,
                     'statistics': batch_result,
                     'timestamp': datetime.utcnow().isoformat()
@@ -405,7 +405,7 @@ class IngestionService(IIngestionService):
             if success:
                 publish_event(
                     event_type="ingestion.message.stored",
-                    data={
+                    payload={
                         'message_id': str(message.id),
                         'channel_id': str(message.channel.id),
                         'author': str(message.author),
@@ -679,7 +679,7 @@ class IngestionService(IIngestionService):
 
                 publish_event(
                     event_type="MESSAGE_STORED",
-                    data=event_payload,
+                    payload=event_payload,
                     channel=EventChannels.DISCORD_MESSAGE
                 )
 
@@ -735,7 +735,7 @@ class IngestionService(IIngestionService):
 
             publish_event(
                 event_type="MESSAGE_STORED",
-                data=event_payload,
+                payload=event_payload,
                 channel=EventChannels.DISCORD_MESSAGE
             )
 
@@ -840,7 +840,7 @@ class IngestionService(IIngestionService):
             # Query recent messages ordered by creation time
             result = db.session.execute(
                 db.text("""
-                    SELECT message_id, channel_id, author_id, content, created_at
+                    SELECT message_id, channel_id, author, content, timestamp, created_at
                     FROM discord_messages 
                     ORDER BY created_at DESC 
                     LIMIT :limit
@@ -853,8 +853,9 @@ class IngestionService(IIngestionService):
                 messages.append({
                     'message_id': row.message_id,
                     'channel_id': row.channel_id,
-                    'author_id': row.author_id,
+                    'author': row.author,
                     'content': row.content[:200] + '...' if len(row.content) > 200 else row.content,
+                    'timestamp': row.timestamp.isoformat() if row.timestamp else None,
                     'created_at': row.created_at.isoformat() if row.created_at else None
                 })
             
@@ -901,7 +902,7 @@ async def ingest_messages(limit: int = 50) -> int:
             # Emit MESSAGE_STORED event
             publish_event(
                 event_type=EventTypes.INFO,
-                data={
+                payload={
                     'message_id': msg_model.message_id,
                     'channel_id': msg_model.channel_id,
                     'content': msg_model.content,

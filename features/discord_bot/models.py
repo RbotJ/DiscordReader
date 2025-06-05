@@ -22,7 +22,7 @@ class DiscordChannel(db.Model):
     is_listen = Column(Boolean, default=False)
     is_announce = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    last_seen = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_seen = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):
