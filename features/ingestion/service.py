@@ -289,6 +289,21 @@ class IngestionService:
     def is_message_processed(self, message_id: str) -> bool:
         """Check if a message has been processed."""
         return message_id in self._processed_messages
+        
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get ingestion service metrics for monitoring.
+        
+        Returns:
+            Dict containing ingestion metrics
+        """
+        return {
+            'messages_ingested': self.messages_ingested,
+            'ingestion_errors': self.ingestion_errors,
+            'last_ingestion': self.last_ingestion_time.isoformat() if self.last_ingestion_time else None,
+            'service_status': 'active' if hasattr(self, 'storage') else 'inactive',
+            'service_type': 'ingestion'
+        }
 
 
 # Global service instance

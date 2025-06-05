@@ -333,5 +333,5 @@ def get_discord_bot_service() -> BotService:
     """Get the Discord bot service instance."""
     global _discord_bot_service
     if _discord_bot_service is None:
-        _discord_bot_service = DiscordBotService()
+        _discord_bot_service = BotService()
     return _discord_bot_service
