@@ -8,8 +8,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from datetime import datetime, timedelta
 
-from features.market.history import get_history_provider
-from features.market.feed import get_market_feed
+from features.market.service import get_market_service
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -26,31 +25,22 @@ def get_market_status():
         JSON with market open status and next open/close times
     """
     try:
-        # Since our current implementation doesn't have direct market status access,
-        # we'll get this information from Alpaca client or a fallback
-        from features.alpaca.client import get_account_info
+        market_service = get_market_service()
+        status = market_service.get_market_status()
         
-        # In a full implementation, we would get this from Alpaca's Clock API
-        # For now, we'll return a basic response
-        now = datetime.now()
-        market_open = now.hour >= 9 and now.hour < 16 and now.weekday() < 5
+        if not status:
+            return jsonify({
+                'status': 'error',
+                'message': 'Could not retrieve market status'
+            }), 500
         
-        # Calculate next open/close times
-        if market_open:
-            next_close = datetime(now.year, now.month, now.day, 16, 0)
-        else:
-            # If after 4pm, next open is tomorrow
-            if now.hour >= 16:
-                next_day = now + timedelta(days=1)
-            else:
-                next_day = now
-                
-            # If weekend, adjust to Monday
-            if next_day.weekday() >= 5:
-                days_to_add = 7 - next_day.weekday()
-                next_day = next_day + timedelta(days=days_to_add)
-                
-            next_open = datetime(next_day.year, next_day.month, next_day.day, 9, 30)
+        return jsonify({
+            'status': 'success',
+            'market_open': status.is_open,
+            'session': status.session,
+            'next_open': status.next_open.isoformat() if status.next_open else None,
+            'next_close': status.next_close.isoformat() if status.next_close else None
+        })
             
         return jsonify({
             'status': 'success',
@@ -86,11 +76,9 @@ def get_candles(symbol):
         start = request.args.get('start')
         end = request.args.get('end')
         
-        # Get historical data service
-        history_provider = get_history_provider()
-        
-        # Get candle data
-        candles = history_provider.get_candles(symbol, timeframe, start, end, limit)
+        # Get market service and candle data
+        market_service = get_market_service()
+        candles = market_service.get_candles(symbol, timeframe, start, end, limit)
         
         if not candles:
             return jsonify({
@@ -98,11 +86,23 @@ def get_candles(symbol):
                 'message': f'No candle data available for {symbol}'
             }), 404
             
+        # Convert CandleData objects to dictionaries
+        candles_dict = []
+        for candle in candles:
+            candles_dict.append({
+                'timestamp': candle.timestamp.isoformat(),
+                'open': candle.open,
+                'high': candle.high,
+                'low': candle.low,
+                'close': candle.close,
+                'volume': candle.volume
+            })
+            
         return jsonify({
             'status': 'success',
             'symbol': symbol.upper(),
             'timeframe': timeframe,
-            'candles': candles
+            'candles': candles_dict
         })
     except Exception as e:
         logger.error(f"Error getting candles for {symbol}: {e}")
@@ -140,7 +140,13 @@ def get_quote(symbol):
         return jsonify({
             'status': 'success',
             'symbol': symbol.upper(),
-            'quote': quote
+            'quote': {
+                'bid': quote.bid,
+                'ask': quote.ask,
+                'last': quote.last,
+                'volume': quote.volume,
+                'timestamp': quote.timestamp.isoformat()
+            }
         })
     except Exception as e:
         logger.error(f"Error getting quote for {symbol}: {e}")
