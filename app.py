@@ -156,9 +156,8 @@ def start_discord_bot_background(app):
                     # Discord slice
                     from features.discord_bot.bot import TradingDiscordBot
                     bot = TradingDiscordBot(
-                        token=token,
                         ingestion_service=ingestion_svc,
-                        channel_service=channel_svc
+                        channel_manager=channel_svc
                     )
                     
                     # Store bot instance in app config for API access

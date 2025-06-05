@@ -45,6 +45,7 @@ class BotService:
         self._bot_instance = None
         self._monitored_channels = set()
         self._startup_complete = False
+        self._start_time = datetime.utcnow()
         
     def set_bot_instance(self, bot):
         """Set the Discord bot instance."""
@@ -160,12 +161,15 @@ class BotService:
         Returns:
             Dict containing bot metrics
         """
+        uptime_seconds = int((datetime.utcnow() - self._start_time).total_seconds())
+        
         return {
             'bot_connected': self._bot_instance is not None and getattr(self._bot_instance, 'is_ready', lambda: False)(),
             'monitored_channels': len(self._monitored_channels),
             'startup_complete': self._startup_complete,
             'guild_count': len(self._bot_instance.guilds) if self._bot_instance else 0,
             'latency': getattr(self._bot_instance, 'latency', 0.0),
+            'uptime_seconds': uptime_seconds,
             'service_type': 'discord_bot'
         }
         
