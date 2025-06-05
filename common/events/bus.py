@@ -14,6 +14,7 @@ import json
 import uuid
 
 from common.events.publisher import publish_event
+from common.schema_validator import validate_event_data, SchemaViolationError
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ class EventBus:
         event = EventMessage(
             event_id=event_id,
             event_type=event_type,
-            data=data,
+            data=validated_data,
             source=source,
             channel=channel,
             timestamp=datetime.now(),
@@ -122,7 +123,7 @@ class EventBus:
             self._correlation_map[correlation_id].append(event_id)
             
         # Also publish to persistent event store
-        publish_event(event_type, data, channel, source, correlation_id or "")
+        publish_event(event_type, validated_data, channel, source, correlation_id or "")
         
         return event_id
         

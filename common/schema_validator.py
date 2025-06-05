@@ -152,9 +152,17 @@ class SystemEventData(BaseEventData):
     """Schema for system events."""
     event_category: str
     message: str
-    severity: str = Field(regex=r'^(info|warning|error|critical)$')
+    severity: str
     component: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None
+    
+    @validator('severity')
+    def validate_severity(cls, v):
+        """Validate severity level."""
+        valid_levels = ['info', 'warning', 'error', 'critical']
+        if v.lower() not in valid_levels:
+            raise ValueError(f"Severity must be one of {valid_levels}")
+        return v.lower()
 
 
 class IngestionEventData(BaseEventData):
@@ -163,7 +171,15 @@ class IngestionEventData(BaseEventData):
     messages_processed: int = Field(ge=0)
     errors_count: int = Field(ge=0)
     duration_ms: Optional[int] = None
-    status: str = Field(regex=r'^(started|completed|failed)$')
+    status: str
+    
+    @validator('status')
+    def validate_status(cls, v):
+        """Validate status."""
+        valid_statuses = ['started', 'completed', 'failed']
+        if v.lower() not in valid_statuses:
+            raise ValueError(f"Status must be one of {valid_statuses}")
+        return v.lower()
 
 
 class EventValidator:
