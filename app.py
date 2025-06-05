@@ -68,20 +68,9 @@ def register_feature_routes(app):
         logging.error(f"Error registering feature routes: {e}")
         # Fallback to individual registration if needed
         logging.warning("Falling back to individual route registration")
-    try:
-        from features.dashboard import dashboard_bp
-        app.register_blueprint(dashboard_bp)
-        logging.info("Dashboard routes registered successfully")
-    except ImportError as e:
-        logging.warning(f"Could not register dashboard routes: {e}")
+    # Dashboard routes handled by route registry above
     
-    # Register enhanced dashboard API routes
-    try:
-        from features.dashboard.api_routes import dashboard_api
-        app.register_blueprint(dashboard_api)
-        logging.info("Enhanced dashboard API routes registered successfully")
-    except ImportError as e:
-        logging.warning(f"Could not register enhanced dashboard API routes: {e}")
+    # Register enhanced dashboard API routes (removed duplicate registration)
     
     # Register Discord API routes directly
     try:

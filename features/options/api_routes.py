@@ -12,13 +12,17 @@ from features.options.pricing import get_options_pricing
 from features.options.selector import get_options_selector
 from common.events import publish_event, EventChannels
 from common.db import db
-from common.db_models import OptionsContractModel
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 # Create blueprint
 bp = Blueprint('options', __name__, url_prefix='/api/options')
+
+def register_routes(app):
+    """Register options routes with the Flask app"""
+    app.register_blueprint(bp)
+    logger.info("Options API routes registered")
 
 @bp.route('/chain/<symbol>', methods=['GET'])
 def get_option_chain(symbol):

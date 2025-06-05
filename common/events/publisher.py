@@ -42,7 +42,7 @@ def publish_event(
         
         # Import here to avoid circular imports
         from sqlalchemy import text
-        from common.db.session import db
+        from common.db import db
         
         # Generate correlation ID if not provided
         if not correlation_id:
@@ -68,7 +68,7 @@ def publish_event(
         db.session.execute(query, {
             'event_type': event_data['event_type'],
             'channel': event_data['channel'],
-            'data': str(data) if not isinstance(data, str) else data,
+            'data': data,  # Keep as dict for JSONB column
             'source': event_data['source'],
             'correlation_id': event_data['correlation_id'],
             'created_at': event_data['created_at']

@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 bp = Blueprint('execution', __name__, url_prefix='/api/execution')
 
+def register_routes(app):
+    """Register execution routes with the Flask app"""
+    app.register_blueprint(bp)
+    logger.info("Execution API routes registered")
+
 @bp.route('/market-order', methods=['POST'])
 def execute_market_order():
     """

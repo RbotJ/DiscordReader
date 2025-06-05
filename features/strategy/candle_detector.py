@@ -97,9 +97,9 @@ def _candle_detector_thread() -> None:
                         # Update the last event ID
                         _last_event_id = max(_last_event_id, event.get('id', 0))
 
-                        # Get the payload
-                        payload = event.get('payload', {})
-                        if not payload:
+                        # Get the data
+                        data = event.get('data', {})
+                        if not data:
                             continue
 
                         # Extract candle data
