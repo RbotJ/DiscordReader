@@ -38,7 +38,7 @@ class ChannelInfo:
     is_monitored: bool
 
 
-class DiscordBotService:
+class BotService:
     """Service for Discord bot operations."""
     
     def __init__(self):
@@ -152,6 +152,22 @@ class DiscordBotService:
             logger.error(f"Error getting monitored channels: {e}")
             
         return channels
+        
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get Discord bot service metrics.
+        
+        Returns:
+            Dict containing bot metrics
+        """
+        return {
+            'bot_connected': self._bot_instance is not None and getattr(self._bot_instance, 'is_ready', lambda: False)(),
+            'monitored_channels': len(self._monitored_channels),
+            'startup_complete': self._startup_complete,
+            'guild_count': len(self._bot_instance.guilds) if self._bot_instance else 0,
+            'latency': getattr(self._bot_instance, 'latency', 0.0),
+            'service_type': 'discord_bot'
+        }
         
     async def add_monitored_channel(self, channel_id: str) -> bool:
         """
@@ -313,7 +329,7 @@ class DiscordBotService:
 _discord_bot_service = None
 
 
-def get_discord_bot_service() -> DiscordBotService:
+def get_discord_bot_service() -> BotService:
     """Get the Discord bot service instance."""
     global _discord_bot_service
     if _discord_bot_service is None:
