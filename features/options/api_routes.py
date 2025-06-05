@@ -9,7 +9,6 @@ from flask import Blueprint, jsonify, request
 from datetime import datetime
 
 from features.options.pricing import get_options_pricing
-from features.options.selector import get_options_selector
 from common.events import publish_event, EventChannels
 from common.db import db
 

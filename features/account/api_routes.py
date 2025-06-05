@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 bp = Blueprint('account', __name__, url_prefix='/api/account')
 
+def register_routes(app):
+    """Register account routes with the Flask app"""
+    app.register_blueprint(bp)
+    logger.info("Account API routes registered")
+
 @bp.route('/info', methods=['GET'])
 def get_account_info():
     """

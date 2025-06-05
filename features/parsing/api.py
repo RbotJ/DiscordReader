@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 
 from .parser import MessageParser
-from features.management.store import SetupStore
+from features.parsing.store import SetupStore
 
 logger = logging.getLogger(__name__)
 
