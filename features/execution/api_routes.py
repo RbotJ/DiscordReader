@@ -7,7 +7,7 @@ order placement, management, and status tracking.
 import logging
 from flask import Blueprint, jsonify, request
 
-from features.execution.executor import get_order_executor
+from features.execution.service import get_execution_service, OrderRequest, OrderSide, OrderType
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -65,23 +65,32 @@ def execute_market_order():
                 'message': 'Invalid side: must be "buy" or "sell"'
             }), 400
             
-        # Get order executor
-        executor = get_order_executor()
+        # Get execution service
+        execution_service = get_execution_service()
         
         # Check position risk if provided
         price = data.get('price')
         max_risk = data.get('max_risk_percent', 5.0)
         
         if price and max_risk:
-            risk_ok = executor.check_position_risk(symbol, quantity, price, max_risk)
-            if not risk_ok:
+            risk_result = execution_service.check_position_risk(symbol, quantity, price, max_risk)
+            if not risk_result.approved:
                 return jsonify({
                     'status': 'error',
-                    'message': f'Order exceeds maximum risk ({max_risk}%)'
+                    'message': risk_result.reason or f'Order exceeds maximum risk ({max_risk}%)'
                 }), 400
+        
+        # Create order request
+        order_request = OrderRequest(
+            symbol=symbol,
+            quantity=quantity,
+            side=OrderSide(side),
+            order_type=OrderType.MARKET,
+            properties=properties
+        )
                 
         # Execute order
-        order = executor.execute_market_order(symbol, quantity, side, properties)
+        order = execution_service.execute_market_order(order_request)
         
         if not order:
             return jsonify({
@@ -92,7 +101,15 @@ def execute_market_order():
         return jsonify({
             'status': 'success',
             'message': f'Market {side} order executed for {quantity} {symbol}',
-            'order': order
+            'order': {
+                'order_id': order.order_id,
+                'symbol': order.symbol,
+                'quantity': order.quantity,
+                'side': order.side.value,
+                'status': order.status.value,
+                'filled_quantity': order.filled_quantity,
+                'average_fill_price': float(order.average_fill_price) if order.average_fill_price else None
+            }
         })
     except Exception as e:
         logger.error(f"Error executing market order: {e}")
