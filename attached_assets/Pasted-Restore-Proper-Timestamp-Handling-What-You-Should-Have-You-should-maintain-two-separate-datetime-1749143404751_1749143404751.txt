@@ -1,0 +1,70 @@
+Restore Proper Timestamp Handling
+🔄 What You Should Have:
+You should maintain two separate datetime fields:
+
+timestamp → when the message was created on Discord (authoritative source)
+
+created_at → when it was saved into your database (tracking ingestion time)
+
+📦 Step 1: Restore Model Field in SQLAlchemy
+In features/ingestion/models.py, update the model to include both fields:
+
+python
+Copy
+Edit
+from sqlalchemy import Column, String, DateTime
+from datetime import datetime
+
+class DiscordMessage(Base):
+    __tablename__ = "discord_messages"
+
+    message_id = Column(String, primary_key=True)
+    channel_id = Column(String, nullable=False)
+    author_id = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+
+    # Re-add this:
+    timestamp = Column(DateTime, nullable=False)   # Discord's sent time
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)  # Ingested into DB
+🛠 Step 2: Update Your Database Schema
+If the timestamp column was dropped or never existed in your actual database, run the following SQL to re-add it:
+
+sql
+Copy
+Edit
+ALTER TABLE discord_messages ADD COLUMN timestamp TIMESTAMP NOT NULL DEFAULT NOW();
+If you need to backfill the correct Discord timestamps later, make it nullable temporarily:
+
+sql
+Copy
+Edit
+ALTER TABLE discord_messages ADD COLUMN timestamp TIMESTAMP;
+📥 Step 3: Fix Ingestion Logic
+In features/ingestion/service.py, locate where you create DiscordMessage instances and ensure you assign both:
+
+python
+Copy
+Edit
+DiscordMessage(
+    message_id=msg["id"],
+    channel_id=msg["channel_id"],
+    author_id=msg["author_id"],
+    content=msg["content"],
+    timestamp=msg["timestamp"],     # Discord message creation time
+    created_at=datetime.utcnow()    # Local ingestion time
+)
+🧪 Step 4: Add Test Coverage
+Add or re-enable tests that check for:
+
+Presence of both timestamp and created_at
+
+That timestamp matches the raw Discord API value
+
+That created_at is approximately now
+
+📚 Step 5: Document the Convention
+In your repo (e.g. common/models.py or a README):
+
+timestamp records when the message was created on Discord (UTC).
+created_at records when the message was ingested by the bot and saved to the database (UTC).
+These values should not be confused or overwritten by one another.

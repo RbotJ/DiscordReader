@@ -30,6 +30,7 @@ class DiscordMessageModel(db.Model):
     channel_id = Column(String(64), nullable=False, index=True)
     author_id = Column(String(64), nullable=True)
     content = Column(Text, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)  # Discord's sent time
     
     # Message metadata
     is_forwarded = Column(Boolean, default=False)
@@ -126,6 +127,7 @@ class DiscordMessageModel(db.Model):
             'channel_id': self.channel_id,
             'author_id': self.author_id,
             'content': self.content,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'is_forwarded': self.is_forwarded,
             'is_processed': self.is_processed,
             'has_embeds': self.has_embeds,
