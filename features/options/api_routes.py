@@ -255,7 +255,3 @@ def select_contract_for_signal(symbol):
             'message': f'Error selecting contract for {symbol}'
         }), 500
 
-def register_routes(app):
-    """Register options API routes with the Flask app."""
-    app.register_blueprint(bp)
-    logger.info("Options API routes registered")

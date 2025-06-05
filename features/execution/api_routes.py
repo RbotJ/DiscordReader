@@ -403,7 +403,3 @@ def cancel_order(order_id):
             'message': f'Error canceling order: {str(e)}'
         }), 500
 
-def register_routes(app):
-    """Register execution API routes with the Flask app."""
-    app.register_blueprint(bp)
-    logger.info("Execution API routes registered")

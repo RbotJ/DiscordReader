@@ -238,7 +238,3 @@ def get_daily_activity():
             'message': f'Error retrieving daily activity: {str(e)}'
         }), 500
 
-def register_routes(app):
-    """Register account API routes with the Flask app."""
-    app.register_blueprint(bp)
-    logger.info("Account API routes registered")

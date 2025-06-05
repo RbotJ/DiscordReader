@@ -24,53 +24,54 @@ logging.basicConfig(
 # Create Socket.IO instance
 socketio = SocketIO()
 
-def register_feature_routes(app):
-    """Register feature-specific routes using the new Route Registry"""
-    from common.route_registry import register_feature, bootstrap_routes
+def register_all_blueprints(app):
+    """
+    Centralized blueprint registration to avoid duplicates.
+    This function registers all feature blueprints in a consistent manner.
+    """
+    blueprints_to_register = []
     
-    # Register all feature modules with their route functions
     try:
-        # Import and register each feature module
-        # Setups functionality now distributed across vertical slices:
-        # - Parsing: features.parsing.api
-        # - Management: features.management.api 
-        # - Dashboard: features.dashboard.api
-        import features.parsing.api as parsing_api
-        register_feature('parsing', parsing_api)
+        # Market features
+        from features.market.api_routes import bp as market_bp
+        blueprints_to_register.append(('market', market_bp))
         
-        import features.market.api as market_api  
-        register_feature('market', market_api)
+        # Execution features  
+        from features.execution.api_routes import bp as execution_bp
+        blueprints_to_register.append(('execution', execution_bp))
         
-        import features.execution.api_routes as execution_api
-        register_feature('execution', execution_api)
+        # Options features
+        from features.options.api_routes import bp as options_bp
+        blueprints_to_register.append(('options', options_bp))
         
-        import features.options.api_routes as options_api
-        register_feature('options', options_api)
+        # Account features
+        from features.account.api_routes import bp as account_bp
+        blueprints_to_register.append(('account', account_bp))
         
-        import features.alpaca.api as alpaca_api
-        register_feature('alpaca', alpaca_api)
+        # Alpaca features
+        from features.alpaca.api import bp as alpaca_bp
+        blueprints_to_register.append(('alpaca', alpaca_bp))
         
-        import features.account.api_routes as account_api
-        register_feature('account', account_api)
+        # Parsing features
+        from features.parsing.api import bp as parsing_bp
+        blueprints_to_register.append(('parsing', parsing_bp))
         
-        import features.dashboard.api_routes as dashboard_api
-        register_feature('dashboard', dashboard_api)
-        
-        # Register Discord bot feature
-        import features.discord_bot as discord_bot
-        register_feature('discord_bot', discord_bot)
-        
-        # Bootstrap all registered routes
-        bootstrap_routes(app)
-        logging.info("All feature routes registered successfully via Route Registry")
-        
+        # Register all blueprints
+        for name, blueprint in blueprints_to_register:
+            if blueprint is not None:
+                app.register_blueprint(blueprint)
+                logging.info(f"Registered {name} blueprint successfully")
+            else:
+                logging.warning(f"Blueprint {name} is None, skipping registration")
+                
+    except ImportError as e:
+        logging.error(f"Failed to import blueprint: {e}")
     except Exception as e:
-        logging.error(f"Error registering feature routes: {e}")
-        # Fallback to individual registration if needed
-        logging.warning("Falling back to individual route registration")
-    # Dashboard routes handled by route registry above
-    
-    # Register enhanced dashboard API routes (removed duplicate registration)
+        logging.error(f"Error registering blueprints: {e}")
+
+def register_feature_routes(app):
+    """Legacy function - now redirects to centralized blueprint registration"""
+    register_all_blueprints(app)
     
     # Register Discord API routes directly
     try:
