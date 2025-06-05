@@ -32,33 +32,54 @@ def register_all_blueprints(app):
     blueprints_to_register = []
     
     try:
-        # Market features - check both api.py and api_routes.py
+        # Market features - standardize on api_routes.py
         try:
             from features.market.api_routes import bp as market_bp
             blueprints_to_register.append(('market', market_bp))
-        except ImportError:
-            from features.market.api import bp as market_bp
-            blueprints_to_register.append(('market', market_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import market blueprint: {e}")
         
         # Execution features  
-        from features.execution.api_routes import bp as execution_bp
-        blueprints_to_register.append(('execution', execution_bp))
+        try:
+            from features.execution.api_routes import bp as execution_bp
+            blueprints_to_register.append(('execution', execution_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import execution blueprint: {e}")
         
         # Options features
-        from features.options.api_routes import bp as options_bp
-        blueprints_to_register.append(('options', options_bp))
+        try:
+            from features.options.api_routes import bp as options_bp
+            blueprints_to_register.append(('options', options_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import options blueprint: {e}")
         
         # Account features
-        from features.account.api_routes import bp as account_bp
-        blueprints_to_register.append(('account', account_bp))
+        try:
+            from features.account.api_routes import bp as account_bp
+            blueprints_to_register.append(('account', account_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import account blueprint: {e}")
         
         # Alpaca features
-        from features.alpaca.api import alpaca_bp as alpaca_bp
-        blueprints_to_register.append(('alpaca', alpaca_bp))
+        try:
+            from features.alpaca.api import alpaca_bp as alpaca_bp
+            blueprints_to_register.append(('alpaca', alpaca_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import alpaca blueprint: {e}")
         
         # Parsing features
-        from features.parsing.api import parsing_bp as parsing_bp
-        blueprints_to_register.append(('parsing', parsing_bp))
+        try:
+            from features.parsing.api import parsing_bp as parsing_bp
+            blueprints_to_register.append(('parsing', parsing_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import parsing blueprint: {e}")
+        
+        # Setups features
+        try:
+            from features.setups.api import setups_bp as setups_bp
+            blueprints_to_register.append(('setups', setups_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import setups blueprint: {e}")
         
         # Register all blueprints
         for name, blueprint in blueprints_to_register:
@@ -68,8 +89,6 @@ def register_all_blueprints(app):
             else:
                 logging.warning(f"Blueprint {name} is None, skipping registration")
                 
-    except ImportError as e:
-        logging.error(f"Failed to import blueprint: {e}")
     except Exception as e:
         logging.error(f"Error registering blueprints: {e}")
 
