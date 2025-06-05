@@ -86,7 +86,7 @@ class AlpacaWebSocketService:
         # Publish startup event
         publish_event_safe(
             event_type=EventTypes.INFO,
-            payload={
+            data={
                 'service': 'alpaca_websocket',
                 'status': 'started',
                 'subscribed_tickers': list(self.subscribed_tickers),
@@ -108,7 +108,7 @@ class AlpacaWebSocketService:
         # Publish shutdown event
         publish_event_safe(
             event_type=EventTypes.INFO,
-            payload={
+            data={
                 'service': 'alpaca_websocket',
                 'status': 'stopped'
             },
@@ -168,7 +168,7 @@ class AlpacaWebSocketService:
             # Publish error event
             publish_event_safe(
                 event_type=EventTypes.ERROR,
-                payload={
+                data={
                     'service': 'alpaca_websocket',
                     'error': str(e),
                     'action': 'connection_failed'
@@ -289,7 +289,7 @@ class AlpacaWebSocketService:
                     # Publish price update event
                     publish_event_safe(
                         event_type=EventTypes.TICKER_DATA,
-                        payload={
+                        data={
                             'ticker': ticker,
                             'price': price,
                             'volume': data.get('s', 0),

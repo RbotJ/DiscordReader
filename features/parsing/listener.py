@@ -203,7 +203,7 @@ class MessageStoredListener:
             # Publish SETUP_PARSED event
             publish_event(
                 event_type=EventTypes.SETUP_PARSED,
-                payload=event_payload,
+                data=event_payload,
                 channel=EventChannels.SETUP_CREATED
             )
             

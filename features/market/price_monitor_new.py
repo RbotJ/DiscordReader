@@ -125,7 +125,7 @@ def _process_price_update(symbol: str, quote: Dict[str, Any]):
         # Publish price update event
         publish_event(
             event_type="market.price.updated",
-            payload={
+            data={
                 'symbol': symbol,
                 'price': current_price,
                 'bid': float(quote.get('bidprice', 0)),
