@@ -280,9 +280,7 @@ class IngestionService(IIngestionService):
                 message_id=raw.message_id,
                 channel_id=raw.channel_id,
                 author_id=raw.author_id,
-                author=raw.author_name,
                 content=raw.content,
-                timestamp=raw.timestamp,
                 is_processed=False
             )
             
@@ -673,8 +671,8 @@ class IngestionService(IIngestionService):
                     'message_id': message.message_id,
                     'channel_id': message.channel_id,
                     'content': message.content,
-                    'timestamp': message.timestamp.isoformat(),
-                    'author': message.author
+                    'author_id': message.author_id,
+                    'created_at': message.created_at.isoformat() if message.created_at else None
                 }
 
                 publish_event(
@@ -905,8 +903,8 @@ async def ingest_messages(limit: int = 50) -> int:
                     'message_id': msg_model.message_id,
                     'channel_id': msg_model.channel_id,
                     'content': msg_model.content,
-                    'author': msg_model.author,
-                    'timestamp': msg_model.timestamp.isoformat()
+                    'author_id': msg_model.author_id,
+                    'created_at': msg_model.created_at.isoformat() if msg_model.created_at else None
                 },
                 channel=EventChannels.DISCORD_MESSAGE
             )
