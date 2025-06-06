@@ -110,6 +110,14 @@ def register_feature_routes(app):
         logging.info("Discord API routes registered successfully")
     except ImportError as e:
         logging.warning(f"Could not register Discord API routes: {e}")
+    
+    # Register Parsing API routes directly (bypass metadata conflict)
+    try:
+        from features.parsing.api import parsing_bp
+        app.register_blueprint(parsing_bp)
+        logging.info("Parsing API routes registered successfully")
+    except ImportError as e:
+        logging.warning(f"Could not register Parsing API routes: {e}")
 
 def register_web_routes(app):
     """Register main web routes"""
