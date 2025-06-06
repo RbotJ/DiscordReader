@@ -1,282 +1,272 @@
-` tags.
-
-```
-<replit_final_file>
 """
-Setup Storage Service Module
+Parsing Store Module
 
-Handles storing parsed trading setups to the database.
-This module provides a clean interface for persisting SetupModel instances
-and managing setup lifecycle operations.
+Handles database operations for the parsing vertical slice.
+Provides persistence layer for trade setups and parsed levels.
 """
 import logging
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
+from typing import List, Optional, Dict, Any, Tuple
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from sqlalchemy.orm import sessionmaker
 
-from .models import SetupModel
 from common.db import db
+from .models import TradeSetup, ParsedLevel
+from .parser import ParsedSetupDTO, ParsedLevelDTO
 
 logger = logging.getLogger(__name__)
 
 
-class SetupStorageService:
+class ParsingStore:
     """
-    Service for storing and managing trading setups in the database.
-
-    This service handles the persistence layer for parsed trading setups,
-    providing methods to store, update, and query setup data.
+    Store class for parsing operations.
+    Handles all database interactions for trade setups and parsed levels.
     """
-
+    
     def __init__(self):
-        """Initialize the storage service."""
-        self.stats = {
-            'setups_stored': 0,
-            'storage_errors': 0,
-            'last_storage_time': None
-        }
-
-    def store_setup(self, setup: SetupModel) -> Optional[SetupModel]:
+        """Initialize the parsing store."""
+        self.session = db.session
+    
+    def store_parsed_message(
+        self, 
+        message_id: str,
+        setups: List[ParsedSetupDTO], 
+        levels_by_setup: Dict[str, List[ParsedLevelDTO]], 
+        trading_day: Optional[date] = None
+    ) -> Tuple[List[TradeSetup], List[ParsedLevel]]:
         """
-        Store a single setup in the database.
-
-        Args:
-            setup: SetupModel instance to store
-
-        Returns:
-            Optional[SetupModel]: Stored setup with ID or None if failed
-        """
-        try:
-            # Add to session and commit
-            db.session.add(setup)
-            db.session.commit()
-
-            # Update stats
-            self.stats['setups_stored'] += 1
-            self.stats['last_storage_time'] = datetime.utcnow()
-
-            logger.info(f"Successfully stored setup {setup.id} for {setup.ticker}")
-            return setup
-
-        except Exception as e:
-            logger.error(f"Error storing setup for {setup.ticker}: {e}")
-            db.session.rollback()
-            self.stats['storage_errors'] += 1
-            return None
-
-    def store_setup_batch(self, setups: List[SetupModel]) -> Dict[str, Any]:
-        """
-        Store multiple setups in a single transaction.
-
-        Args:
-            setups: List of SetupModel instances to store
-
-        Returns:
-            Dict[str, Any]: Results including counts and stored setups
-        """
-        stored_setups = []
-        failed_setups = []
-
-        try:
-            # Add all setups to session
-            for setup in setups:
-                db.session.add(setup)
-
-            # Commit all at once
-            db.session.commit()
-            stored_setups = setups
-
-            # Update stats
-            self.stats['setups_stored'] += len(stored_setups)
-            self.stats['last_storage_time'] = datetime.utcnow()
-
-            logger.info(f"Successfully stored {len(stored_setups)} setups")
-
-        except Exception as e:
-            logger.error(f"Error storing setup batch: {e}")
-            db.session.rollback()
-            failed_setups = setups
-            self.stats['storage_errors'] += len(failed_setups)
-
-        return {
-            'successfully_stored': len(stored_setups),
-            'failed_to_store': len(failed_setups),
-            'stored_setups': stored_setups,
-            'failed_setups': failed_setups
-        }
-
-    def update_setup(self, setup: SetupModel) -> bool:
-        """
-        Update an existing setup in the database.
-
-        Args:
-            setup: SetupModel instance to update
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            setup.updated_at = datetime.utcnow()
-            db.session.commit()
-
-            logger.debug(f"Successfully updated setup {setup.id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error updating setup {setup.id}: {e}")
-            db.session.rollback()
-            self.stats['storage_errors'] += 1
-            return False
-
-    def get_setup_by_id(self, setup_id: int) -> Optional[SetupModel]:
-        """
-        Retrieve a setup by its ID.
-
-        Args:
-            setup_id: Setup ID to retrieve
-
-        Returns:
-            Optional[SetupModel]: Setup if found, None otherwise
-        """
-        try:
-            return SetupModel.query.get(setup_id)
-        except Exception as e:
-            logger.error(f"Error retrieving setup {setup_id}: {e}")
-            return None
-
-    def get_setups_by_message(self, message_id: str) -> List[SetupModel]:
-        """
-        Get all setups created from a specific message.
-
+        Store parsed setups and levels from a message.
+        
         Args:
             message_id: Discord message ID
-
+            setups: List of parsed setup DTOs
+            levels_by_setup: Dict mapping setup ticker to its levels
+            trading_day: Trading day (defaults to today)
+            
         Returns:
-            List[SetupModel]: Setups from the specified message
+            Tuple of (created_setups, created_levels)
         """
+        if trading_day is None:
+            trading_day = date.today()
+        
+        created_setups = []
+        created_levels = []
+        
         try:
-            return SetupModel.query.filter_by(
-                source_message_id=message_id
-            ).all()
+            # Process each setup
+            for setup_dto in setups:
+                # Check if setup already exists for this message and ticker
+                existing_setup = self.get_setup_by_message_and_ticker(message_id, setup_dto.ticker)
+                
+                if existing_setup:
+                    logger.info(f"Setup already exists for {setup_dto.ticker} from message {message_id}")
+                    created_setups.append(existing_setup)
+                    # Get existing levels
+                    existing_levels = ParsedLevel.get_by_setup_id(existing_setup.id)
+                    created_levels.extend(existing_levels)
+                    continue
+                
+                # Create new setup
+                new_setup = TradeSetup(
+                    message_id=message_id,
+                    ticker=setup_dto.ticker,
+                    trading_day=trading_day,
+                    setup_type=setup_dto.setup_type,
+                    bias_note=setup_dto.bias_note,
+                    direction=setup_dto.direction,
+                    confidence_score=setup_dto.confidence_score,
+                    raw_content=setup_dto.raw_content,
+                    parsed_metadata=setup_dto.parsed_metadata,
+                    active=True,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                
+                self.session.add(new_setup)
+                self.session.flush()  # Get the ID
+                
+                created_setups.append(new_setup)
+                logger.info(f"Created setup {new_setup.id} for {setup_dto.ticker}")
+                
+                # Create levels for this setup
+                setup_levels = levels_by_setup.get(setup_dto.ticker, [])
+                for level_dto in setup_levels:
+                    new_level = ParsedLevel(
+                        setup_id=new_setup.id,
+                        level_type=level_dto.level_type,
+                        direction=level_dto.direction,
+                        trigger_price=level_dto.trigger_price,
+                        strategy=level_dto.strategy,
+                        confidence=level_dto.confidence,
+                        description=level_dto.description,
+                        level_metadata={},  # Can be expanded later
+                        active=True,
+                        triggered=False,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    
+                    self.session.add(new_level)
+                    created_levels.append(new_level)
+                
+                logger.info(f"Created {len(setup_levels)} levels for setup {new_setup.id}")
+            
+            # Commit all changes
+            self.session.commit()
+            logger.info(f"Successfully stored {len(created_setups)} setups and {len(created_levels)} levels")
+            
+            return created_setups, created_levels
+            
+        except IntegrityError as e:
+            self.session.rollback()
+            logger.error(f"Integrity error storing parsed message: {e}")
+            raise
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Database error storing parsed message: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error retrieving setups for message {message_id}: {e}")
-            return []
-
-    def get_active_setups(self, ticker: Optional[str] = None) -> List[SetupModel]:
-        """
-        Get active setups, optionally filtered by ticker.
-
-        Args:
-            ticker: Optional ticker to filter by
-
-        Returns:
-            List[SetupModel]: Active setups
-        """
+            self.session.rollback()
+            logger.error(f"Unexpected error storing parsed message: {e}")
+            raise
+    
+    def get_setup_by_message_and_ticker(self, message_id: str, ticker: str) -> Optional[TradeSetup]:
+        """Get setup by message ID and ticker."""
         try:
-            query = SetupModel.query.filter_by(active=True, executed=False)
-            if ticker:
-                query = query.filter_by(ticker=ticker.upper())
-            return query.order_by(SetupModel.created_at.desc()).all()
-        except Exception as e:
-            logger.error(f"Error retrieving active setups: {e}")
+            return self.session.query(TradeSetup).filter_by(
+                message_id=message_id,
+                ticker=ticker.upper()
+            ).first()
+        except SQLAlchemyError as e:
+            logger.error(f"Error querying setup by message and ticker: {e}")
+            return None
+    
+    def get_setups_by_message(self, message_id: str) -> List[TradeSetup]:
+        """Get all setups created from a specific message."""
+        try:
+            return self.session.query(TradeSetup).filter_by(message_id=message_id).all()
+        except SQLAlchemyError as e:
+            logger.error(f"Error querying setups by message: {e}")
             return []
-
+    
+    def get_active_setups_for_day(self, trading_day: Optional[date] = None) -> List[TradeSetup]:
+        """Get active setups for a specific trading day."""
+        if trading_day is None:
+            trading_day = date.today()
+        
+        try:
+            return self.session.query(TradeSetup).filter_by(
+                trading_day=trading_day,
+                active=True
+            ).order_by(TradeSetup.created_at.desc()).all()
+        except SQLAlchemyError as e:
+            logger.error(f"Error querying active setups for day: {e}")
+            return []
+    
+    def get_levels_by_setup(self, setup_id: int) -> List[ParsedLevel]:
+        """Get all levels for a specific setup."""
+        try:
+            return self.session.query(ParsedLevel).filter_by(
+                setup_id=setup_id,
+                active=True
+            ).order_by(ParsedLevel.created_at).all()
+        except SQLAlchemyError as e:
+            logger.error(f"Error querying levels by setup: {e}")
+            return []
+    
+    def update_setup_confidence(self, setup_id: int, new_confidence: float) -> bool:
+        """Update confidence score for a setup."""
+        try:
+            setup = self.session.query(TradeSetup).filter_by(id=setup_id).first()
+            if setup:
+                setup.confidence_score = new_confidence
+                setup.updated_at = datetime.utcnow()
+                self.session.commit()
+                logger.info(f"Updated confidence for setup {setup_id} to {new_confidence}")
+                return True
+            return False
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error updating setup confidence: {e}")
+            return False
+    
     def deactivate_setup(self, setup_id: int) -> bool:
-        """
-        Deactivate a setup by ID.
-
-        Args:
-            setup_id: Setup ID to deactivate
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Deactivate a setup and its levels."""
         try:
-            setup = SetupModel.query.get(setup_id)
+            setup = self.session.query(TradeSetup).filter_by(id=setup_id).first()
             if setup:
-                setup.deactivate()
-                db.session.commit()
-                logger.info(f"Deactivated setup {setup_id}")
+                setup.active = False
+                setup.updated_at = datetime.utcnow()
+                
+                # Deactivate associated levels
+                levels = self.session.query(ParsedLevel).filter_by(setup_id=setup_id).all()
+                for level in levels:
+                    level.active = False
+                    level.updated_at = datetime.utcnow()
+                
+                self.session.commit()
+                logger.info(f"Deactivated setup {setup_id} and its {len(levels)} levels")
                 return True
-            else:
-                logger.warning(f"Setup {setup_id} not found for deactivation")
-                return False
-        except Exception as e:
-            logger.error(f"Error deactivating setup {setup_id}: {e}")
-            db.session.rollback()
             return False
-
-    def mark_setup_executed(self, setup_id: int, execution_price: Optional[float] = None) -> bool:
-        """
-        Mark a setup as executed.
-
-        Args:
-            setup_id: Setup ID to mark as executed
-            execution_price: Optional execution price
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error deactivating setup: {e}")
+            return False
+    
+    def trigger_level(self, level_id: int) -> bool:
+        """Mark a level as triggered."""
         try:
-            setup = SetupModel.query.get(setup_id)
-            if setup:
-                setup.mark_as_executed(execution_price)
-                db.session.commit()
-                logger.info(f"Marked setup {setup_id} as executed")
+            level = self.session.query(ParsedLevel).filter_by(id=level_id).first()
+            if level:
+                level.triggered = True
+                level.updated_at = datetime.utcnow()
+                self.session.commit()
+                logger.info(f"Triggered level {level_id}")
                 return True
-            else:
-                logger.warning(f"Setup {setup_id} not found for execution marking")
-                return False
-        except Exception as e:
-            logger.error(f"Error marking setup {setup_id} as executed: {e}")
-            db.session.rollback()
             return False
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error triggering level: {e}")
+            return False
+    
+    def get_parsing_statistics(self) -> Dict[str, Any]:
+        """Get statistics about parsed data."""
+        try:
+            total_setups = self.session.query(TradeSetup).count()
+            active_setups = self.session.query(TradeSetup).filter_by(active=True).count()
+            total_levels = self.session.query(ParsedLevel).count()
+            active_levels = self.session.query(ParsedLevel).filter_by(active=True, triggered=False).count()
+            triggered_levels = self.session.query(ParsedLevel).filter_by(triggered=True).count()
+            
+            # Today's stats
+            today = date.today()
+            today_setups = self.session.query(TradeSetup).filter_by(trading_day=today).count()
+            today_active_setups = self.session.query(TradeSetup).filter_by(
+                trading_day=today, active=True
+            ).count()
+            
+            return {
+                'total_setups': total_setups,
+                'active_setups': active_setups,
+                'total_levels': total_levels,
+                'active_levels': active_levels,
+                'triggered_levels': triggered_levels,
+                'today_setups': today_setups,
+                'today_active_setups': today_active_setups,
+                'setup_activation_rate': round((active_setups / total_setups * 100), 2) if total_setups > 0 else 0,
+                'level_trigger_rate': round((triggered_levels / total_levels * 100), 2) if total_levels > 0 else 0
+            }
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting parsing statistics: {e}")
+            return {}
 
-    def get_storage_stats(self) -> Dict[str, Any]:
-        """
-        Get storage service statistics.
 
-        Returns:
-            Dict[str, Any]: Storage statistics
-        """
-        return {
-            'service_stats': self.stats.copy(),
-            'database_stats': SetupModel.get_setup_statistics(),
-            'timestamp': datetime.utcnow().isoformat()
-        }
+# Global store instance
+_store = None
 
-    def reset_stats(self) -> None:
-        """Reset storage service statistics."""
-        self.stats = {
-            'setups_stored': 0,
-            'storage_errors': 0,
-            'last_storage_time': None
-        }
-
-
-# Convenience functions for direct usage
-def store_parsed_setup(setup: SetupModel) -> Optional[SetupModel]:
-    """
-    Convenience function to store a single parsed setup.
-
-    Args:
-        setup: SetupModel to store
-
-    Returns:
-        Optional[SetupModel]: Stored setup or None if failed
-    """
-    service = SetupStorageService()
-    return service.store_setup(setup)
-
-
-def store_parsed_setups(setups: List[SetupModel]) -> Dict[str, Any]:
-    """
-    Convenience function to store multiple parsed setups.
-
-    Args:
-        setups: List of SetupModel instances to store
-
-    Returns:
-        Dict[str, Any]: Storage results
-    """
-    service = SetupStorageService()
-    return service.store_setup_batch(setups)
+def get_parsing_store() -> ParsingStore:
+    """Get the global parsing store instance."""
+    global _store
+    if _store is None:
+        _store = ParsingStore()
+    return _store

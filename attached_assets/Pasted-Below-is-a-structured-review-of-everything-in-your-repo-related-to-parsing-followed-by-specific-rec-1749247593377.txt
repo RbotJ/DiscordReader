@@ -1,0 +1,746 @@
+Below is a structured review of everything in your repo related to parsing, followed by specific recommendations to transform parsing into a clean, vertical‐slice feature.
+
+1. Inventory of Existing “Parsing” Artifacts
+1.1. Files under features/parsing/
+parser.py
+
+Contains core parsing functions (regex‐based extraction of symbols, levels, etc.).
+
+Overlaps heavily with enhanced_parser.py and legacy_parser.py.
+
+enhanced_parser.py
+
+A more recent implementation (presumably) with additional heuristics or improved regex patterns.
+
+Largely duplicates logic in parser.py.
+
+legacy_parser.py
+
+Old-style parsing code—probably predates your current “A+ setups” format.
+
+Safe to treat as “archived” once you extract any unique pieces you still need.
+
+multi_parser.py
+
+Attempts to parse multiple tickers or messages in batch.
+
+Likely overlaps with both parser.py and enhanced_parser.py.
+
+models.py
+
+Defines a set of SQLAlchemy models (e.g. a ParsedSetup or older TradeSetup classes) that differ from the “new schema” your architecture document describes.
+
+May refer to tables like trade_setups (instead of new_trade_setups) and parsed_levels.
+
+api.py
+
+Declares REST endpoints for any parsing-related operations (e.g. manual re‐parse or status checks).
+
+Likely imports from both parser.py and store.py.
+
+listener.py
+
+Subscribes to ingestion events (e.g. MESSAGE_STORED) and calls parsing logic.
+
+References models that don’t exist (e.g. features.models.new_schema.TradeSetup).
+
+store.py
+
+Contains CRUD functions for persisting parsed results into the database.
+
+Points at tables like new_trade_setups and new_parsed_levels, but these models aren’t defined yet.
+
+1.2. Files under features/setups/
+models.py
+
+Defines a SetupModel (or similar) representing older “setup” schema (e.g. columns like symbol, entry_level, target, etc.).
+
+Conflicts with the “new_trade_setups” model your docs call for.
+
+Parser-related code
+
+There may be bits of parsing or “cleanup” logic here (especially if you moved code back and forth) that duplicate functionality in features/parsing.
+
+API or store functions
+
+Might include helper methods to fetch or update “setups” that parsing then reconsumes.
+
+1.3. Files under features/execution/integration/
+Anything here that reads from the table(s) created by parsing:
+
+For example, a service that subscribes to SETUP_PARSED events, fetches the newly‐inserted new_trade_setups, and kicks off strategy logic.
+
+References to model classes that no longer exist, since your new schema is incomplete.
+
+2. Critical Issues Identified
+Missing “New Schema” Models
+
+Throughout features/parsing/listener.py (and elsewhere), imports reference
+
+javascript
+Copy
+Edit
+from features.models.new_schema import TradeSetup, ParsedLevel
+but no such features/models/new_schema.py exists.
+
+Likewise, store.py calls SQLAlchemy models for tables new_trade_setups and new_parsed_levels that aren’t defined.
+
+Fragmented Parsing Logic
+
+You have at least four parser files:
+
+parser.py
+
+enhanced_parser.py
+
+legacy_parser.py
+
+multi_parser.py
+
+Each overlaps in functionality (ticker extraction, entry/target/stop parsing), making it hard to know which is the “source of truth.”
+
+Inconsistent Data Models
+
+features/parsing/models.py likely defines some model names that differ from those in features/setups/models.py.
+
+Old code writes into tables named trade_setups and parsed_levels, but architecture docs call for tables new_trade_setups and new_parsed_levels.
+
+Broken Imports & References
+
+Anywhere you see features.models.new_schema.* is currently failing.
+
+Some listeners and API routes still refer to “old” models in features/setups/models.py that you plan to deprecate.
+
+Database/Migration Mismatch
+
+Alembic (or manual) migrations probably created the old discord_messages, trade_setups, parsed_levels tables.
+
+Documentation calls for new_discord_messages, new_trade_setups, new_parsed_levels—but those migrations haven’t been written or applied.
+
+Event Integration Gaps
+
+The parsing slice should subscribe to MESSAGE_STORED (or message.stored) → parse → store → emit SETUP_PARSED.
+
+Existing listener.py refers to events named differently or uses the old schema, so downstream slices aren’t receiving correct events.
+
+3. Artifacts from the “Old System” You Can Safely Archive or Remove
+legacy_parser.py
+
+Keep only if there’s business logic (regex patterns) you still want; otherwise move to an “archive” folder or delete.
+
+multi_parser.py
+
+If batch parsing is no longer needed (or can be refactored into your main parser), archive it.
+
+Overlapping “models” in features/setups/models.py
+
+Once you finalize new_trade_setups and new_parsed_levels, move these old models into an old_models/ folder, or delete them entirely.
+
+Any helper functions in features/setups/ that duplicate parsing
+
+For instance, if there’s a “quick-and-dirty” parser in setups just to seed the DB, remove it in favor of your unified parsing slice.
+
+4. How to Restructure “Parsing” as a Self‐Contained Vertical Slice
+Below is a recommended directory structure and each file’s high-level role. After that, you’ll find step-by-step actions to get there.
+
+bash
+Copy
+Edit
+/features/parsing
+ ├── models.py
+ ├── parser.py
+ ├── store.py
+ ├── listener.py
+ ├── api.py           # (optional) endpoints for manual parsing triggers or status
+ └── tests/
+      ├── test_parser.py
+      └── test_store.py
+4.1. models.py → Define Only the “New” Schema
+Create exactly two SQLAlchemy models (plus any base classes) here:
+
+python
+Copy
+Edit
+# features/parsing/models.py
+
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from common.db import Base  # or however you import your declarative base
+
+class TradeSetup(Base):
+    __tablename__ = "new_trade_setups"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String, unique=True, nullable=False)
+    symbol = Column(String, nullable=False)
+    direction = Column(String, nullable=False)           # e.g. "long" / "short"
+    entry_level = Column(Float, nullable=False)
+    target = Column(Float, nullable=False)
+    stop = Column(Float, nullable=False)
+    bias = Column(String)                                 # e.g. "aggressive" / "conservative"
+    created_at = Column(DateTime, nullable=False)
+    # any other fields you need (e.g. risk parameters, author, etc.)
+
+    levels = relationship("ParsedLevel", back_populates="setup")
+
+
+class ParsedLevel(Base):
+    __tablename__ = "new_parsed_levels"
+
+    id = Column(Integer, primary_key=True)
+    trade_setup_id = Column(Integer, ForeignKey("new_trade_setups.id"), nullable=False)
+    level_type = Column(String, nullable=False)          # e.g. "entry" / "target" / "stop" / "bounce"
+    price = Column(Float, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+
+    setup = relationship("TradeSetup", back_populates="levels")
+Key points:
+
+Remove any references in your other code to features.models.new_schema. Everything now lives in features/parsing/models.py.
+
+Drop any old models (e.g. from features/setups/models.py) that refer to trade_setups or parsed_levels. Once this is in place, alembic (or your migration tool) needs a revision to create new_trade_setups and new_parsed_levels.
+
+4.2. parser.py → Single Source of Truth
+Choose your “best” parser (likely enhanced_parser.py) as the basis.
+
+Copy over only the final regex patterns and logic you trust.
+
+Expose one function (signature example shown below) that accepts a raw Discord‐message object and returns a TradeSetup DTO (or namedtuple) plus a list of “level” dicts.
+
+python
+Copy
+Edit
+# features/parsing/parser.py
+
+import re
+from datetime import datetime
+from typing import Dict, List, NamedTuple
+
+class ParsedLevelDTO(NamedTuple):
+    level_type: str
+    price: float
+
+class ParsedSetupDTO(NamedTuple):
+    symbol: str
+    direction: str
+    entry_level: float
+    target: float
+    stop: float
+    bias: str
+
+LEVEL_REGEX = {
+    "entry": re.compile(r"Entry[:\s]*\$?([0-9]+\.[0-9]+)"),
+    "target": re.compile(r"Target[:\s]*\$?([0-9]+\.[0-9]+)"),
+    "stop": re.compile(r"Stop[:\s]*\$?([0-9]+\.[0-9]+)"),
+    # add bounce / rejection zones if needed
+}
+
+def parse_message_to_setup(raw_message: Dict) -> (ParsedSetupDTO, List[ParsedLevelDTO]):
+    """
+    raw_message is a dict like {
+      "content": "SPY long Entry: 445.00 Target: 447.00 Stop: 443.50 Bias: aggressive",
+      "id": "1234567890",
+      "timestamp": "2025-06-06T09:30:00Z",
+      ... 
+    }
+    """
+    text = raw_message["content"]
+    # Example: pull symbol + direction + bias from a single-line header
+    # Adapt this to your actual “A+ setup” format
+    # For instance: "SPY long ... Bias: aggressive"
+    header_match = re.match(r"^(?P<symbol>[A-Z]{1,5})\s+(?P<direction>long|short)\s+.*Bias:\s*(?P<bias>\w+)", text, re.IGNORECASE)
+    if not header_match:
+        raise ValueError("Cannot parse header (symbol/direction/bias)")
+
+    symbol = header_match.group("symbol").upper()
+    direction = header_match.group("direction").lower()
+    bias = header_match.group("bias").lower()
+
+    # Extract numeric levels
+    entry_match = LEVEL_REGEX["entry"].search(text)
+    target_match = LEVEL_REGEX["target"].search(text)
+    stop_match = LEVEL_REGEX["stop"].search(text)
+    if not (entry_match and target_match and stop_match):
+        raise ValueError("Entry/Target/Stop not found")
+
+    entry_level = float(entry_match.group(1))
+    target = float(target_match.group(1))
+    stop = float(stop_match.group(1))
+
+    parsed_setup = ParsedSetupDTO(
+        symbol=symbol,
+        direction=direction,
+        entry_level=entry_level,
+        target=target,
+        stop=stop,
+        bias=bias,
+    )
+
+    parsed_levels = [
+        ParsedLevelDTO(level_type="entry", price=entry_level),
+        ParsedLevelDTO(level_type="target", price=target),
+        ParsedLevelDTO(level_type="stop", price=stop),
+    ]
+
+    return parsed_setup, parsed_levels
+What to do:
+
+Merge any improved regex logic (e.g. multi‐ticker parsing, bounce zones) into this one file.
+
+Delete legacy_parser.py and multi_parser.py once you’ve confirmed nothing unique is lost.
+
+4.3. store.py → “Parse → Persist” Logic
+Responsibilities: Insert a new row in new_trade_setups, then insert child rows in new_parsed_levels.
+
+Wrap everything in one transaction so that a partial parse does not leave orphaned levels.
+
+python
+Copy
+Edit
+# features/parsing/store.py
+
+from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
+from common.db import SessionLocal
+from features.parsing.models import TradeSetup, ParsedLevel
+
+def insert_trade_setup_and_levels(raw_message_id: str, parsed_setup_dto, parsed_levels_dtos, timestamp):
+    """
+    raw_message_id: str  (the Discord message ID)
+    parsed_setup_dto: ParsedSetupDTO
+    parsed_levels_dtos: List[ParsedLevelDTO]
+    timestamp: datetime for created_at
+    """
+    session = SessionLocal()
+    try:
+        new_setup = TradeSetup(
+            message_id=raw_message_id,
+            symbol=parsed_setup_dto.symbol,
+            direction=parsed_setup_dto.direction,
+            entry_level=parsed_setup_dto.entry_level,
+            target=parsed_setup_dto.target,
+            stop=parsed_setup_dto.stop,
+            bias=parsed_setup_dto.bias,
+            created_at=timestamp,
+        )
+        session.add(new_setup)
+        session.flush()  # obtain new_setup.id
+
+        for lvl in parsed_levels_dtos:
+            new_lvl = ParsedLevel(
+                trade_setup_id=new_setup.id,
+                level_type=lvl.level_type,
+                price=lvl.price,
+                created_at=timestamp,
+            )
+            session.add(new_lvl)
+
+        session.commit()
+        return new_setup.id
+    except SQLAlchemyError:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+What to do next:
+
+Ensure your SessionLocal points to the same database used by ingestion and other slices.
+
+Remove any old “insert_setup” functions in features/setups/store.py so there is no duplication.
+
+4.4. listener.py → Hook Parsing into the Event Bus
+Subscribe to the ingestion event (usually something like "MESSAGE_STORED").
+
+Fetch raw message from whichever table ingestion wrote to (e.g. new_discord_messages).
+
+Call parse_message_to_setup(raw_message_dict) from parser.py.
+
+Call insert_trade_setup_and_levels(...) from store.py.
+
+Publish a new event, e.g. "SETUP_PARSED", so that downstream slices (strategy, execution) can pick it up.
+
+python
+Copy
+Edit
+# features/parsing/listener.py
+
+from datetime import datetime
+from common.events import subscribe, publish_event
+from common.event_constants import EventType
+from features.parsing.parser import parse_message_to_setup
+from features.parsing.store import insert_trade_setup_and_levels
+from common.db import SessionLocal  # for raw messages table
+from features.parsing.models import TradeSetup as _dummy  # ensure models are imported
+
+def _handle_message_stored(event_payload):
+    raw_message_id = event_payload.get("message_id")
+    session = SessionLocal()
+    try:
+        # 1) Fetch raw message row from new_discord_messages (example table)
+        raw_row = session.execute(
+            "SELECT content, timestamp FROM new_discord_messages WHERE message_id = :mid",
+            {"mid": raw_message_id}
+        ).fetchone()
+
+        if not raw_row:
+            # Nothing to parse
+            return
+
+        raw_content = raw_row["content"]
+        raw_timestamp = raw_row["timestamp"]
+        raw_message = {
+            "id": raw_message_id,
+            "content": raw_content,
+            "timestamp": raw_timestamp.isoformat(),
+        }
+
+        # 2) Parse it
+        parsed_setup_dto, parsed_levels = parse_message_to_setup(raw_message)
+        parsed_ts = datetime.fromisoformat(raw_message["timestamp"])
+
+        # 3) Persist
+        new_setup_id = insert_trade_setup_and_levels(
+            raw_message_id, parsed_setup_dto, parsed_levels, parsed_ts
+        )
+
+        # 4) Publish “SETUP_PARSED” event
+        publish_event(
+            event_type=EventType.SETUP_PARSED,
+            payload={"trade_setup_id": new_setup_id}
+        )
+
+    except Exception as e:
+        # Log & swallow or rethrow depending on your retry logic
+        print(f"[parsing] failed to parse/store message {raw_message_id}: {e}")
+    finally:
+        session.close()
+
+def register_listeners():
+    subscribe(EventType.MESSAGE_STORED, _handle_message_stored)
+Key tasks:
+
+Replace any references to old tables (e.g. discord_messages) with new_discord_messages.
+
+Delete any outdated event listeners in features/setups or elsewhere that also try to parse—the only listener for parsing should now be this one.
+
+4.5. api.py → (Optional) Expose a Parsing Endpoint
+If you want to be able to re‐parse a message on demand (e.g. via an HTTP API for debugging), keep a minimal api.py:
+
+python
+Copy
+Edit
+# features/parsing/api.py
+
+from flask import Blueprint, request, jsonify
+from features.parsing.parser import parse_message_to_setup
+from features.parsing.store import insert_trade_setup_and_levels
+from datetime import datetime
+
+bp = Blueprint("parsing", __name__, url_prefix="/parsing")
+
+@bp.route("/reparse", methods=["POST"])
+def reparse_endpoint():
+    """
+    Request JSON: { "message_id": "1234" }
+    """
+    data = request.json
+    mid = data.get("message_id")
+    if not mid:
+        return jsonify({"error": "message_id required"}), 400
+
+    # Fetch raw content from new_discord_messages (similar to listener)
+    session = SessionLocal()
+    raw_row = session.execute(
+        "SELECT content, timestamp FROM new_discord_messages WHERE message_id = :mid",
+        {"mid": mid}
+    ).fetchone()
+    session.close()
+
+    if not raw_row:
+        return jsonify({"error": "message not found"}), 404
+
+    raw_message = {
+        "id": mid,
+        "content": raw_row["content"],
+        "timestamp": raw_row["timestamp"].isoformat(),
+    }
+
+    try:
+        parsed_setup_dto, parsed_levels = parse_message_to_setup(raw_message)
+        ts = datetime.fromisoformat(raw_row["timestamp"].isoformat())
+        new_id = insert_trade_setup_and_levels(mid, parsed_setup_dto, parsed_levels, ts)
+        return jsonify({"status": "parsed", "trade_setup_id": new_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+What to remove:
+
+Any endpoints in features/setups/api.py that do parsing.
+
+Move only strictly parsing-related routes into this one file.
+
+4.6. tests/ → Verify Parsing Logic & Persistence
+Create two test files under features/parsing/tests/:
+
+test_parser.py
+
+Test that parse_message_to_setup(...) correctly extracts fields from a known sample.
+
+Example:
+
+python
+Copy
+Edit
+def test_simple_spy_setup():
+    raw = {
+        "id": "abc123",
+        "content": "SPY long Entry: 445.00 Target: 447.00 Stop: 443.50 Bias: aggressive",
+        "timestamp": "2025-06-06T09:30:00Z"
+    }
+    setup, levels = parse_message_to_setup(raw)
+    assert setup.symbol == "SPY"
+    assert setup.direction == "long"
+    assert setup.entry_level == 445.00
+    assert setup.target == 447.00
+    assert setup.stop == 443.50
+    assert setup.bias == "aggressive"
+    assert any(l.level_type == "entry" and l.price == 445.00 for l in levels)
+    # etc.
+test_store.py
+
+Use a test database (SQLite in memory or a dedicated test Postgres DB) to check that
+insert_trade_setup_and_levels(...) actually creates parent/child rows.
+
+Example:
+
+python
+Copy
+Edit
+def test_insert_and_fetch(tmp_path):
+    # 1) spin up a temporary SQLite URL or use a SessionLocal configured for SQLite
+    engine = create_test_engine()
+    Base.metadata.create_all(engine)
+    session = SessionLocal(bind=engine)
+
+    parsed_setup = ParsedSetupDTO("AAPL", "short", 150.0, 152.0, 148.0, "conservative")
+    levels = [
+        ParsedLevelDTO("entry", 150.0),
+        ParsedLevelDTO("target", 152.0),
+        ParsedLevelDTO("stop", 148.0)
+    ]
+    now = datetime.utcnow()
+    new_id = insert_trade_setup_and_levels("msg-1", parsed_setup, levels, now)
+
+    # 2) verify parent row exists
+    row = session.query(TradeSetup).filter_by(id=new_id).one()
+    assert row.symbol == "AAPL"
+    children = session.query(ParsedLevel).filter_by(trade_setup_id=new_id).all()
+    assert len(children) == 3
+    session.close()
+This ensures your parsing slice is covered by automated tests before integrating into CI.
+
+5. Step-by-Step Migration Plan
+Below is a concrete list of tasks, in order, to move from your current broken state to a fully functional parsing vertical slice.
+
+Inventory & Catalogue
+
+Run a quick git ls-tree -r HEAD --name-only | grep "features/parsing" and
+git ls-tree -r HEAD --name-only | grep "features/setups/models.py" to list every parsing-related file.
+
+Copy that list somewhere (e.g. a simple text file) so you can mark which ones you will keep, which you will archive, and which you will delete.
+
+Create Missing Models
+
+In features/parsing/models.py, define exactly two models: TradeSetup and ParsedLevel (see code above).
+
+Remove or rename any old models in features/setups/models.py that conflict (e.g. classes named TradeSetup or ParsedLevel).
+
+Write Migrations
+
+Add an Alembic (or raw SQL) migration to create new_trade_setups and new_parsed_levels:
+
+sql
+Copy
+Edit
+CREATE TABLE new_trade_setups (
+  id SERIAL PRIMARY KEY,
+  message_id VARCHAR NOT NULL UNIQUE,
+  symbol VARCHAR NOT NULL,
+  direction VARCHAR NOT NULL,
+  entry_level FLOAT NOT NULL,
+  target FLOAT NOT NULL,
+  stop FLOAT NOT NULL,
+  bias VARCHAR,
+  created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE new_parsed_levels (
+  id SERIAL PRIMARY KEY,
+  trade_setup_id INT NOT NULL REFERENCES new_trade_setups(id),
+  level_type VARCHAR NOT NULL,
+  price FLOAT NOT NULL,
+  created_at TIMESTAMP NOT NULL
+);
+Also create new_discord_messages if ingestion slice writes there:
+
+sql
+Copy
+Edit
+CREATE TABLE new_discord_messages (
+  id SERIAL PRIMARY KEY,
+  message_id VARCHAR NOT NULL UNIQUE,
+  content TEXT NOT NULL,
+  timestamp TIMESTAMP NOT NULL
+  -- plus any other fields you store from ingestion
+);
+Consolidate & Refactor Parsers
+
+Pick one file (e.g. enhanced_parser.py) to be your basis.
+
+Copy the core logic into features/parsing/parser.py as a single, well‐documented function (parse_message_to_setup).
+
+Delete parser.py, legacy_parser.py, and multi_parser.py from the repo (or move them to a folder named features/parsing/archive/ so you can refer back if needed).
+
+Make sure there are no references elsewhere to those old filenames.
+
+Implement store.py
+
+Based on the code snippet above, create features/parsing/store.py with a single function insert_trade_setup_and_levels(...).
+
+Delete any old store or repository code in features/setups that wrote to the old trade_setups table.
+
+Fix Imports in listener.py
+
+Replace any import lines like
+
+python
+Copy
+Edit
+from features.models.new_schema import TradeSetup, ParsedLevel
+with
+
+python
+Copy
+Edit
+from features.parsing.models import TradeSetup, ParsedLevel
+Update the raw-message lookup to read from new_discord_messages instead of discord_messages.
+
+Ensure the listener subscribes to the correct event constant (EventType.MESSAGE_STORED).
+
+Register the Listener
+
+In your application startup (wherever you wire up event listeners), call features.parsing.listener.register_listeners().
+
+Remove any “duplicate” listeners in features/setups or old code that also responds to MESSAGE_STORED.
+
+Clean Up features/setups
+
+If any models or store functions in features/setups/models.py are now obsolete, move them to an archive/ folder or delete them.
+
+Keep only what is strictly “setup management” (e.g. when the user manually reviews parsed setups). If that belongs here, leave it; otherwise, move it under features/parsing if it’s truly part of parsing.
+
+Adjust Downstream Consumers
+
+Search for any code that does:
+
+python
+Copy
+Edit
+from features.setups.models import SetupModel
+or directly queries trade_setups. Change it to query new_trade_setups via your new models.
+
+Update event subscribers in strategy/execution slices to use EventType.SETUP_PARSED instead of older event names.
+
+Remove or Archive Redundant Files
+
+features/parsing/legacy_parser.py
+
+features/parsing/multi_parser.py
+
+Old models in features/setups that target the outdated trade_setups table.
+
+Any leftover SQL scripts that refer to the old tables.
+
+Write & Run Tests
+
+Add features/parsing/tests/test_parser.py to confirm parsing logic.
+
+Add features/parsing/tests/test_store.py to confirm persistence.
+
+Run pytest (or your chosen test runner) against a fresh test database.
+
+Fix any failures.
+
+Manual Smoke Test
+
+Start your application.
+
+Insert a row in new_discord_messages manually (via seed script or psql) with a sample “A+ setup” string.
+
+Observe that listener.py picks up the MESSAGE_STORED event, parses the message, and writes to new_trade_setups + new_parsed_levels.
+
+Confirm that downstream slices (e.g. strategy engine) receive SETUP_PARSED and can query the new trade setup.
+
+6. High-Level Data Flow in the New “Parsing” Vertical Slice
+Ingestion Slice
+
+Listens for new Discord messages (e.g. via a bot) → writes each raw message into new_discord_messages → emits MESSAGE_STORED event (payload: {"message_id": "abc123"}).
+
+Parsing Slice (the code you’re building)
+
+Listener catches MESSAGE_STORED.
+
+Fetch raw row from new_discord_messages.
+
+Call parse_message_to_setup(raw_message_dict).
+
+Call insert_trade_setup_and_levels(...) → populates new_trade_setups + new_parsed_levels.
+
+Emit SETUP_PARSED event (payload: {"trade_setup_id": 42}).
+
+Strategy/Execution Slice
+
+Subscribes to SETUP_PARSED.
+
+Fetches the newly created row from new_trade_setups.
+
+Subscribes to real-time quotes and waits for trigger conditions.
+
+Chooses option strategy, etc.
+
+Position Management / Exit Engine
+
+Finally, when a position opens, publishes POSITION_UPDATED / POSITION_CLOSED events.
+
+By enforcing this strict parent→child flow (Discord message → parse → setup → strategy), you isolate parsing as its own vertical slice. Upstream and downstream slices only interact via clearly defined events and schemas.
+
+7. Summary of Required Additions & Clean-Up
+Add new SQLAlchemy models (TradeSetup, ParsedLevel) to features/parsing/models.py.
+
+Add Alembic (or raw SQL) migrations for tables new_discord_messages, new_trade_setups, new_parsed_levels.
+
+Consolidate parsing logic into a single file features/parsing/parser.py.
+
+Implement persistence in features/parsing/store.py.
+
+Fix imports in features/parsing/listener.py and wire it to the event bus.
+
+Delete/Archive redundant parser files (legacy_parser.py, multi_parser.py, old “models” in features/setups).
+
+Update downstream consumers to use new TradeSetup model and new events (SETUP_PARSED).
+
+Write tests for parsing and storage.
+
+Document the new parsing slice (e.g. add a README under features/parsing/ describing its purpose).
+
+Once those steps are complete, you’ll have a fully self-contained “parsing” feature folder that can be loaded by an AI agent (or a human) without scanning other parts of the repo. All event names, import paths, and table names will match exactly, with no broken references.
+
+Next Steps
+Start by building out features/parsing/models.py and writing your first migration.
+
+Refactor one parser file at a time into features/parsing/parser.py.
+
+Run tests continually so you catch import issues early.
+
+Gradually remove legacy artifacts as soon as each dependent piece is refactored.
+
+Let me know if you’d like sample Alembic migration files, additional code snippets, or a deeper dive into any particular subdirectory.
