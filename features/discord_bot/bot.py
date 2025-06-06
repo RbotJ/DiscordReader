@@ -18,6 +18,7 @@ from .config.settings import (
 )
 from features.discord_bot.services.correlation_service import DiscordCorrelationService
 from common.events.bus import publish_cross_slice_event
+from features.ingestion.service import IngestionService
 
 logger = logging.getLogger(__name__)
 
