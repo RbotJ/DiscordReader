@@ -308,8 +308,37 @@ class IngestionService:
         Returns:
             List of recent message data
         """
-        # Return empty list for now - this would typically query stored messages
-        return []
+        try:
+            from features.ingestion.models import DiscordMessageModel
+            from common.db import db
+            
+            # Query recent messages from database
+            messages = db.session.query(DiscordMessageModel)\
+                .order_by(DiscordMessageModel.created_at.desc())\
+                .limit(limit)\
+                .all()
+            
+            # Convert to dictionary format for template
+            message_list = []
+            for msg in messages:
+                content_str = str(msg.content) if msg.content else ""
+                message_data = {
+                    'message_id': msg.message_id,
+                    'author': msg.author_id,
+                    'content': content_str[:200] + '...' if len(content_str) > 200 else content_str,
+                    'timestamp': msg.timestamp.isoformat() if msg.timestamp is not None else None,
+                    'created_at': msg.created_at.isoformat() if msg.created_at is not None else None,
+                    'channel_id': msg.channel_id,
+                    'is_processed': getattr(msg, 'is_processed', False)
+                }
+                message_list.append(message_data)
+            
+            logger.debug(f"Retrieved {len(message_list)} recent messages from database")
+            return message_list
+            
+        except Exception as e:
+            logger.error(f"Error retrieving recent messages: {e}")
+            return []
     
     def get_metrics(self) -> Dict[str, Any]:
         """
@@ -318,7 +347,28 @@ class IngestionService:
         Returns:
             Dict containing ingestion metrics
         """
-        total_stored = len(self._processed_messages)
+        try:
+            from features.ingestion.models import DiscordMessageModel
+            from common.db import db
+            
+            # Get actual database counts
+            total_stored = db.session.query(DiscordMessageModel).count()
+            processed_today = db.session.query(DiscordMessageModel)\
+                .filter(DiscordMessageModel.created_at >= datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0))\
+                .count()
+            
+            # Get latest message timestamp
+            latest_message = db.session.query(DiscordMessageModel)\
+                .order_by(DiscordMessageModel.created_at.desc())\
+                .first()
+            last_processed = latest_message.created_at.isoformat() if latest_message else None
+            
+        except Exception as e:
+            logger.error(f"Error querying database metrics: {e}")
+            total_stored = len(self._processed_messages)
+            processed_today = self.messages_ingested
+            last_processed = self.last_ingestion_time.isoformat() if self.last_ingestion_time else None
+        
         total_messages = self.messages_ingested + self.ingestion_errors
         success_rate = 100.0 if total_messages == 0 else (self.messages_ingested / total_messages) * 100
         
@@ -331,13 +381,13 @@ class IngestionService:
             'service_type': 'ingestion',
             'status': 'ready',
             # Template-specific metrics
-            'messages_processed_today': int(self.messages_ingested),
+            'messages_processed_today': int(processed_today),
             'total_messages_stored': int(total_stored),
             'validation_success_rate': float(success_rate),
             'queue_depth': 0,
             'avg_processing_time_ms': 25,
             'validation_failures_today': int(self.ingestion_errors),
-            'last_processed_message': self.last_ingestion_time.isoformat() if self.last_ingestion_time else None
+            'last_processed_message': last_processed
         }
 
 
