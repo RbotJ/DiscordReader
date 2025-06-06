@@ -5,6 +5,7 @@ Provides functions for retrieving and processing events from the database.
 """
 
 import logging
+import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from flask import has_app_context
@@ -317,7 +318,6 @@ class EventConsumer:
     def _poll_worker(self):
         """Background worker for polling events."""
         import time
-        import threading
         
         while self.running:
             try:

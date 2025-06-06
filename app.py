@@ -223,6 +223,7 @@ def create_app():
     try:
         from features.ingestion.models import DiscordMessageModel
         from features.discord_bot.models import DiscordChannel
+        from features.parsing.models import TradeSetup, ParsedLevel
     except ImportError as e:
         logging.warning(f"Could not import some models: {e}")
     
@@ -262,10 +263,12 @@ def create_app():
         from features.discord_bot.dashboard import discord_bp
         from features.discord_channels.dashboard import channels_bp
         from features.ingestion.dashboard import ingest_bp
+        from features.parsing.dashboard import parsing_bp
         
         app.register_blueprint(discord_bp)
         app.register_blueprint(channels_bp)
         app.register_blueprint(ingest_bp)
+        app.register_blueprint(parsing_bp)
         logging.info("Feature dashboard blueprints registered successfully")
     except ImportError as e:
         logging.warning(f"Could not register dashboard blueprints: {e}")
