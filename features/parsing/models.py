@@ -11,7 +11,7 @@ from datetime import datetime, date
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, Float, Date, ForeignKey, Numeric
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from common.db.session import db
+from common.db import db
 
 logger = logging.getLogger(__name__)
 
