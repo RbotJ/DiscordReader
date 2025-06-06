@@ -1,314 +1,330 @@
-
 """
-Parsing Event Listener Module
+Parsing Listener Module
 
-Listens for MESSAGE_STORED events and triggers parsing workflow.
-This module handles the event-driven parsing of Discord messages,
-orchestrating the parse → store → emit SETUP_PARSED workflow.
+Event listener for the parsing vertical slice.
+Subscribes to ingestion events and processes Discord messages for trading setups.
 """
 import logging
-import asyncio
-import json
-from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, date
+from typing import Dict, Any, List
 
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-
-from .parser import parse_setup_from_text
-from .store import SetupStorageService
-from features.ingestion.models import DiscordMessageModel
-from common.db import db
-from common.events.constants import EventChannels, EventTypes
-from common.events import publish_event
+from common.events.consumer import EventConsumer
+from common.events.publisher import publish_event
+from .parser import MessageParser, ParsedSetupDTO, ParsedLevelDTO
+from .store import ParsingStore, get_parsing_store
+from .models import TradeSetup, ParsedLevel
 
 logger = logging.getLogger(__name__)
 
 
-class MessageStoredListener:
+class ParsingListener:
     """
-    PostgreSQL LISTEN handler for MESSAGE_STORED events.
-    
-    This class listens for MESSAGE_STORED notifications from PostgreSQL
-    and triggers the parsing workflow for new Discord messages.
+    Event listener for parsing Discord messages into trade setups.
+    Subscribes to MESSAGE_STORED events and publishes SETUP_PARSED events.
     """
     
     def __init__(self):
-        """Initialize the listener with required components."""
-        self.storage_service = SetupStorageService()
-        self.is_running = False
-        self.connection = None
+        """Initialize the parsing listener."""
+        self.parser = MessageParser()
+        self.store = get_parsing_store()
         self.stats = {
             'messages_processed': 0,
-            'setups_parsed': 0,
-            'errors': 0,
-            'started_at': None
+            'setups_created': 0,
+            'levels_created': 0,
+            'parsing_errors': 0,
+            'storage_errors': 0,
+            'last_processed': None
         }
+        
+        # Initialize event consumer
+        self.consumer = EventConsumer('parsing', ['ingestion:message'])
+        logger.info("Parsing listener initialized")
     
-    async def start_listening(self) -> None:
-        """
-        Start listening for MESSAGE_STORED events via PostgreSQL LISTEN.
-        
-        This method establishes a PostgreSQL connection and listens for
-        NOTIFY events on the MESSAGE_STORED channel.
-        """
-        logger.info("Starting MESSAGE_STORED listener")
-        self.is_running = True
-        self.stats['started_at'] = datetime.utcnow()
-        
+    def start_listening(self):
+        """Start listening for ingestion events."""
         try:
-            # Get database URL from SQLAlchemy
-            database_url = str(db.engine.url)
-            
-            # Create dedicated connection for LISTEN
-            self.connection = psycopg2.connect(database_url)
-            self.connection.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-            
-            cursor = self.connection.cursor()
-            cursor.execute("LISTEN message_stored;")
-            
-            logger.info("PostgreSQL LISTEN established for message_stored channel")
-            
-            while self.is_running:
-                # Wait for notifications with timeout
-                if self.connection.poll() == psycopg2.extensions.POLL_OK:
-                    while self.connection.notifies:
-                        notify = self.connection.notifies.pop(0)
-                        await self._handle_notification(notify)
-                
-                # Brief sleep to prevent busy waiting
-                await asyncio.sleep(0.1)
-                
+            logger.info("Starting parsing listener...")
+            self.consumer.subscribe('message.stored', self._handle_message_stored)
+            self.consumer.start()
+            logger.info("Parsing listener started successfully")
         except Exception as e:
-            logger.error(f"Error in MESSAGE_STORED listener: {e}")
-            self.stats['errors'] += 1
+            logger.error(f"Error starting parsing listener: {e}")
             raise
-        finally:
-            if self.connection:
-                self.connection.close()
     
-    def stop_listening(self) -> None:
-        """Stop the event listener."""
-        logger.info("Stopping MESSAGE_STORED listener")
-        self.is_running = False
-    
-    async def _handle_notification(self, notify) -> None:
-        """
-        Handle a PostgreSQL NOTIFY for MESSAGE_STORED.
-        
-        Args:
-            notify: PostgreSQL notification object
-        """
+    def stop_listening(self):
+        """Stop listening for events."""
         try:
-            # Parse notification payload
-            if notify.payload:
-                payload = json.loads(notify.payload)
-            else:
-                payload = {}
-            
-            message_id = payload.get('message_id')
-            if not message_id:
-                logger.warning("MESSAGE_STORED notification missing message_id")
-                return
-            
-            # Get the stored message from database
-            message = DiscordMessageModel.query.filter_by(
-                message_id=message_id
-            ).first()
-            
-            if not message:
-                logger.warning(f"Message {message_id} not found in database")
-                return
-            
-            # Skip if already processed
-            if hasattr(message, 'is_processed') and message.is_processed:
-                logger.debug(f"Message {message_id} already processed, skipping")
-                return
-            
-            # Process the message
-            await self._process_message(message)
-            
-            # Mark message as processed if the model supports it
-            if hasattr(message, 'mark_as_processed'):
-                message.mark_as_processed()
-                db.session.commit()
-            
-            self.stats['messages_processed'] += 1
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing notification payload: {e}")
-            self.stats['errors'] += 1
+            self.consumer.stop()
+            logger.info("Parsing listener stopped")
         except Exception as e:
-            logger.error(f"Error handling MESSAGE_STORED notification: {e}")
-            self.stats['errors'] += 1
+            logger.error(f"Error stopping parsing listener: {e}")
     
-    async def _process_message(self, message: DiscordMessageModel) -> None:
+    def _handle_message_stored(self, event_data: Dict[str, Any]):
         """
-        Process a Discord message through the parsing pipeline.
+        Handle MESSAGE_STORED event from ingestion.
         
         Args:
-            message: DiscordMessageModel to process
+            event_data: Event data containing message information
         """
         try:
-            logger.debug(f"Processing message {message.message_id} for parsing")
+            logger.debug(f"Processing message stored event: {event_data.get('correlation_id', 'unknown')}")
             
-            # Parse message content for trading setups
-            setup = parse_setup_from_text(message.content)
-            
-            if not setup:
-                logger.debug(f"No setup found in message {message.message_id}")
+            # Extract message information from event
+            message_info = self._extract_message_info(event_data)
+            if not message_info:
+                logger.warning("Could not extract message info from event")
                 return
             
-            # Store the setup
+            message_id = message_info['message_id']
+            content = message_info['content']
+            
+            # Skip if message content is empty or too short
+            if not content or len(content.strip()) < 10:
+                logger.debug(f"Skipping message {message_id}: content too short")
+                return
+            
+            # Parse the message
+            setups, all_levels = self.parser.parse_message_to_setups(message_info)
+            
+            if not setups:
+                logger.debug(f"No setups found in message {message_id}")
+                self.stats['messages_processed'] += 1
+                return
+            
+            # Group levels by ticker
+            levels_by_ticker = {}
+            for setup in setups:
+                ticker = setup.ticker
+                # Find levels for this setup (they all come from the same message)
+                ticker_levels = [level for level in all_levels if any(
+                    kw in level.description.lower() for kw in [ticker.lower()]
+                ) if level.description] if all_levels else []
+                levels_by_ticker[ticker] = ticker_levels
+            
+            # Store parsed data
             try:
-                stored_setup = self.storage_service.store_setup(setup)
-                if stored_setup:
-                    self.stats['setups_parsed'] += 1
-                    
-                    # Emit SETUP_PARSED event
-                    await self._emit_setup_parsed_event(stored_setup, message)
-                    
-                    logger.info(f"Successfully parsed and stored setup from message {message.message_id}")
-                else:
-                    logger.warning(f"Failed to store setup from message {message.message_id}")
-                    
+                trading_day = self._extract_trading_day(message_info)
+                created_setups, created_levels = self.store.store_parsed_message(
+                    message_id, setups, levels_by_ticker, trading_day
+                )
+                
+                # Update stats
+                self.stats['messages_processed'] += 1
+                self.stats['setups_created'] += len(created_setups)
+                self.stats['levels_created'] += len(created_levels)
+                self.stats['last_processed'] = datetime.utcnow().isoformat()
+                
+                # Emit SETUP_PARSED event for each created setup
+                for setup in created_setups:
+                    setup_levels = [level for level in created_levels if level.setup_id == setup.id]
+                    self._emit_setup_parsed_event(setup, setup_levels, event_data.get('correlation_id'))
+                
+                logger.info(f"Successfully processed message {message_id}: "
+                          f"{len(created_setups)} setups, {len(created_levels)} levels")
+                
             except Exception as e:
-                logger.error(f"Error storing setup from message {message.message_id}: {e}")
-                self.stats['errors'] += 1
+                logger.error(f"Error storing parsed data for message {message_id}: {e}")
+                self.stats['storage_errors'] += 1
             
         except Exception as e:
-            logger.error(f"Error processing message {message.message_id}: {e}")
-            self.stats['errors'] += 1
+            logger.error(f"Error processing message stored event: {e}")
+            self.stats['parsing_errors'] += 1
     
-    async def _emit_setup_parsed_event(self, setup, message: DiscordMessageModel) -> None:
+    def _extract_message_info(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract message information from event data."""
+        try:
+            # Event data structure should contain message details
+            data = event_data.get('data', {})
+            
+            # Try different possible structures
+            if 'message' in data:
+                message = data['message']
+            elif 'message_data' in data:
+                message = data['message_data']
+            else:
+                message = data
+            
+            # Extract required fields
+            message_id = (
+                message.get('message_id') or 
+                message.get('id') or 
+                event_data.get('source_id')
+            )
+            
+            content = (
+                message.get('content') or 
+                message.get('text') or 
+                message.get('message_content')
+            )
+            
+            if not message_id or not content:
+                logger.warning(f"Missing required fields in message data: {message}")
+                return None
+            
+            return {
+                'message_id': str(message_id),
+                'content': str(content),
+                'author_id': message.get('author_id'),
+                'channel_id': message.get('channel_id'),
+                'timestamp': message.get('timestamp'),
+                'guild_id': message.get('guild_id')
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting message info: {e}")
+            return None
+    
+    def _extract_trading_day(self, message_info: Dict[str, Any]) -> date:
+        """Extract trading day from message info."""
+        try:
+            # Try to parse timestamp from message
+            timestamp_str = message_info.get('timestamp')
+            if timestamp_str:
+                # Handle different timestamp formats
+                if isinstance(timestamp_str, str):
+                    try:
+                        timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        return timestamp.date()
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Default to today
+            return date.today()
+            
+        except Exception as e:
+            logger.warning(f"Error extracting trading day: {e}")
+            return date.today()
+    
+    def _emit_setup_parsed_event(self, setup: TradeSetup, levels: List[ParsedLevel], correlation_id: str = None):
         """
-        Emit SETUP_PARSED event for a successfully parsed setup.
+        Emit SETUP_PARSED event for downstream consumers.
         
         Args:
-            setup: SetupModel that was parsed and stored
-            message: Original DiscordMessageModel
+            setup: Created TradeSetup instance
+            levels: Associated ParsedLevel instances
+            correlation_id: Event correlation ID for tracing
         """
         try:
-            event_payload = {
+            event_data = {
                 'setup_id': setup.id,
                 'ticker': setup.ticker,
                 'setup_type': setup.setup_type,
                 'direction': setup.direction,
-                'confidence': setup.confidence,
-                'source_message_id': message.message_id,
-                'channel_id': getattr(message, 'channel_id', None),
-                'parsed_at': datetime.utcnow().isoformat()
+                'confidence_score': setup.confidence_score,
+                'trading_day': setup.trading_day.isoformat(),
+                'message_id': setup.message_id,
+                'levels_count': len(levels),
+                'levels': [
+                    {
+                        'id': level.id,
+                        'level_type': level.level_type,
+                        'trigger_price': float(level.trigger_price),
+                        'direction': level.direction,
+                        'strategy': level.strategy
+                    }
+                    for level in levels
+                ],
+                'metadata': {
+                    'parsed_at': datetime.utcnow().isoformat(),
+                    'parser_version': '1.0',
+                    'confidence_threshold': 0.5
+                }
             }
             
-            # Publish SETUP_PARSED event
             publish_event(
-                event_type=EventTypes.SETUP_PARSED,
-                data=event_payload,
-                channel=EventChannels.SETUP_CREATED
+                channel='parsing:setup',
+                event_type='setup.parsed',
+                data=event_data,
+                source='parsing_listener',
+                correlation_id=correlation_id
             )
             
             logger.debug(f"Emitted SETUP_PARSED event for setup {setup.id}")
             
         except Exception as e:
-            logger.error(f"Error emitting SETUP_PARSED event: {e}")
+            logger.error(f"Error emitting setup parsed event: {e}")
     
-    def get_listener_stats(self) -> Dict[str, Any]:
-        """
-        Get listener statistics.
-        
-        Returns:
-            Dict[str, Any]: Listener performance statistics
-        """
+    def get_stats(self) -> Dict[str, Any]:
+        """Get parsing listener statistics."""
         return {
-            'is_running': self.is_running,
-            'statistics': self.stats.copy(),
-            'timestamp': datetime.utcnow().isoformat()
+            **self.stats,
+            'status': 'active' if self.consumer.is_running() else 'stopped',
+            'parser_type': 'consolidated',
+            'service_type': 'parsing'
         }
     
-    def reset_stats(self) -> None:
-        """Reset listener statistics."""
-        self.stats = {
-            'messages_processed': 0,
-            'setups_parsed': 0,
-            'errors': 0,
-            'started_at': self.stats.get('started_at')
-        }
+    def process_message_manually(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Manually process a message for testing or reprocessing.
+        
+        Args:
+            message_data: Message data dict
+            
+        Returns:
+            Processing results
+        """
+        try:
+            # Parse the message
+            setups, all_levels = self.parser.parse_message_to_setups(message_data)
+            
+            if not setups:
+                return {
+                    'success': True,
+                    'setups_created': 0,
+                    'levels_created': 0,
+                    'message': 'No setups found in message'
+                }
+            
+            # Group levels by ticker
+            levels_by_ticker = {}
+            for setup in setups:
+                # For manual processing, assign all levels to the first setup
+                if setup == setups[0]:
+                    levels_by_ticker[setup.ticker] = all_levels
+                else:
+                    levels_by_ticker[setup.ticker] = []
+            
+            # Store the data
+            message_id = message_data.get('message_id', message_data.get('id'))
+            created_setups, created_levels = self.store.store_parsed_message(
+                message_id, setups, levels_by_ticker
+            )
+            
+            return {
+                'success': True,
+                'setups_created': len(created_setups),
+                'levels_created': len(created_levels),
+                'setups': [setup.to_dict() for setup in created_setups],
+                'levels': [level.to_dict() for level in created_levels]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in manual message processing: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'setups_created': 0,
+                'levels_created': 0
+            }
 
 
 # Global listener instance
-_listener_instance = None
+_listener = None
 
+def get_parsing_listener() -> ParsingListener:
+    """Get the global parsing listener instance."""
+    global _listener
+    if _listener is None:
+        _listener = ParsingListener()
+    return _listener
 
-async def start_message_stored_listener() -> MessageStoredListener:
-    """
-    Start the MESSAGE_STORED listener.
-    
-    Returns:
-        MessageStoredListener: Started listener instance
-    """
-    global _listener_instance
-    
-    if _listener_instance and _listener_instance.is_running:
-        logger.warning("MESSAGE_STORED listener already running")
-        return _listener_instance
-    
-    _listener_instance = MessageStoredListener()
-    
-    # Start listener in background task
-    asyncio.create_task(_listener_instance.start_listening())
-    
-    return _listener_instance
+def start_parsing_service():
+    """Start the parsing service listener."""
+    listener = get_parsing_listener()
+    listener.start_listening()
+    return listener
 
-
-def stop_message_stored_listener() -> None:
-    """Stop the MESSAGE_STORED listener if running."""
-    global _listener_instance
-    
-    if _listener_instance:
-        _listener_instance.stop_listening()
-
-
-def get_listener_stats() -> Optional[Dict[str, Any]]:
-    """
-    Get current listener statistics.
-    
-    Returns:
-        Optional[Dict[str, Any]]: Listener stats or None if not running
-    """
-    global _listener_instance
-    
-    if _listener_instance:
-        return _listener_instance.get_listener_stats()
-    
-    return None
-
-
-async def process_single_message(message_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Convenience function to process a single message for parsing.
-    
-    Args:
-        message_id: Discord message ID to process
-        
-    Returns:
-        Optional[Dict[str, Any]]: Processing results or None if failed
-    """
-    try:
-        # Get message from database
-        message = DiscordMessageModel.query.filter_by(
-            message_id=message_id
-        ).first()
-        
-        if not message:
-            logger.warning(f"Message {message_id} not found")
-            return None
-        
-        # Create temporary listener for processing
-        temp_listener = MessageStoredListener()
-        await temp_listener._process_message(message)
-        
-        return temp_listener.get_listener_stats()
-        
-    except Exception as e:
-        logger.error(f"Error processing single message {message_id}: {e}")
-        return None
+def stop_parsing_service():
+    """Stop the parsing service listener."""
+    listener = get_parsing_listener()
+    listener.stop_listening()
