@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Ingestion Dashboard - A+ Trading{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Message Ingestion Dashboard</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="{{ url_for('ingest_dashboard.metrics') }}" class="btn btn-sm btn-outline-secondary">
+                <i data-feather="download"></i>
+                Export Metrics
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Metrics Overview -->
+<div class="row">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="h5 mb-0 font-weight-bold">{{ metrics.messages_ingested|default(0) }}</div>
+                        <div class="text-xs font-weight-bold text-uppercase">Messages Ingested</div>
+                    </div>
+                    <div class="col-auto">
+                        <i data-feather="message-circle" class="text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card bg-warning text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="h5 mb-0 font-weight-bold">{{ metrics.ingestion_errors|default(0) }}</div>
+                        <div class="text-xs font-weight-bold text-uppercase">Ingestion Errors</div>
+                    </div>
+                    <div class="col-auto">
+                        <i data-feather="alert-triangle" class="text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="h5 mb-0 font-weight-bold">
+                            <span class="status-badge status-{{ metrics.status|default('unknown') }}">
+                                {{ metrics.status|default('Unknown')|title }}
+                            </span>
+                        </div>
+                        <div class="text-xs font-weight-bold text-uppercase">Service Status</div>
+                    </div>
+                    <div class="col-auto">
+                        <i data-feather="activity" class="text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="h5 mb-0 font-weight-bold">
+                            {% if metrics.last_ingestion %}
+                                {{ metrics.last_ingestion[:16] }}
+                            {% else %}
+                                Never
+                            {% endif %}
+                        </div>
+                        <div class="text-xs font-weight-bold text-uppercase">Last Ingestion</div>
+                    </div>
+                    <div class="col-auto">
+                        <i data-feather="clock" class="text-white-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Messages -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Recent Messages</h6>
+    </div>
+    <div class="card-body">
+        {% if recent_messages and recent_messages|length > 0 %}
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Channel</th>
+                            <th>Author</th>
+                            <th>Content</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for message in recent_messages %}
+                        <tr>
+                            <td>{{ message.id|default('N/A') }}</td>
+                            <td>{{ message.channel|default('N/A') }}</td>
+                            <td>{{ message.author|default('N/A') }}</td>
+                            <td>
+                                {% set content = message.content|default('') %}
+                                {% if content|length > 100 %}
+                                    {{ content[:100] }}...
+                                {% else %}
+                                    {{ content }}
+                                {% endif %}
+                            </td>
+                            <td>{{ message.timestamp|default('N/A') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <i data-feather="inbox" class="text-muted mb-3" style="width: 48px; height: 48px;"></i>
+                <p class="text-muted">No recent messages to display.</p>
+                <p class="text-muted small">Messages will appear here as they are processed through the ingestion pipeline.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Service Information -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Service Information</h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="font-weight-bold">Service Type</h6>
+                <p>{{ metrics.service_type|default('ingestion')|title }}</p>
+                
+                <h6 class="font-weight-bold">Service Status</h6>
+                <p>
+                    <span class="status-badge status-{{ metrics.service_status|default('unknown') }}">
+                        {{ metrics.service_status|default('Unknown')|title }}
+                    </span>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <h6 class="font-weight-bold">Last Updated</h6>
+                <p>{{ current_time.strftime('%Y-%m-%d %H:%M:%S') }} UTC</p>
+                
+                <h6 class="font-weight-bold">Ingestion Pipeline</h6>
+                <p>Discord message processing and validation</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Initialize Feather icons
+    feather.replace();
+    
+    // Auto-refresh every 30 seconds
+    setTimeout(function() {
+        location.reload();
+    }, 30000);
+</script>
+{% endblock %}

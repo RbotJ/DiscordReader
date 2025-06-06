@@ -1,0 +1,106 @@
+Below is a high‐level review of what an “ingestion” slice should look like in this repo (based on the vertical‐slice architecture you shared in aplus_planning.txt and the directory structure in your README). Since I can’t load the raw files directly here, I’ve outlined:
+
+What I’d expect to see in each file under features/ingestion
+
+A checklist of things to verify (transactions, error handling, event‐publishing, test coverage, etc.)
+
+A few suggestions for possible improvements or “gotchas” to watch out for
+
+1. Ingestion Slice: Expected Structure
+In a vertical‐slice architecture, your features/ingestion folder usually contains:
+
+bash
+Copy
+Edit
+features/ingestion/
+├── api.py         # HTTP (or webhook) endpoints to _receive_ raw Discord messages (e.g. Flask/Blueprint routes)
+├── service.py     # Business logic: validate, dedupe, transform raw payload → domain object
+├── store.py       # “Repository” or data‐access layer: write to your `discord_messages` (or `setup_messages`) tables
+├── schemas.py     # (optional) Pydantic/Marshmallow DTOs for incoming payload validation
+└── tests/         # Unit tests for each of the above modules
+1.1. api.py
+Defines Flask (or FastAPI) routes that Discord Bot (or a webhook) calls when a new raw message arrives.
+
+Should be as thin as possible:
+
+parse/validate JSON → DTO
+
+call into service.ingest_raw_message(...) (or similar)
+
+return an HTTP 200 or JSON response
+
+Checklist for api.py:
+
+Does it verify that required fields (“id”, “content”, “author”, “timestamp”, etc.) are present?
+
+Does it return clear error codes (400 vs. 500) when validation fails vs. when storage fails?
+
+Is the payload unmarshaled into a schema/DTO instead of blindly trusting request.json?
+
+1.2. service.py
+Holds the core ingestion logic. Typical steps:
+
+Sanitize/validate the raw Discord payload
+
+Check for idempotency (e.g. “Have I already saved message_id = X?”)
+
+Call store.save_message(...) inside a database transaction
+
+Publish an “EVENT: MESSAGE_STORED” (or similar) via your common event bus
+
+Checklist for service.py:
+
+Does it check for duplicates (e.g. skip if the same Discord message ID already exists)?
+
+Is there a clear transaction boundary (use SQLAlchemy session.begin() or Flask’s app.app_context() + session.commit())?
+
+Are failures logged, and does the transaction roll back cleanly?
+
+If you publish an event after saving, does it do so inside the same DB transaction or immediately after? (You usually want to publish only once the insert is committed.)
+
+Does it catch and bubble up exceptions so that api.py can return HTTP 500 if something unexpected happens?
+
+1.3. store.py
+Contains raw SQLAlchemy (or Alembic) models for the discord_messages table.
+
+Exposes simple CRUD methods like save_message(session, dto) or get_message_by_id(session, message_id).
+
+Checklist for store.py:
+
+Is consistency maintained between your SQLAlchemy model (column names) and what service.py expects?
+
+Are columns marked correctly (e.g. server_id, channel_id, author_id, content, timestamp) and is message_id declared UNIQUE to prevent duplicates?
+
+If you have triggers or defaults (e.g. created_at = Column(DateTime, default=func.now())), make sure the Python side does not try to override them.
+
+If you need relational integrity (e.g. foreign key to a discord_channels table), confirm those constraints are in place.
+
+1.4. (Optional) schemas.py
+A Pydantic or Marshmallow schema to enforce type safety on the incoming JSON.
+
+Helps centralize validation rules (e.g. “author.id is an int”, “timestamp is ISO8601 string”)
+
+Checklist for schemas.py:
+
+Are all required fields explicitly specified?
+
+Are patterns (e.g. for timestamps) validated?
+
+Do you reuse these DTOs in both api.py and service.py to avoid duplicating validation logic?
+
+1.5. tests/
+Unit tests for each module under features/ingestion
+
+Mock the database (e.g. create an in‐memory SQLite or a test Postgres container)
+
+Verify that calling service.ingest_raw_message(...) with a well‐formed DTO actually writes a row to the DB + publishes an event record
+
+Test invalid inputs (missing fields, duplicate IDs) to confirm you return/raise the correct exception
+
+Checklist for tests/:
+
+Do you cover both happy‐path and failure scenarios?
+
+Do you assert that an inserted row’s columns match exactly what you passed in?
+
+If you use the event bus, do you verify that the correct “MESSAGE_STORED” event (with the right payload) shows up in the events table/table stub?
