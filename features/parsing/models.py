@@ -93,12 +93,12 @@ class ParsedLevel(db.Model):
     New schema model for individual trading levels.
     Stores breakouts, breakdowns, bounces, rejections, targets, etc.
     """
-    __tablename__ = "new_parsed_levels"
+    __tablename__ = "parsed_levels"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     
     # Foreign key to trade setup
-    setup_id = Column(Integer, ForeignKey("new_trade_setups.id", ondelete="CASCADE"), nullable=False, index=True)
+    setup_id = Column(Integer, ForeignKey("trade_setups.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Level information
     level_type = Column(String(30), nullable=False)  # entry, target, stop, bounce, rejection, breakout, breakdown

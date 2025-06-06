@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parsing Service Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center py-3">
+                    <h1><i class="fas fa-chart-line me-2"></i>Parsing Service Dashboard</h1>
+                    <a href="/dashboard/" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Main Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Service Status Row -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card border-{% if metrics.service_status == 'running' %}success{% else %}danger{% endif %}">
+                    <div class="card-body text-center">
+                        <i class="fas fa-server fa-2x text-{% if metrics.service_status == 'running' %}success{% else %}danger{% endif %} mb-2"></i>
+                        <h5>Service Status</h5>
+                        <span class="badge bg-{% if metrics.service_status == 'running' %}success{% else %}danger{% endif %} fs-6">
+                            {{ metrics.service_status|title }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <i class="fas fa-envelope fa-2x text-primary mb-2"></i>
+                        <h5>Messages Processed</h5>
+                        <h3 class="text-primary">{{ metrics.messages_processed or 0 }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <i class="fas fa-chart-bar fa-2x text-info mb-2"></i>
+                        <h5>Active Setups</h5>
+                        <h3 class="text-info">{{ metrics.active_setups or 0 }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <i class="fas fa-bullseye fa-2x text-warning mb-2"></i>
+                        <h5>Total Levels</h5>
+                        <h3 class="text-warning">{{ metrics.total_levels or 0 }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions Row -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-tools me-2"></i>Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <a href="/dashboard/parsing/setups" class="btn btn-primary w-100 mb-2">
+                                    <i class="fas fa-list me-2"></i>View Parsed Setups
+                                </a>
+                            </div>
+                            <div class="col-md-4">
+                                <a href="/dashboard/parsing/health" class="btn btn-info w-100 mb-2">
+                                    <i class="fas fa-heartbeat me-2"></i>Health Check
+                                </a>
+                            </div>
+                            <div class="col-md-4">
+                                <button id="refreshMetrics" class="btn btn-secondary w-100 mb-2">
+                                    <i class="fas fa-sync-alt me-2"></i>Refresh Metrics
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        {% if recent_setups %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-clock me-2"></i>Recent Trade Setups</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Type</th>
+                                        <th>Direction</th>
+                                        <th>Trading Day</th>
+                                        <th>Confidence</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for setup in recent_setups %}
+                                    <tr>
+                                        <td><strong>{{ setup.ticker }}</strong></td>
+                                        <td>{{ setup.setup_type or 'N/A' }}</td>
+                                        <td>
+                                            {% if setup.direction %}
+                                                <span class="badge bg-{% if setup.direction == 'bullish' %}success{% elif setup.direction == 'bearish' %}danger{% else %}secondary{% endif %}">
+                                                    {{ setup.direction|title }}
+                                                </span>
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ setup.trading_day }}</td>
+                                        <td>
+                                            {% if setup.confidence_score %}
+                                                {{ "%.1f"|format(setup.confidence_score * 100) }}%
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{% if setup.active %}success{% else %}secondary{% endif %}">
+                                                {% if setup.active %}Active{% else %}Inactive{% endif %}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('refreshMetrics').addEventListener('click', function() {
+            location.reload();
+        });
+    </script>
+</body>
+</html>
