@@ -322,10 +322,12 @@ class IngestionService:
             message_list = []
             for msg in messages:
                 content_str = str(msg.content) if msg.content else ""
+                preview = content_str[:200] + '...' if len(content_str) > 200 else content_str
                 message_data = {
                     'message_id': msg.message_id,
                     'author': msg.author_id,
-                    'content': content_str[:200] + '...' if len(content_str) > 200 else content_str,
+                    'preview': preview,
+                    'full_content': content_str,
                     'timestamp': msg.timestamp.isoformat() if msg.timestamp is not None else None,
                     'created_at': msg.created_at.isoformat() if msg.created_at is not None else None,
                     'channel_id': msg.channel_id,

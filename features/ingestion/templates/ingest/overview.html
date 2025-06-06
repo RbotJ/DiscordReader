@@ -137,7 +137,7 @@
                     <select id="messageSelect" class="form-select form-select-sm" style="min-width: 200px;">
                         <option value="">Select a message to view details</option>
                         {% for message in recent_messages %}
-                        <option value="{{ message.message_id }}" data-content="{{ message.content|e }}" data-author="{{ message.author|e }}" data-timestamp="{{ message.timestamp }}">
+                        <option value="{{ message.message_id }}" data-preview="{{ message.preview|e }}" data-full-content="{{ message.full_content|e }}" data-author="{{ message.author|e }}" data-timestamp="{{ message.timestamp }}">
                             {{ message.author }} - {{ message.timestamp[:19] if message.timestamp else 'No timestamp' }}
                         </option>
                         {% endfor %}
@@ -168,7 +168,7 @@
                                 </td>
                                 <td>
                                     <div class="text-truncate" style="max-width: 300px;">
-                                        {{ message.content }}
+                                        {{ message.preview }}
                                     </div>
                                 </td>
                                 <td>
@@ -227,7 +227,7 @@ document.getElementById('messageSelect').addEventListener('change', function() {
         document.getElementById('detailAuthor').textContent = selectedOption.dataset.author;
         document.getElementById('detailTimestamp').textContent = selectedOption.dataset.timestamp || 'N/A';
         document.getElementById('detailMessageId').textContent = selectedOption.value;
-        document.getElementById('detailContent').textContent = selectedOption.dataset.content;
+        document.getElementById('detailContent').textContent = selectedOption.dataset.fullContent;
         
         // Find channel ID from table row
         const messageRow = document.querySelector(`tr[data-message-id="${selectedOption.value}"]`);

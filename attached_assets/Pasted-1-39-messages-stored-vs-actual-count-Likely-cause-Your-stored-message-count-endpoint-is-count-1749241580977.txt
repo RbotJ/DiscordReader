@@ -1,0 +1,304 @@
+1. “39 messages stored” vs. actual count
+Likely cause:
+Your “stored‐message” count endpoint is counting every row (or every insertion) rather than the number of unique messages. In many ingestion flows, a single Discord message can be inserted (or upserted) multiple times if:
+
+You’re not checking for duplicates before inserting.
+
+You’re counting unfiltered rows (including retries, edits, or duplicate inserts).
+
+How to verify:
+
+In your database, run a quick SQL query to see how many distinct message IDs you actually have:
+
+sql
+Copy
+Edit
+SELECT COUNT(DISTINCT message_id) AS distinct_count
+  FROM discord_messages;
+If this returns a number < 39, then your application is inserting duplicate rows.
+
+Check your ingestion service (e.g. features/ingestion/service.py) around whichever method does “get_stored_count().” If it’s simply doing:
+
+python
+Copy
+Edit
+session.query(DiscordMessage).count()
+that will count all rows, even duplicates.
+
+Fix #1: Enforce “INSERT … ON CONFLICT” (or check before insert).
+If you haven’t already, switch your SQLAlchemy model or repository code so that before inserting a new Discord message you do one of the following:
+
+Use a unique constraint on discord_messages.message_id, then do an UPSERT (ON CONFLICT DO NOTHING).
+
+Or explicitly check SELECT 1 FROM discord_messages WHERE message_id = :id before inserting.
+
+Example using SQLAlchemy (in pseudocode):
+
+python
+Copy
+Edit
+# models.py
+class DiscordMessage(Base):
+    __tablename__ = "discord_messages"
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String, unique=True, nullable=False)  # ensure uniqueness
+    content = Column(Text, nullable=False)
+    author = Column(String, nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    # … other fields …
+
+# service.py (or store.py)
+def store_discord_message(session, raw_message: Dict):
+    msg_id = raw_message["id"]
+    existing = session.query(DiscordMessage).filter_by(message_id=msg_id).first()
+    if existing:
+        return existing  # skip insertion if already stored
+
+    dm = DiscordMessage(
+        message_id = msg_id,
+        content    = raw_message["content"],
+        author     = raw_message["author"],
+        timestamp  = raw_message["timestamp"],
+        # … fill other columns …
+    )
+    session.add(dm)
+    session.commit()
+    return dm
+This way, you never get >1 row per unique message_id.
+
+Fix #2: When reporting “stored count,” use COUNT(DISTINCT message_id).
+If you cannot refactor the inserts themselves immediately, then at least change your “count” endpoint to run:
+
+python
+Copy
+Edit
+# service.py
+def get_message_count(session):
+    return (
+        session.query(func.count(distinct(DiscordMessage.message_id)))
+        .scalar()
+    )
+That guarantees you only count each message once.
+
+Result: Once you either prevent duplicate inserts or count distinct IDs, your dashboard will report “stored messages” that match reality (e.g., under 20 if you only truly have 20 unique messages).
+
+2. “Full Content” display always shows a 200-char preview
+Your Replit summary already pinpointed this:
+
+Finding 2: Full Message Content Issue
+The service truncates every message to 200 characters in get_recent_messages(), but the template’s dropdown expects full content for the detail view. As a result, even the “Show Full Content” button only ever sees the truncated snippet.
+
+How to fix the truncation/data-mismatch
+Change your service to return both:
+
+a preview field (first 200 chars + “…” for table display), and
+
+the un-truncated full_content (for when the user clicks “Full Content”).
+
+For example, in features/ingestion/service.py (or wherever get_recent_messages() lives), do something like:
+
+python
+Copy
+Edit
+# service.py
+def get_recent_messages(session, limit: int = 50) -> List[Dict]:
+    """
+    Returns a list of dicts like:
+      {
+        "message_id": "1377…",
+        "preview": "First 200 chars…",
+        "full_content": "The entire 1,451‐char message…",
+        "author": "some_user",
+        "timestamp": datetime(…)
+      }
+    """
+    rows = (
+        session.query(DiscordMessage)
+        .order_by(DiscordMessage.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+
+    results = []
+    for msg in rows:
+        full = msg.content
+        preview = (full[:200] + "...") if len(full) > 200 else full
+        results.append({
+            "message_id": msg.message_id,
+            "preview":      preview,
+            "full_content": full,
+            "author":       msg.author,
+            "timestamp":    msg.timestamp,
+        })
+    return results
+Update your Jinja template so that:
+
+the table column uses preview (not content), and
+
+the dropdown’s data‐content attribute is set to {{ message.full_content|e }}.
+
+In features/ingestion/templates/ingest/overview.html, find wherever you do:
+
+html
+Copy
+Edit
+<td>{{ message.content[:200] ~ "…" }}</td>
+<!-- or maybe: data-content="{{ message.content|e }}" -->
+Change it to:
+
+html
+Copy
+Edit
+<td>{{ message.preview }}</td>
+And, for the dropdown option (or whichever element is used to store the “full content”):
+
+html
+Copy
+Edit
+<option
+  value="{{ message.message_id }}"
+  data-preview="{{ message.preview|e }}"
+  data-full-content="{{ message.full_content|e }}"
+>
+  {{ message.message_id }}
+</option>
+Fix your JavaScript to read data-full-content when “Show Full Content” is clicked.
+If your existing script does something like:
+
+js
+Copy
+Edit
+// old: this only ever got truncated content
+const selectedOption = dropdownEl.options[dropdownEl.selectedIndex];
+document.getElementById("detailContent").textContent =
+    selectedOption.dataset.content;
+Update it to:
+
+js
+Copy
+Edit
+// new: always show the complete message
+const selectedOption = dropdownEl.options[dropdownEl.selectedIndex];
+const fullText = selectedOption.dataset.fullContent;
+document.getElementById("detailContent").textContent = fullText;
+And if you still want to show a preview inside the table row or wherever, reference dataset.preview.
+
+Result: Now the table will display just the first 200 characters (so rows stay compact), but when the user clicks “Show Full Content,” the JS reads data-full-content (the entire message) and displays it.
+
+Example patch for overview.html
+Below is a minimal example illustrating how you might adjust your Jinja template. Assume the existing template had something like:
+
+html
+Copy
+Edit
+<!-- snippet from before: -->
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Content Preview</th>
+      <!-- … -->
+    </tr>
+  </thead>
+  <tbody>
+    {% for message in messages %}
+      <tr>
+        <td>{{ message.message_id }}</td>
+        <!-- old: this only ever got truncated content passed in from service -->
+        <td>{{ message.content[:200] ~ "…" }}</td>
+        <!-- … other columns … -->
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- A <select> or dropdown to pick one message for “Full Content”: -->
+<select id="messageSelector">
+  <option value="">-- select a message to see details --</option>
+  {% for message in messages %}
+    <option
+      value="{{ message.message_id }}"
+      data-content="{{ message.content|e }}"
+    >
+      {{ message.message_id }}
+    </option>
+  {% endfor %}
+</select>
+
+<div id="detailContent"></div>
+<script>
+  document
+    .getElementById("messageSelector")
+    .addEventListener("change", function () {
+      const opt = this.options[this.selectedIndex];
+      document.getElementById("detailContent").textContent = opt.dataset.content;
+    });
+</script>
+Modify it to:
+
+html
+Copy
+Edit
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Content Preview</th>
+      <!-- … -->
+    </tr>
+  </thead>
+  <tbody>
+    {% for message in messages %}
+      <tr>
+        <td>{{ message.message_id }}</td>
+        <!-- now use message.preview from the service layer -->
+        <td>{{ message.preview }}</td>
+        <!-- … other columns … -->
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Update dropdown options to carry both preview and full_content -->
+<select id="messageSelector">
+  <option value="">-- select a message to see details --</option>
+  {% for message in messages %}
+    <option
+      value="{{ message.message_id }}"
+      data-preview="{{ message.preview|e }}"
+      data-full-content="{{ message.full_content|e }}"
+    >
+      {{ message.message_id }}
+    </option>
+  {% endfor %}
+</select>
+
+<div id="detailContent"></div>
+<script>
+  document
+    .getElementById("messageSelector")
+    .addEventListener("change", function () {
+      const opt = this.options[this.selectedIndex];
+      const fullText = opt.dataset.fullContent; 
+      document.getElementById("detailContent").textContent = fullText;
+    });
+</script>
+The <td>{{ message.preview }}</td> ensures you only show 200 characters (with the “…” added in Python).
+
+The <option … data-preview="…" data-full-content="…"> gives you both truncated and full text in the <select>.
+
+The JS then explicitly picks dataset.fullContent for the detail pane.
+
+3. Putting it all together
+When you combine both fixes:
+
+Deduplicate your database rows (so “stored count” is correct).
+
+Return both preview + full_content from the service so your template can render them correctly.
+
+Your ingestion slice should then:
+
+Report “X unique messages stored” where X matches your true row count.
+
+Show a 200-char preview in the table, but allow “show full content” to reveal the entire message.
+
