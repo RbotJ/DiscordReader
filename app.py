@@ -69,10 +69,17 @@ def register_all_blueprints(app):
         
         # Parsing features
         try:
-            from features.parsing.api import parsing_bp as parsing_bp
-            blueprints_to_register.append(('parsing', parsing_bp))
+            from features.parsing.api import parsing_bp as parsing_api_bp
+            blueprints_to_register.append(('parsing_api', parsing_api_bp))
         except ImportError as e:
-            logging.warning(f"Could not import parsing blueprint: {e}")
+            logging.warning(f"Could not import parsing API blueprint: {e}")
+            
+        # Parsing dashboard
+        try:
+            from features.parsing.dashboard import parsing_bp as parsing_dashboard_bp
+            blueprints_to_register.append(('parsing_dashboard', parsing_dashboard_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import parsing dashboard blueprint: {e}")
         
         # Setups features
         try:

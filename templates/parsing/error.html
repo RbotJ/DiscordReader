@@ -1,19 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parsing Service Error</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-</head>
-<body>
-    <div class="container mt-5">
+{% extends "base.html" %}
+
+{% block title %}Parsing Service Error - A+ Trading{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12">
+                    <h1 class="h3 mb-0">
+                        <i data-feather="alert-triangle" class="me-2"></i>
+                        Parsing Service Error
+                    </h1>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid">
         <div class="row justify-content-center">
             <div class="col-md-8">
                 <div class="card border-danger">
                     <div class="card-header bg-danger text-white">
-                        <h4><i class="fas fa-exclamation-triangle me-2"></i>Parsing Service Error</h4>
+                        <h4>
+                            <i data-feather="alert-triangle" class="me-2"></i>
+                            Parsing Service Error
+                        </h4>
                     </div>
                     <div class="card-body">
                         <div class="alert alert-danger" role="alert">
@@ -21,10 +32,12 @@
                         </div>
                         <div class="d-flex gap-2">
                             <a href="/dashboard/parsing/" class="btn btn-primary">
-                                <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+                                <i data-feather="arrow-left" class="me-1"></i>
+                                Back to Dashboard
                             </a>
                             <a href="/dashboard/parsing/health" class="btn btn-info">
-                                <i class="fas fa-heartbeat me-1"></i>Check Health
+                                <i data-feather="activity" class="me-1"></i>
+                                Check Health
                             </a>
                         </div>
                     </div>
@@ -32,6 +45,4 @@
             </div>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+{% endblock %}
