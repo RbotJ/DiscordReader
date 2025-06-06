@@ -152,6 +152,11 @@ def start_discord_bot_background(app):
 
                     # Channel slice
                     channel_svc = ChannelManager()
+                    
+                    # Parsing slice
+                    from features.parsing.service import start_parsing_service
+                    parsing_service = start_parsing_service()
+                    logging.info("Parsing service started successfully")
 
                     # Discord slice
                     from features.discord_bot.bot import TradingDiscordBot
