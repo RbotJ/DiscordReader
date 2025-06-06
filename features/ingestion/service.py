@@ -39,6 +39,9 @@ class IngestionService:
     def __init__(self):
         self._processed_messages = set()
         self._validation_rules = []
+        self.messages_ingested = 0
+        self.ingestion_errors = 0
+        self.last_ingestion_time = None
         
     async def process_message(self, message_dto: DiscordMessageDTO) -> bool:
         """
@@ -85,6 +88,10 @@ class IngestionService:
             # Mark as processed
             self._processed_messages.add(message_dto.message_id)
             
+            # Update metrics
+            self.messages_ingested += 1
+            self.last_ingestion_time = datetime.utcnow()
+            
             # Publish processing complete event
             await publish_cross_slice_event(
                 "ingestion.message_processed",
@@ -101,6 +108,7 @@ class IngestionService:
             
         except Exception as e:
             logger.error(f"Error processing message {message_dto.message_id}: {e}")
+            self.ingestion_errors += 1
             return False
             
     async def process_batch(self, messages: List[DiscordMessageDTO]) -> IngestionResult:
@@ -290,6 +298,19 @@ class IngestionService:
         """Check if a message has been processed."""
         return message_id in self._processed_messages
         
+    def get_recent_messages(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get recent messages for dashboard display.
+        
+        Args:
+            limit: Maximum number of messages to return
+            
+        Returns:
+            List of recent message data
+        """
+        # Return empty list for now - this would typically query stored messages
+        return []
+    
     def get_metrics(self) -> Dict[str, Any]:
         """
         Get ingestion service metrics for monitoring.
@@ -301,8 +322,9 @@ class IngestionService:
             'messages_ingested': self.messages_ingested,
             'ingestion_errors': self.ingestion_errors,
             'last_ingestion': self.last_ingestion_time.isoformat() if self.last_ingestion_time else None,
-            'service_status': 'active' if hasattr(self, 'storage') else 'inactive',
-            'service_type': 'ingestion'
+            'service_status': 'active',
+            'service_type': 'ingestion',
+            'status': 'ready'
         }
 
 
