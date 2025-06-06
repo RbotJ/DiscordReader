@@ -42,17 +42,32 @@ def overview():
                 'last_ingestion': raw_metrics.get('last_ingestion', None),
                 'service_status': raw_metrics.get('service_status', 'unknown'),
                 'service_type': raw_metrics.get('service_type', 'ingestion'),
-                'status': raw_metrics.get('status', 'unknown')
+                'status': raw_metrics.get('status', 'unknown'),
+                # Template-specific metrics with defaults
+                'messages_processed_today': raw_metrics.get('messages_processed_today', 0),
+                'total_messages_stored': raw_metrics.get('total_messages_stored', 0),
+                'validation_success_rate': raw_metrics.get('validation_success_rate', 100.0),
+                'queue_depth': raw_metrics.get('queue_depth', 0),
+                'avg_processing_time_ms': raw_metrics.get('avg_processing_time_ms', 0),
+                'validation_failures_today': raw_metrics.get('validation_failures_today', 0),
+                'last_processed_message': raw_metrics.get('last_processed_message', None)
             }
             
             # Ensure numeric values are actually numeric
-            for key in ['messages_ingested', 'ingestion_errors']:
+            numeric_keys = [
+                'messages_ingested', 'ingestion_errors', 'messages_processed_today',
+                'total_messages_stored', 'validation_success_rate', 'queue_depth',
+                'avg_processing_time_ms', 'validation_failures_today'
+            ]
+            for key in numeric_keys:
                 if metrics[key] is None or not isinstance(metrics[key], (int, float)):
                     logger.warning(f"Metric {key} is not numeric: {metrics[key]}, defaulting to 0")
-                    metrics[key] = 0
+                    metrics[key] = 0.0 if 'rate' in key else 0
             
             recent_messages = service.get_recent_messages(limit=20)
             logger.debug(f"Sanitized metrics: {metrics}")
+            logger.debug(f"All metric keys: {list(metrics.keys())}")
+            logger.debug(f"validation_success_rate type: {type(metrics.get('validation_success_rate'))}, value: {metrics.get('validation_success_rate')}")
             
             return render_template('ingest/overview.html',
                                  metrics=metrics,

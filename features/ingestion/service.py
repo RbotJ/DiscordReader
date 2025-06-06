@@ -319,22 +319,24 @@ class IngestionService:
             Dict containing ingestion metrics
         """
         total_stored = len(self._processed_messages)
-        success_rate = 100.0 if self.messages_ingested + self.ingestion_errors == 0 else (self.messages_ingested / (self.messages_ingested + self.ingestion_errors)) * 100
+        total_messages = self.messages_ingested + self.ingestion_errors
+        success_rate = 100.0 if total_messages == 0 else (self.messages_ingested / total_messages) * 100
         
+        # Ensure all numeric values are properly typed
         return {
-            'messages_ingested': self.messages_ingested,
-            'ingestion_errors': self.ingestion_errors,
+            'messages_ingested': int(self.messages_ingested),
+            'ingestion_errors': int(self.ingestion_errors),
             'last_ingestion': self.last_ingestion_time.isoformat() if self.last_ingestion_time else None,
             'service_status': 'active',
             'service_type': 'ingestion',
             'status': 'ready',
             # Template-specific metrics
-            'messages_processed_today': self.messages_ingested,
-            'total_messages_stored': total_stored,
-            'validation_success_rate': success_rate,
+            'messages_processed_today': int(self.messages_ingested),
+            'total_messages_stored': int(total_stored),
+            'validation_success_rate': float(success_rate),
             'queue_depth': 0,
             'avg_processing_time_ms': 25,
-            'validation_failures_today': self.ingestion_errors,
+            'validation_failures_today': int(self.ingestion_errors),
             'last_processed_message': self.last_ingestion_time.isoformat() if self.last_ingestion_time else None
         }
 
