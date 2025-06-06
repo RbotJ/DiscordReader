@@ -30,75 +30,8 @@ def initialize_db(app):
         logger.error(f"Failed to initialize database: {e}")
         return False
 
-def publish_event(event_type: str, data: dict, channel: str = "default", source: str = None, correlation_id: str = None):
-    """
-    Enhanced event publishing wrapper with richer metadata and traceability.
-    
-    Args:
-        event_type: Type of event (e.g. 'parsing.setup.parsed')
-        data: Event data (dict)
-        channel: Event channel (e.g. 'parsing:setup')
-        source: Source service/module (e.g. 'discord_parser')
-        correlation_id: UUID string for tracing related events
-        
-    Returns:
-        bool: True if event published successfully, False otherwise
-    """
-    if not has_app_context():
-        logger.warning(f"Attempted to publish event {event_type} outside Flask application context")
-        return False
-    
-    try:
-        # Generate correlation ID if not provided
-        if correlation_id is None:
-            correlation_id = str(uuid.uuid4())
-        
-        # Validate correlation ID format
-        if correlation_id and isinstance(correlation_id, str):
-            try:
-                uuid.UUID(correlation_id)  # Validate UUID format
-            except ValueError:
-                logger.warning(f"Invalid correlation_id format: {correlation_id}, generating new one")
-                correlation_id = str(uuid.uuid4())
-        
-        # Add metadata to data
-        enhanced_data = {
-            **data,
-            '_metadata': {
-                'timestamp': datetime.utcnow().isoformat(),
-                'source': source,
-                'correlation_id': correlation_id
-            }
-        }
-        
-        # Insert event into database
-        query = text("""
-            INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
-            VALUES (:event_type, :channel, :data, :source, :correlation_id, :created_at)
-        """)
-        
-        params = {
-            'event_type': event_type,
-            'channel': channel,
-            'data': enhanced_data,
-            'source': source,
-            'correlation_id': correlation_id,
-            'created_at': datetime.utcnow()
-        }
-        
-        db.session.execute(query, params)
-        db.session.commit()
-        
-        logger.debug(f"Published event: {event_type} to channel: {channel}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Failed to publish event {event_type}: {e}")
-        try:
-            db.session.rollback()
-        except:
-            pass
-        return False
+# NOTE: publish_event has been moved to common/events/publisher.py
+# Import from there instead: from common.events.publisher import publish_event
 
 def execute_query(query, params=None, fetch_one=False):
     """

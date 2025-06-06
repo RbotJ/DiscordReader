@@ -15,7 +15,7 @@ from features.alpaca.client import (
     submit_market_order, submit_limit_order, cancel_order,
     get_orders, get_open_orders, get_account_info
 )
-from common.db import publish_event
+from common.events.publisher import publish_event
 
 # Configure logger
 logger = logging.getLogger(__name__)

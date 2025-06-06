@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime, time
 from typing import Dict, List, Any, Optional, AsyncGenerator, Callable, Union, Tuple
 
-from common.db import publish_event, get_latest_events
+from common.events.publisher import publish_event, get_latest_events
 from common.events.constants import EventChannels
 from common.constants import SignalCategory
 

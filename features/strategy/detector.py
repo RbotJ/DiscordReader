@@ -20,7 +20,7 @@ from features.market.client import (
     register_price_callback, initialize_clients, add_symbols_to_watchlist
 )
 from common.events.constants import EventChannels
-from common.db import publish_event, get_latest_events
+from common.events.publisher import publish_event, get_latest_events
 
 # Configure logger
 logger = logging.getLogger(__name__)
