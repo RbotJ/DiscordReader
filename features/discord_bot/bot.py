@@ -99,8 +99,8 @@ class TradingDiscordBot(discord.Client):
                 # Set channel_id from bot's configured channel
                 self.client_manager.channel_id = str(self.aplus_setups_channel_id) if self.aplus_setups_channel_id else None
             
-            # Initialize ingestion service with client manager
-            self.ingestion_service = IngestionService(discord_client_manager=self.client_manager)
+            # Initialize ingestion service (no constructor parameters needed)
+            self.ingestion_service = IngestionService()
             logger.info("Ingestion service initialized with bot client")
             
             # Trigger startup catch-up ingestion if target channel found

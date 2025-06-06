@@ -32,8 +32,28 @@ def overview():
     try:
         service = get_ingestion_service()
         if service:
-            metrics = service.get_metrics()
+            raw_metrics = service.get_metrics()
+            logger.debug(f"Raw metrics from service: {raw_metrics}")
+            
+            # Sanitize metrics to prevent template errors
+            metrics = {
+                'messages_ingested': raw_metrics.get('messages_ingested', 0),
+                'ingestion_errors': raw_metrics.get('ingestion_errors', 0),
+                'last_ingestion': raw_metrics.get('last_ingestion', None),
+                'service_status': raw_metrics.get('service_status', 'unknown'),
+                'service_type': raw_metrics.get('service_type', 'ingestion'),
+                'status': raw_metrics.get('status', 'unknown')
+            }
+            
+            # Ensure numeric values are actually numeric
+            for key in ['messages_ingested', 'ingestion_errors']:
+                if metrics[key] is None or not isinstance(metrics[key], (int, float)):
+                    logger.warning(f"Metric {key} is not numeric: {metrics[key]}, defaulting to 0")
+                    metrics[key] = 0
+            
             recent_messages = service.get_recent_messages(limit=20)
+            logger.debug(f"Sanitized metrics: {metrics}")
+            
             return render_template('ingest/overview.html',
                                  metrics=metrics,
                                  recent_messages=recent_messages,
