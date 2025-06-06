@@ -21,7 +21,7 @@ class TradeSetup(db.Model):
     New schema model for trade setups.
     One setup per ticker per trading day, linked to source Discord message.
     """
-    __tablename__ = "new_trade_setups"
+    __tablename__ = "trade_setups"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     
