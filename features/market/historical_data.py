@@ -165,7 +165,12 @@ def _update_candles(symbols: List[str], timeframe: str, limit: int) -> None:
                 'is_closed': True
             }
 
-            publish_event(EventChannels.MARKET_BARS_UPDATE, candle_update)
+            publish_event(
+                event_type="market.bars.updated",
+                data=candle_update,
+                channel=EventChannels.MARKET_BARS_UPDATE,
+                source="historical_data_provider"
+            )
 
             logger.debug(f"Published {timeframe} candle update for {symbol}")
     except Exception as e:
