@@ -11,7 +11,7 @@ from datetime import datetime
 
 from common.events.enhanced_publisher import EventPublisher
 from common.events.constants import EventChannels, EventTypes
-from common.db import publish_event
+from common.events.publisher import publish_event
 
 logger = logging.getLogger(__name__)
 

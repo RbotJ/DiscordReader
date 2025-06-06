@@ -12,7 +12,8 @@ from typing import Dict, List, Any, Optional
 
 from common.db import db
 from common.db_models import MarketDataModel
-from common.events import publish_event, EventChannels
+from common.events.publisher import publish_event
+from common.event_constants import EventChannels
 from features.alpaca.client import get_latest_bars, alpaca_market_client
 
 # Configure logger
