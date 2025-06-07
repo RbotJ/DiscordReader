@@ -260,6 +260,38 @@ class ParsingStore:
             logger.error(f"Error getting parsing statistics: {e}")
             return {}
 
+    def get_available_trading_days(self, limit=30):
+        """Get list of trading days with setup data"""
+        try:
+            from sqlalchemy import distinct, func
+            result = self.session.query(distinct(TradeSetup.trading_day)).filter(
+                TradeSetup.trading_day.isnot(None)
+            ).order_by(TradeSetup.trading_day.desc()).limit(limit).all()
+            
+            return [row[0] for row in result]
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting available trading days: {e}")
+            return []
+
+    def get_setups_by_trading_day(self, trading_day=None):
+        """Get all setups for specific trading day (default: most recent)"""
+        try:
+            if trading_day is None:
+                # Get most recent trading day
+                available_days = self.get_available_trading_days(limit=1)
+                if not available_days:
+                    return []
+                trading_day = available_days[0]
+            
+            setups = self.session.query(TradeSetup).filter_by(
+                trading_day=trading_day
+            ).order_by(TradeSetup.created_at.desc()).all()
+            
+            return setups
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting setups for trading day {trading_day}: {e}")
+            return []
+
 
 # Global store instance
 _store = None

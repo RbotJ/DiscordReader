@@ -157,6 +157,50 @@ def trigger_level(level_id):
         logger.error(f"Error triggering level {level_id}: {e}")
         return jsonify({'error': 'Failed to trigger level'}), 500
 
+@parsing_bp.route('/setups/by-day', methods=['GET'])
+def get_setups_by_trading_day():
+    """Get setups filtered by trading day with dropdown options"""
+    try:
+        store = get_parsing_store()
+        
+        # Get query parameter for specific trading day
+        trading_day_param = request.args.get('trading_day')
+        trading_day = None
+        if trading_day_param:
+            try:
+                from datetime import datetime
+                trading_day = datetime.strptime(trading_day_param, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        
+        # Get available trading days and setups
+        available_days = store.get_available_trading_days()
+        setups = store.get_setups_by_trading_day(trading_day)
+        
+        # Determine selected day (most recent if none specified)
+        selected_day = trading_day
+        if not selected_day and available_days:
+            selected_day = available_days[0]
+        
+        return jsonify({
+            'success': True,
+            'setups': [setup.to_dict() for setup in setups],
+            'available_days': [day.isoformat() for day in available_days],
+            'selected_day': selected_day.isoformat() if selected_day else None,
+            'count': len(setups)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching setups by day: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'setups': [],
+            'available_days': [],
+            'selected_day': None,
+            'count': 0
+        }), 500
+
 @parsing_bp.route('/stats', methods=['GET'])
 def get_stats():
     """Get parsing service statistics"""

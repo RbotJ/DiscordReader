@@ -149,13 +149,241 @@
             </div>
         </div>
         {% endif %}
+
+        <!-- Daily Parsed Setups Log Card -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card mt-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="fas fa-calendar-day me-2"></i>Daily Parsed Setups</h6>
+                        <select id="tradingDayFilter" class="form-select form-select-sm" style="width: auto;">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                    <div class="card-body">
+                        <div id="setupsLogContainer">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Loading setups...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 {% endblock %}
 
 {% block extra_scripts %}
     <script>
+        let currentTradingDay = null;
+
+        // Load trading days and populate dropdown
+        function loadTradingDays() {
+            fetch('/api/parsing/setups/by-day')
+                .then(response => response.json())
+                .then(data => {
+                    const dropdown = document.getElementById('tradingDayFilter');
+                    dropdown.innerHTML = '';
+                    
+                    if (data.success && data.available_days.length > 0) {
+                        data.available_days.forEach(day => {
+                            const option = document.createElement('option');
+                            option.value = day;
+                            option.textContent = formatTradingDay(day);
+                            if (day === data.selected_day) {
+                                option.selected = true;
+                                currentTradingDay = day;
+                            }
+                            dropdown.appendChild(option);
+                        });
+                        
+                        // Load setups for selected day
+                        loadSetupsByDay(data.selected_day, data.setups);
+                    } else {
+                        dropdown.innerHTML = '<option value="">No trading days available</option>';
+                        showEmptyState();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading trading days:', error);
+                    showErrorState();
+                });
+        }
+
+        // Load setups for selected day
+        function loadSetupsByDay(tradingDay, preloadedSetups = null) {
+            if (preloadedSetups) {
+                renderSetups(preloadedSetups);
+                return;
+            }
+
+            const container = document.getElementById('setupsLogContainer');
+            container.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading setups...</p>
+                </div>
+            `;
+
+            fetch(`/api/parsing/setups/by-day?trading_day=${tradingDay}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderSetups(data.setups);
+                    } else {
+                        showErrorState();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading setups:', error);
+                    showErrorState();
+                });
+        }
+
+        // Render setup entries
+        function renderSetups(setups) {
+            const container = document.getElementById('setupsLogContainer');
+            
+            if (setups.length === 0) {
+                showEmptyState();
+                return;
+            }
+
+            const html = setups.map(setup => renderSetupEntry(setup)).join('');
+            container.innerHTML = html;
+        }
+
+        // Render individual setup entry
+        function renderSetupEntry(setup) {
+            const directionClass = setup.direction === 'bullish' ? 'text-success' : 
+                                 setup.direction === 'bearish' ? 'text-danger' : 'text-secondary';
+            const directionIcon = setup.direction === 'bullish' ? 'fa-arrow-up' : 
+                                 setup.direction === 'bearish' ? 'fa-arrow-down' : 'fa-minus';
+            
+            const levels = setup.levels || [];
+            const levelBadges = levels.map(level => 
+                `<span class="badge bg-secondary me-1">${level.level_type}: $${level.trigger_price}</span>`
+            ).join('');
+
+            return `
+                <div class="border-bottom py-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center mb-2">
+                                <h6 class="mb-0 me-3"><strong>${setup.ticker}</strong></h6>
+                                <span class="${directionClass}">
+                                    <i class="fas ${directionIcon} me-1"></i>
+                                    ${setup.direction || 'N/A'}
+                                </span>
+                                ${setup.setup_type ? `<span class="badge bg-info ms-2">${setup.setup_type}</span>` : ''}
+                            </div>
+                            
+                            ${levelBadges ? `<div class="mb-2">${levelBadges}</div>` : ''}
+                            
+                            ${setup.bias_note ? `<p class="text-muted small mb-1">${setup.bias_note}</p>` : ''}
+                            
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock me-1"></i>
+                                    ${formatTimestamp(setup.created_at)}
+                                </small>
+                                ${setup.message_id ? `
+                                    <small class="text-muted">
+                                        <i class="fab fa-discord me-1"></i>
+                                        Message ID: ${setup.message_id}
+                                    </small>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <div class="ms-3">
+                            <span class="badge ${setup.active ? 'bg-success' : 'bg-secondary'}">
+                                ${setup.active ? 'Active' : 'Inactive'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Format trading day for display
+        function formatTradingDay(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { 
+                weekday: 'short', 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+
+        // Format timestamp for display
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+
+        // Show empty state
+        function showEmptyState() {
+            const container = document.getElementById('setupsLogContainer');
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                    <h6 class="text-muted">No setups found for selected day</h6>
+                    <p class="text-muted small">Setups will appear here once parsed from Discord messages.</p>
+                </div>
+            `;
+        }
+
+        // Show error state
+        function showErrorState() {
+            const container = document.getElementById('setupsLogContainer');
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                    <h6 class="text-muted">Error loading setups</h6>
+                    <p class="text-muted small">Please try refreshing the page.</p>
+                </div>
+            `;
+        }
+
+        // Event listeners
+        document.getElementById('tradingDayFilter').addEventListener('change', function() {
+            const selectedDay = this.value;
+            if (selectedDay && selectedDay !== currentTradingDay) {
+                currentTradingDay = selectedDay;
+                loadSetupsByDay(selectedDay);
+            }
+        });
+
         document.getElementById('refreshMetrics').addEventListener('click', function() {
             location.reload();
+        });
+
+        // Auto-refresh functionality for real-time updates
+        function startAutoRefresh() {
+            // Refresh every 30 seconds if viewing today's setups
+            setInterval(() => {
+                const today = new Date().toISOString().split('T')[0];
+                if (currentTradingDay === today) {
+                    loadSetupsByDay(currentTradingDay);
+                }
+            }, 30000);
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadTradingDays();
+            startAutoRefresh();
         });
     </script>
 {% endblock %}
