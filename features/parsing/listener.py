@@ -275,6 +275,21 @@ class ParsingListener:
                     'message': 'No setups found in message'
                 }
             
+            # Extract trading date from A+ message if available
+            trading_date = None
+            content = message_data.get('content', '')
+            
+            # Check if this is A+ message and extract its trading date
+            from .aplus_parser import get_aplus_parser
+            aplus_parser = get_aplus_parser()
+            if aplus_parser.validate_message(content):
+                trading_date = aplus_parser.extract_trading_date(content)
+                logger.info(f"Extracted A+ trading date: {trading_date}")
+            
+            # Fallback to message timestamp or today
+            if not trading_date:
+                trading_date = self._extract_trading_day(message_data)
+            
             # Group levels by ticker
             levels_by_ticker = {}
             for setup in setups:
@@ -284,10 +299,10 @@ class ParsingListener:
                 else:
                     levels_by_ticker[setup.ticker] = []
             
-            # Store the data
+            # Store the data with extracted trading date
             message_id = message_data.get('message_id', message_data.get('id'))
             created_setups, created_levels = self.store.store_parsed_message(
-                message_id, setups, levels_by_ticker
+                message_id, setups, levels_by_ticker, trading_date
             )
             
             return {

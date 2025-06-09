@@ -82,22 +82,37 @@ class APlusMessageParser:
         Returns:
             Trading date or None if not found
         """
-        header_match = self.header_pattern.search(content)
-        if not header_match:
-            return None
-            
         try:
-            # Extract date in MM/DD/YY format
-            date_str = header_match.group(1)
-            month, day, year = date_str.split('/')
+            # Look for date pattern after the header: "A+ Scalp Trade Setups — Jun 2"
+            date_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—-]\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
+            date_match = date_pattern.search(content)
             
-            # Convert to full year
-            year = int(year)
-            if year < 50:
-                year += 2000
-            else:
-                year += 1900
-            return date(year, int(month), int(day))
+            if not date_match:
+                logger.warning("No date found in A+ message header")
+                return None
+                
+            month_name = date_match.group(1).lower()
+            day = int(date_match.group(2))
+            
+            # Map month name to number
+            month_num = self.month_map.get(month_name)
+            if not month_num:
+                # Try partial month names (Jun -> June)
+                for full_month, num in self.month_map.items():
+                    if full_month.startswith(month_name):
+                        month_num = num
+                        break
+                        
+            if not month_num:
+                logger.warning(f"Could not parse month: {month_name}")
+                return None
+                
+            # Use current year for trading date
+            current_year = date.today().year
+            trading_date = date(current_year, month_num, day)
+            
+            logger.info(f"Extracted trading date: {trading_date} from '{month_name} {day}'")
+            return trading_date
             
         except (ValueError, IndexError) as e:
             logger.warning(f"Error parsing trading date: {e}")
