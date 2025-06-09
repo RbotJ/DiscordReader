@@ -9,6 +9,7 @@ from datetime import date, datetime
 from typing import Dict, Any, List, Optional
 
 from .parser import MessageParser
+from .aplus_parser import get_aplus_parser
 from .store import get_parsing_store
 from .listener import get_parsing_listener
 from .models import TradeSetup, ParsedLevel
@@ -25,6 +26,7 @@ class ParsingService:
     def __init__(self):
         """Initialize the parsing service."""
         self.parser = MessageParser()
+        self.aplus_parser = get_aplus_parser()
         self.store = get_parsing_store()
         self.listener = get_parsing_listener()
         self._initialized = False
@@ -64,6 +66,70 @@ class ParsingService:
             Parsing results
         """
         return self.listener.process_message_manually(message_data)
+    
+    def parse_aplus_message(self, message_content: str, message_id: str, trading_day: Optional[date] = None) -> Dict[str, Any]:
+        """
+        Parse an A+ scalp setups message with enhanced schema fields.
+        
+        Args:
+            message_content: Raw message content
+            message_id: Discord message ID
+            trading_day: Trading day (defaults to extracted date or today)
+            
+        Returns:
+            Parsing results with enhanced setup data
+        """
+        try:
+            # Check if this is an A+ message
+            if not self.aplus_parser.validate_message(message_content):
+                logger.warning(f"Message {message_id} is not a valid A+ scalp setups message")
+                return {'success': False, 'error': 'Not an A+ scalp setups message'}
+            
+            # Parse the message
+            parsed_data = self.aplus_parser.parse_message(message_content, message_id)
+            
+            if not parsed_data.get('success', False):
+                logger.warning(f"Failed to parse A+ message {message_id}: {parsed_data.get('error', 'Unknown error')}")
+                return parsed_data
+            
+            # Extract trading day from parsed data or use provided/default
+            if trading_day is None:
+                trading_day = parsed_data.get('trading_day') or date.today()
+            
+            # Store the parsed setups with enhanced schema
+            aplus_setups = parsed_data.get('setups', [])
+            if aplus_setups:
+                created_setups, created_levels = self.store.store_parsed_message(
+                    message_id=message_id,
+                    setups=[],  # Empty for standard setups
+                    levels_by_setup={},  # Empty for standard levels
+                    trading_day=trading_day,
+                    aplus_setups=aplus_setups  # Enhanced A+ setups with profile names
+                )
+                
+                logger.info(f"Stored {len(created_setups)} A+ setups and {len(created_levels)} levels from message {message_id}")
+                
+                # Return enhanced results
+                return {
+                    'success': True,
+                    'message_id': message_id,
+                    'trading_day': trading_day.isoformat(),
+                    'setups_created': len(created_setups),
+                    'levels_created': len(created_levels),
+                    'enhanced_features': {
+                        'profile_names': [setup.profile_name for setup in created_setups if hasattr(setup, 'profile_name')],
+                        'trigger_levels': [float(setup.trigger_level) for setup in created_setups if hasattr(setup, 'trigger_level') and setup.trigger_level],
+                        'entry_conditions': [setup.entry_condition for setup in created_setups if hasattr(setup, 'entry_condition')]
+                    },
+                    'tickers': list(set(setup.ticker for setup in created_setups))
+                }
+            else:
+                logger.warning(f"No A+ setups found in message {message_id}")
+                return {'success': False, 'error': 'No valid setups found in message'}
+                
+        except Exception as e:
+            logger.error(f"Error parsing A+ message {message_id}: {e}")
+            return {'success': False, 'error': str(e)}
     
     def get_active_setups(self, trading_day: Optional[date] = None, ticker: Optional[str] = None) -> List[Dict[str, Any]]:
         """
