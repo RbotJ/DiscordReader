@@ -201,6 +201,83 @@ def get_setups_by_trading_day():
             'count': 0
         }), 500
 
+@parsing_bp.route('/backlog/trigger', methods=['POST'])
+def trigger_backlog():
+    """Trigger manual backlog parsing for unparsed messages"""
+    try:
+        # Get optional parameters from request
+        data = request.get_json() or {}
+        channel_id = data.get('channel_id')
+        since_timestamp = data.get('since_timestamp')
+        limit = int(data.get('limit', 50))
+        requested_by = data.get('requested_by', 'api_user')
+        
+        logger.info(f"Manual backlog parsing requested by {requested_by}")
+        
+        # Get parsing store and service directly
+        from .service import get_parsing_service
+        parsing_store = get_parsing_store()
+        parsing_service = get_parsing_service()
+        
+        if not parsing_service:
+            return jsonify({
+                'success': False,
+                'error': 'Parsing service not available'
+            }), 503
+        
+        # Get unparsed messages
+        unparsed_messages = parsing_store.get_unparsed_messages(
+            channel_id=channel_id,
+            since_timestamp=since_timestamp,
+            limit=limit
+        )
+        
+        processed_count = 0
+        error_count = 0
+        
+        logger.info(f"Found {len(unparsed_messages)} unparsed messages for backlog processing")
+        
+        # Process each message directly
+        for message in unparsed_messages:
+            try:
+                # Process the message through parsing service
+                message_data = {
+                    'message_id': message.get('message_id'),
+                    'content': message.get('content', ''),
+                    'channel_id': message.get('channel_id'),
+                    'timestamp': message.get('timestamp'),
+                    'author_id': message.get('author_id')
+                }
+                result = parsing_service.parse_message(message_data)
+                
+                if result and result.get('setup_created'):
+                    processed_count += 1
+                    logger.debug(f"Successfully processed message {message.get('message_id')}")
+                else:
+                    logger.debug(f"No setup found in message {message.get('message_id')}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing message {message.get('message_id')}: {e}")
+                error_count += 1
+        
+        return jsonify({
+            'success': True,
+            'message': 'Backlog parsing completed',
+            'results': {
+                'messages_found': len(unparsed_messages),
+                'messages_processed': processed_count,
+                'errors': error_count,
+                'requested_by': requested_by
+            }
+        })
+            
+    except Exception as e:
+        logger.error(f"Error in manual backlog parsing: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Backlog parsing failed: {str(e)}'
+        }), 500
+
 @parsing_bp.route('/stats', methods=['GET'])
 def get_stats():
     """Get parsing service statistics"""

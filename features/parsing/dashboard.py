@@ -161,13 +161,14 @@ def trigger_backlog():
         for message in unparsed_messages:
             try:
                 # Process the message through parsing service
-                result = parsing_service.process_message(
-                    message_id=message.get('message_id'),
-                    content=message.get('content', ''),
-                    channel_id=message.get('channel_id'),
-                    timestamp=message.get('timestamp'),
-                    author_id=message.get('author_id')
-                )
+                message_data = {
+                    'message_id': message.get('message_id'),
+                    'content': message.get('content', ''),
+                    'channel_id': message.get('channel_id'),
+                    'timestamp': message.get('timestamp'),
+                    'author_id': message.get('author_id')
+                }
+                result = parsing_service.parse_message(message_data)
                 
                 if result:
                     processed_count += 1
