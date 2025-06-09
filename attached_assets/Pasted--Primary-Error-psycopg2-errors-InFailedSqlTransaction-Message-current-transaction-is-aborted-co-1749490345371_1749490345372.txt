@@ -1,0 +1,110 @@
+✅ Primary Error: psycopg2.errors.InFailedSqlTransaction
+Message:
+
+current transaction is aborted, commands ignored until end of transaction block
+
+🔍 Root Cause:
+This means that a previous SQL command failed, and the session wasn’t rolled back. As a result, all subsequent queries fail automatically until the transaction is manually reset.
+
+🧨 Underlying Cause (most likely):
+1. Schema mismatch
+You attempted to insert into trade_setups:
+
+sql
+Copy
+Edit
+...parsed_metadata = %(parsed_metadata)s::JSONB...
+But likely:
+
+parsed_metadata is either not a JSONB column
+
+or malformed JSON is passed
+
+Check this param:
+
+json
+Copy
+Edit
+"parsed_metadata": "{\"profile_name\": \"RejectionNear\", \"trigger_level\": 368.11, ...}"
+This may fail silently unless wrapped in proper json.dumps() and SQLAlchemy binds.
+
+2. Missing Column in parsing_levels
+sql
+Copy
+Edit
+column parsing_levels.buffer_amount does not exist
+You’re querying a column that’s not defined in the DB but exists in your model or SELECT clause. This causes the initial failure that poisons the transaction.
+
+🛠 Fix Plan
+✅ Step 1: Add missing DB column
+Check your Alembic migrations or DB schema:
+
+sql
+Copy
+Edit
+ALTER TABLE parsing_levels ADD COLUMN buffer_amount DOUBLE PRECISION;
+OR update your SQLAlchemy model to match the DB if buffer_amount was deprecated.
+
+✅ Step 2: Catch & Rollback Failed Transactions
+In your DB access layer (likely features/parsing/store.py), wrap all queries with:
+
+python
+Copy
+Edit
+from sqlalchemy.exc import SQLAlchemyError
+
+try:
+    # your query or session.commit()
+except SQLAlchemyError as e:
+    db_session.rollback()
+    logger.error(f"SQL Error: {e}")
+✅ Step 3: Validate JSON Serialization
+Make sure parsed_metadata is a valid JSONB:
+
+python
+Copy
+Edit
+import json
+
+parsed_metadata = json.dumps(metadata_dict)
+✅ Step 4: Defensive Logic Before Retry
+Your logs show repeated queries even after failure:
+
+text
+Copy
+Edit
+Error querying setup by message and ticker: (psycopg2.errors.InFailedSqlTransaction)
+You should short-circuit further parsing logic once a failure poisons the session. E.g., in your parser runner:
+
+python
+Copy
+Edit
+try:
+    with db_session.begin():
+        # do insert or query
+except SQLAlchemyError:
+    db_session.rollback()
+    return  # prevent retry loop
+✅ Step 5: Flask Context for Event Consumer
+This line:
+
+log
+Copy
+Edit
+Cannot poll events outside Flask application context
+Means your consumer is running outside app.app_context(). Wrap your polling function like this:
+
+python
+Copy
+Edit
+with app.app_context():
+    start_event_consumer()
+🧹 Summary of Action Items
+Problem	Fix
+InFailedSqlTransaction spam	Add try/except + rollback() to all DB access
+Invalid/missing columns	Add buffer_amount to parsing_levels, verify DB matches model
+Bad parsed_metadata value	Ensure valid JSON via json.dumps()
+Polling outside context	Wrap event consumer in with app.app_context():
+Retry spam	Break retry loops when in a poisoned state
+
+Let me know if you'd like help generating the Alembic migration or fixing the store.py logic!

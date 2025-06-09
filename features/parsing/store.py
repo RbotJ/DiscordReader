@@ -59,53 +59,68 @@ class ParsingStore:
             # Process A+ setups with enhanced schema fields
             if aplus_setups:
                 for setup_dto in aplus_setups:
-                    # Check if setup already exists for this message and ticker
-                    existing_setup = self.get_setup_by_message_and_ticker(message_id, setup_dto.ticker)
-                    
-                    if existing_setup:
-                        logger.info(f"Setup already exists for {setup_dto.ticker} from message {message_id}")
-                        created_setups.append(existing_setup)
-                        # Get existing levels
-                        existing_levels = ParsedLevel.get_by_setup_id(existing_setup.id)
-                        created_levels.extend(existing_levels)
+                    try:
+                        # Check if setup already exists for this message and ticker
+                        existing_setup = self.get_setup_by_message_and_ticker(message_id, setup_dto.ticker)
+                        
+                        if existing_setup:
+                            logger.info(f"Setup already exists for {setup_dto.ticker} from message {message_id}")
+                            created_setups.append(existing_setup)
+                            # Get existing levels using proper query
+                            existing_levels = db.session.query(ParsedLevel).filter_by(setup_id=existing_setup.id).all()
+                            created_levels.extend(existing_levels)
+                            continue
+                    except Exception as e:
+                        logger.error(f"Error checking existing setup for {setup_dto.ticker}: {e}")
+                        db.session.rollback()
                         continue
                     
-                    # Create new enhanced setup with profile name and trigger level
-                    new_setup = TradeSetup()
-                    new_setup.message_id = message_id
-                    new_setup.ticker = setup_dto.ticker
-                    new_setup.trading_day = trading_day
-                    new_setup.setup_type = setup_dto.setup_type
-                    new_setup.profile_name = setup_dto.profile_name
-                    new_setup.direction = setup_dto.direction
-                    new_setup.trigger_level = setup_dto.trigger_level
-                    new_setup.entry_condition = setup_dto.entry_condition
-                    new_setup.raw_content = setup_dto.raw_line
-                    new_setup.parsed_metadata = {
-                        'source': 'aplus_parser',
-                        'setup_strategy': setup_dto.strategy,
-                        'target_count': len(setup_dto.target_prices)
-                    }
-                    new_setup.active = True
-                    
-                    self.session.add(new_setup)
-                    self.session.flush()  # Get the ID
-                    created_setups.append(new_setup)
-                    
-                    # Create target levels for each price
-                    for i, target_price in enumerate(setup_dto.target_prices):
-                        level = ParsedLevel()
-                        level.setup_id = new_setup.id
-                        level.level_type = 'target'
-                        level.direction = setup_dto.direction
-                        level.trigger_price = target_price
-                        level.sequence_order = i + 1
-                        level.strategy = setup_dto.strategy
-                        level.description = f"Target {i + 1} for {setup_dto.ticker}"
-                        level.active = True
+                    try:
+                        # Create new enhanced setup with profile name and trigger level
+                        new_setup = TradeSetup()
+                        new_setup.message_id = message_id
+                        new_setup.ticker = setup_dto.ticker
+                        new_setup.trading_day = trading_day
+                        new_setup.setup_type = setup_dto.setup_type
+                        new_setup.profile_name = setup_dto.profile_name
+                        new_setup.direction = setup_dto.direction
+                        new_setup.trigger_level = setup_dto.trigger_level
+                        new_setup.entry_condition = setup_dto.entry_condition
+                        new_setup.raw_content = setup_dto.raw_line
+                        new_setup.parsed_metadata = {
+                            'source': 'aplus_parser',
+                            'setup_strategy': setup_dto.strategy,
+                            'target_count': len(setup_dto.target_prices)
+                        }
+                        new_setup.active = True
                         
-                        self.session.add(level)
-                        created_levels.append(level)
+                        db.session.add(new_setup)
+                        db.session.flush()  # Get the ID
+                        created_setups.append(new_setup)
+                        
+                        # Create target levels for each price
+                        for i, target_price in enumerate(setup_dto.target_prices):
+                            try:
+                                level = ParsedLevel()
+                                level.setup_id = new_setup.id
+                                level.level_type = 'target'
+                                level.direction = setup_dto.direction
+                                level.trigger_price = target_price
+                                level.sequence_order = i + 1
+                                level.strategy = setup_dto.strategy
+                                level.description = f"Target {i + 1} for {setup_dto.ticker}"
+                                level.active = True
+                                
+                                db.session.add(level)
+                                created_levels.append(level)
+                            except Exception as e:
+                                logger.error(f"Error creating level {i+1} for setup {new_setup.id}: {e}")
+                                db.session.rollback()
+                                continue
+                    except Exception as e:
+                        logger.error(f"Error creating setup for {setup_dto.ticker}: {e}")
+                        db.session.rollback()
+                        continue
             
             # Process standard setups if provided
             elif setups:
