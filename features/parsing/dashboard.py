@@ -131,36 +131,70 @@ def trigger_backlog():
         channel_id = request.json.get('channel_id') if request.json else None
         since_timestamp = request.json.get('since_timestamp') if request.json else None
         limit = int(request.json.get('limit', 100)) if request.json else 100
+        requested_by = request.json.get('requested_by', 'dashboard_user') if request.json else 'dashboard_user'
         
-        # Trigger backlog parsing via event system
-        success = trigger_backlog_parsing(
-            channel_id=channel_id,
-            since_timestamp=since_timestamp,
-            limit=limit,
-            requested_by='dashboard_user'
-        )
+        logger.info(f"Manual backlog parsing requested by {requested_by}")
         
-        if success:
-            return jsonify({
-                'success': True,
-                'message': 'Backlog parsing triggered successfully',
-                'parameters': {
-                    'channel_id': channel_id,
-                    'since_timestamp': since_timestamp,
-                    'limit': limit
-                }
-            })
-        else:
+        # Get parsing store and service directly
+        parsing_store = get_parsing_store()
+        parsing_service = get_parsing_service()
+        
+        if not parsing_service:
             return jsonify({
                 'success': False,
-                'error': 'Failed to trigger backlog parsing'
-            }), 500
+                'error': 'Parsing service not available'
+            }), 503
+        
+        # Get unparsed messages
+        unparsed_messages = parsing_store.get_unparsed_messages(
+            channel_id=channel_id,
+            since_timestamp=since_timestamp,
+            limit=limit
+        )
+        
+        processed_count = 0
+        error_count = 0
+        
+        logger.info(f"Found {len(unparsed_messages)} unparsed messages for backlog processing")
+        
+        # Process each message directly
+        for message in unparsed_messages:
+            try:
+                # Process the message through parsing service
+                result = parsing_service.process_message(
+                    message_id=message.get('message_id'),
+                    content=message.get('content', ''),
+                    channel_id=message.get('channel_id'),
+                    timestamp=message.get('timestamp'),
+                    author_id=message.get('author_id')
+                )
+                
+                if result:
+                    processed_count += 1
+                    logger.debug(f"Successfully processed message {message.get('message_id')}")
+                else:
+                    logger.debug(f"No setup found in message {message.get('message_id')}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing message {message.get('message_id')}: {e}")
+                error_count += 1
+        
+        return jsonify({
+            'success': True,
+            'message': 'Backlog parsing completed',
+            'results': {
+                'messages_found': len(unparsed_messages),
+                'messages_processed': processed_count,
+                'errors': error_count,
+                'requested_by': requested_by
+            }
+        })
             
     except Exception as e:
-        logger.error(f"Error triggering backlog parsing: {e}")
+        logger.error(f"Error in manual backlog parsing: {e}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Backlog parsing failed: {str(e)}'
         }), 500
 
 @parsing_bp.route('/backlog/status')
