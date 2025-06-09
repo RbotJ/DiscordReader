@@ -271,6 +271,18 @@ class ParsingStore:
             logger.error(f"Error querying levels by setup: {e}")
             return []
     
+    def get_available_trading_days(self) -> List[date]:
+        """Get list of distinct trading days that have active setups."""
+        try:
+            from sqlalchemy import distinct
+            days = self.session.query(distinct(TradeSetup.trading_day)).filter_by(
+                active=True
+            ).order_by(TradeSetup.trading_day.desc()).all()
+            return [day[0] for day in days if day[0] is not None]
+        except SQLAlchemyError as e:
+            logger.error(f"Error querying available trading days: {e}")
+            return []
+    
     def update_setup_confidence(self, setup_id: int, new_confidence: float) -> bool:
         """Update confidence score for a setup."""
         try:

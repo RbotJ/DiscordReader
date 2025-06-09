@@ -95,11 +95,25 @@ def setups_view():
 
 @parsing_bp.route('/setups.json')
 def setups_json():
-    """Get parsed setups as JSON"""
+    """Get parsed setups as JSON with available trading days"""
     try:
         trading_day_str = request.args.get('trading_day')
         ticker = request.args.get('ticker')
         
+        service = get_parsing_service_safe()
+        if not service:
+            return jsonify({'success': False, 'error': 'Parsing service unavailable'}), 503
+        
+        # Get available trading days from database
+        try:
+            from features.parsing.store import get_parsing_store
+            store = get_parsing_store()
+            available_days = store.get_available_trading_days()
+        except Exception as e:
+            logger.error(f"Error getting available trading days: {e}")
+            available_days = []
+        
+        # Determine selected day
         trading_day = None
         if trading_day_str:
             try:
@@ -107,21 +121,27 @@ def setups_json():
             except ValueError:
                 pass
         
-        service = get_parsing_service_safe()
-        if service:
-            setups = service.get_active_setups(trading_day, ticker)
-            return jsonify({
-                'setups': setups,
-                'count': len(setups),
-                'trading_day': trading_day.isoformat() if trading_day else None,
-                'ticker': ticker
-            })
-        else:
-            return jsonify({'error': 'Parsing service unavailable'}), 503
+        # If no specific day requested, use the most recent available day
+        if not trading_day and available_days:
+            trading_day = max(available_days)
+        elif not trading_day:
+            trading_day = date.today()
+        
+        # Get setups for the selected day
+        setups = service.get_active_setups(trading_day, ticker)
+        
+        return jsonify({
+            'success': True,
+            'setups': setups,
+            'count': len(setups),
+            'available_days': [day.isoformat() for day in available_days],
+            'selected_day': trading_day.isoformat(),
+            'ticker': ticker
+        })
             
     except Exception as e:
         logger.error(f"Error getting setups JSON: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @parsing_bp.route('/backlog/trigger', methods=['POST'])
 def trigger_backlog():

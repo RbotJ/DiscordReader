@@ -187,7 +187,7 @@
 
         // Load trading days and populate dropdown
         function loadTradingDays() {
-            fetch('/api/parsing/setups/by-day')
+            fetch('/dashboard/parsing/setups.json')
                 .then(response => response.json())
                 .then(data => {
                     const dropdown = document.getElementById('tradingDayFilter');
@@ -235,7 +235,7 @@
                 </div>
             `;
 
-            fetch(`/api/parsing/setups/by-day?trading_day=${tradingDay}`)
+            fetch(`/dashboard/parsing/setups.json?trading_day=${tradingDay}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
