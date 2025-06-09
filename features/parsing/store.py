@@ -199,6 +199,51 @@ class ParsingStore:
         except SQLAlchemyError as e:
             logger.error(f"Error querying setups by message: {e}")
             return []
+
+    def get_unparsed_messages(self, channel_id: Optional[str] = None, 
+                            since_timestamp: Optional[str] = None,
+                            limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get messages that haven't been parsed yet.
+        
+        Args:
+            channel_id: Optional channel filter
+            since_timestamp: Optional timestamp to start from
+            limit: Maximum number of messages to return
+            
+        Returns:
+            List of unparsed message dictionaries
+        """
+        try:
+            with self.db_manager.get_session() as session:
+                # Build query conditions
+                conditions = ["dm.message_id NOT IN (SELECT DISTINCT message_id FROM trade_setups WHERE message_id IS NOT NULL)"]
+                params = {'limit': limit}
+                
+                if channel_id:
+                    conditions.append("dm.channel_id = :channel_id")
+                    params['channel_id'] = channel_id
+                    
+                if since_timestamp:
+                    conditions.append("dm.timestamp >= :since_timestamp")
+                    params['since_timestamp'] = since_timestamp
+                
+                where_clause = " AND ".join(conditions)
+                
+                query = f"""
+                SELECT dm.message_id, dm.channel_id, dm.content, dm.author_id, dm.timestamp
+                FROM discord_messages dm
+                WHERE {where_clause}
+                ORDER BY dm.timestamp DESC
+                LIMIT :limit
+                """
+                
+                messages = session.execute(text(query), params).fetchall()
+                return [dict(msg._mapping) for msg in messages]
+                
+        except Exception as e:
+            logger.error(f"Error getting unparsed messages: {e}")
+            return []
     
     def get_active_setups_for_day(self, trading_day: Optional[date] = None) -> List[TradeSetup]:
         """Get active setups for a specific trading day."""

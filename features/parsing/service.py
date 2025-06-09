@@ -130,6 +130,22 @@ class ParsingService:
         except Exception as e:
             logger.error(f"Error parsing A+ message {message_id}: {e}")
             return {'success': False, 'error': str(e)}
+
+    def should_parse_message(self, content: str) -> bool:
+        """
+        Determine if a message should be parsed for trading setups.
+        
+        Args:
+            content: Message content to check
+            
+        Returns:
+            True if message appears to be an A+ scalp setup message
+        """
+        if not content or not isinstance(content, str):
+            return False
+            
+        # Use the A+ parser's validation method
+        return self.aplus_parser.validate_message(content)
     
     def get_active_setups(self, trading_day: Optional[date] = None, ticker: Optional[str] = None) -> List[Dict[str, Any]]:
         """
