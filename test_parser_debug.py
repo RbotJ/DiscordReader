@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from features.parsing.aplus_parser import AplusParser
+from features.parsing.aplus_parser import APlusMessageParser
 from datetime import datetime
 
 def test_real_message():
@@ -61,28 +61,34 @@ TSLA
     print()
     
     # Initialize parser
-    parser = AplusParser()
+    parser = APlusMessageParser()
     
     try:
-        # Parse the message
+        # Parse the message - parser expects just the content string
         print("Attempting to parse message...")
-        result = parser.parse_message(message_data)
+        result = parser.parse_message(message_content)
         
-        if result:
+        if result and result.get('success'):
+            setups = result.get('setups', [])
             print("✅ PARSING SUCCESSFUL!")
-            print(f"Number of setups found: {len(result)}")
+            print(f"Number of setups found: {len(setups)}")
+            print(f"Trading date extracted: {result.get('trading_date')}")
             print()
             
-            for i, setup in enumerate(result, 1):
+            for i, setup in enumerate(setups, 1):
                 print(f"Setup {i}:")
                 print(f"  - Ticker: {setup.get('ticker')}")
                 print(f"  - Setup Type: {setup.get('setup_type')}")
                 print(f"  - Direction: {setup.get('direction')}")
-                print(f"  - Bias Note: {setup.get('bias_note', 'N/A')}")
-                print(f"  - Levels: {len(setup.get('levels', []))}")
+                print(f"  - Strategy: {setup.get('strategy')}")
+                print(f"  - Trigger Level: {setup.get('trigger_level')}")
+                print(f"  - Target Prices: {setup.get('target_prices', [])}")
+                print(f"  - Entry Condition: {setup.get('entry_condition', 'N/A')}")
                 print()
         else:
             print("❌ PARSING FAILED - No setups returned")
+            if result:
+                print(f"Error: {result.get('error', 'Unknown error')}")
             
     except Exception as e:
         print(f"❌ PARSING ERROR: {e}")

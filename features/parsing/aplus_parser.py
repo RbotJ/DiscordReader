@@ -34,11 +34,11 @@ class APlusMessageParser:
     
     def __init__(self):
         """Initialize A+ parser with specific patterns."""
-        # Message validation patterns
-        self.header_pattern = re.compile(r'A\+\s*SCALP\s*SETUPS.*(\d+/\d+/\d+)', re.IGNORECASE)
+        # Message validation patterns - flexible to match actual format
+        self.header_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)', re.IGNORECASE)
         
-        # Ticker section pattern (matches **TICKER** format)
-        self.ticker_pattern = re.compile(r'^\*\*([A-Z]{2,5})\*\*\s*$', re.MULTILINE)
+        # Ticker section pattern (matches plain TICKER format, not **TICKER**)
+        self.ticker_pattern = re.compile(r'^([A-Z]{2,5})\s*$', re.MULTILINE)
         
         # Setup line patterns with emoji indicators matching actual format
         self.setup_patterns = {
