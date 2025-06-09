@@ -40,14 +40,14 @@ class APlusMessageParser:
         # Ticker section pattern (matches plain TICKER format, not **TICKER**)
         self.ticker_pattern = re.compile(r'^([A-Z]{2,5})\s*$', re.MULTILINE)
         
-        # Setup line patterns with emoji indicators matching actual format
+        # Setup line patterns matching actual A+ message format
         self.setup_patterns = {
-            'aggressive_breakdown': re.compile(r'🔽\s*\*\*Aggressive\s+Breakdown:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
-            'conservative_breakdown': re.compile(r'🔽\s*\*\*Conservative\s+Breakdown:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
-            'aggressive_breakout': re.compile(r'🔼\s*\*\*Aggressive\s+Breakout:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
-            'conservative_breakout': re.compile(r'🔼\s*\*\*Conservative\s+Breakout:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
-            'bounce_zone': re.compile(r'📍\s*\*\*Bounce\s+Zone:\*\*\s+(\d+\.?\d*)[-–](\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
-            'rejection_near': re.compile(r'⚠️\s*\*\*Rejection\s+Near:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE)
+            'aggressive_breakdown': re.compile(r'🔻\s*Aggressive\s+Breakdown\s+Below\s+([0-9.]+)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
+            'conservative_breakdown': re.compile(r'🔻\s*Conservative\s+Breakdown\s+Below\s+([0-9.]+)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
+            'aggressive_breakout': re.compile(r'🔼\s*Aggressive\s+Breakout\s+Above\s+([0-9.]+)\s+🔼\s+([\d.,\s]+)', re.IGNORECASE),
+            'conservative_breakout': re.compile(r'🔼\s*Conservative\s+Breakout\s+Above\s+([0-9.]+)\s+🔼\s+([\d.,\s]+)', re.IGNORECASE),
+            'bounce_zone': re.compile(r'🔄\s*Bounce\s+(?:Zone:?\s*|From\s+)([0-9.]+)(?:[-–]([0-9.]+))?\s+🔼\s+(?:Target:?\s*)?([^⚠️\n]+)', re.IGNORECASE),
+            'rejection_near': re.compile(r'❌\s*Rejection\s+(?:Short\s+)?Near\s+([0-9.]+)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE)
         }
         
         # Bias pattern

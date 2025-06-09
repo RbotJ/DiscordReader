@@ -101,6 +101,63 @@ class MessageParser:
                 logger.debug(f"Empty message content for {message_id}")
                 return [], []
             
+            # Check if this is an A+ scalp setups message and route to specialized parser
+            aplus_parser = get_aplus_parser()
+            if aplus_parser.validate_message(content):
+                logger.info(f"Routing message {message_id} to A+ specialized parser")
+                result = aplus_parser.parse_message(content, message_id)
+                
+                if result.get('success') and result.get('setups'):
+                    # Convert A+ DTOs to generic DTOs
+                    setups = []
+                    all_levels = []
+                    
+                    for aplus_setup in result['setups']:
+                        # Convert APlusSetupDTO to ParsedSetupDTO
+                        setup_dto = ParsedSetupDTO(
+                            ticker=aplus_setup.ticker,
+                            setup_type=aplus_setup.setup_type,
+                            direction=aplus_setup.direction,
+                            strategy=aplus_setup.strategy,
+                            confidence=0.8,  # A+ setups are high confidence
+                            raw_line=aplus_setup.raw_line,
+                            profile_name=aplus_setup.profile_name,
+                            trigger_level=aplus_setup.trigger_level,
+                            entry_condition=aplus_setup.entry_condition
+                        )
+                        setups.append(setup_dto)
+                        
+                        # Convert target prices to ParsedLevelDTO instances
+                        for i, target_price in enumerate(aplus_setup.target_prices):
+                            level_dto = ParsedLevelDTO(
+                                level_type='target',
+                                direction=aplus_setup.direction,
+                                trigger_price=target_price,
+                                strategy=aplus_setup.strategy,
+                                confidence=0.8,
+                                description=f"Target {i+1} for {aplus_setup.profile_name}"
+                            )
+                            all_levels.append(level_dto)
+                        
+                        # Add trigger level as entry
+                        if aplus_setup.trigger_level:
+                            entry_level = ParsedLevelDTO(
+                                level_type='entry',
+                                direction=aplus_setup.direction,
+                                trigger_price=aplus_setup.trigger_level,
+                                strategy=aplus_setup.strategy,
+                                confidence=0.8,
+                                description=f"Entry trigger for {aplus_setup.profile_name}"
+                            )
+                            all_levels.append(entry_level)
+                    
+                    logger.info(f"A+ parser extracted {len(setups)} setups and {len(all_levels)} levels from message {message_id}")
+                    return setups, all_levels
+                else:
+                    logger.debug(f"A+ parser found no valid setups in message {message_id}")
+                    return [], []
+            
+            # Fall back to generic parsing for non-A+ messages
             # Extract tickers from message
             tickers = self._extract_tickers(content)
             if not tickers:
@@ -122,7 +179,7 @@ class MessageParser:
                     setups.append(setup_dto)
                     all_levels.extend(levels_dto)
             
-            logger.info(f"Parsed {len(setups)} setups and {len(all_levels)} levels from message {message_id}")
+            logger.info(f"Generic parser extracted {len(setups)} setups and {len(all_levels)} levels from message {message_id}")
             return setups, all_levels
             
         except Exception as e:

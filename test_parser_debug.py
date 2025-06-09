@@ -77,13 +77,14 @@ TSLA
             
             for i, setup in enumerate(setups, 1):
                 print(f"Setup {i}:")
-                print(f"  - Ticker: {setup.get('ticker')}")
-                print(f"  - Setup Type: {setup.get('setup_type')}")
-                print(f"  - Direction: {setup.get('direction')}")
-                print(f"  - Strategy: {setup.get('strategy')}")
-                print(f"  - Trigger Level: {setup.get('trigger_level')}")
-                print(f"  - Target Prices: {setup.get('target_prices', [])}")
-                print(f"  - Entry Condition: {setup.get('entry_condition', 'N/A')}")
+                print(f"  - Ticker: {setup.ticker}")
+                print(f"  - Setup Type: {setup.setup_type}")
+                print(f"  - Profile Name: {setup.profile_name}")
+                print(f"  - Direction: {setup.direction}")
+                print(f"  - Strategy: {setup.strategy}")
+                print(f"  - Trigger Level: {setup.trigger_level}")
+                print(f"  - Target Prices: {setup.target_prices}")
+                print(f"  - Entry Condition: {setup.entry_condition}")
                 print()
         else:
             print("❌ PARSING FAILED - No setups returned")
