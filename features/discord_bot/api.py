@@ -41,6 +41,7 @@ def get_discord_metrics():
             'latency_ms': round(bot.latency * 1000) if bot.latency else None,
             'live_messages_today': bot._messages_today,
             'triggers_today': bot._triggers_today,
+            'uptime_seconds': bot.get_uptime_seconds(),
             'target_channel_id': bot.aplus_setups_channel_id,
             'last_reset_date': bot._last_reset_date.isoformat() if bot._last_reset_date else None
         }
