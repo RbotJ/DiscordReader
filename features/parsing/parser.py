@@ -10,6 +10,8 @@ from datetime import datetime, date
 from typing import List, Dict, Any, Optional, Tuple, NamedTuple
 from decimal import Decimal
 
+from .aplus_parser import get_aplus_parser
+
 logger = logging.getLogger(__name__)
 
 
