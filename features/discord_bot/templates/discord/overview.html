@@ -108,26 +108,37 @@
         </div>
     </div>
     
-    <!-- Activity Info -->
+    <!-- Message Sync Control -->
     <div class="col-md-6 mb-4">
         <div class="card metric-card">
             <div class="card-header">
-                <h6 class="mb-0">Recent Activity</h6>
+                <h6 class="mb-0">Message Synchronization</h6>
             </div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-12 mb-3">
-                        <div class="text-center">
-                            <h4 class="text-danger">{{ metrics['error_count_last_hour'] }}</h4>
-                            <small class="text-muted">Errors (Last Hour)</small>
+                        <div class="input-group">
+                            <input type="number" id="sync-limit" class="form-control" value="50" min="1" max="200" placeholder="Messages to sync">
+                            <button class="btn btn-primary" type="button" id="sync-btn" onclick="syncMessages()">
+                                <i data-feather="refresh-cw" class="me-1"></i>
+                                Sync Recent Messages
+                            </button>
                         </div>
                     </div>
                 </div>
-                {% if metrics['last_activity'] %}
-                <div class="mt-3">
-                    <small class="text-muted">Last Activity: {{ metrics['last_activity'] }}</small>
+                <div id="sync-status" class="mt-2" style="display: none;">
+                    <div class="alert alert-info mb-0" role="alert">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            <span id="sync-message">Syncing messages...</span>
+                        </div>
+                    </div>
                 </div>
-                {% endif %}
+                <div id="sync-result" class="mt-2" style="display: none;">
+                    <div class="alert mb-0" role="alert">
+                        <small id="sync-result-text"></small>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -169,6 +180,72 @@ async function updateLiveMetrics() {
         // Show fallback values
         document.getElementById('live-messages-today').textContent = '--';
         document.getElementById('trigger-messages-today').textContent = '--';
+    }
+}
+
+// Manual message sync function
+async function syncMessages() {
+    const syncBtn = document.getElementById('sync-btn');
+    const syncStatus = document.getElementById('sync-status');
+    const syncResult = document.getElementById('sync-result');
+    const syncMessage = document.getElementById('sync-message');
+    const syncResultText = document.getElementById('sync-result-text');
+    const limitInput = document.getElementById('sync-limit');
+    
+    const limit = parseInt(limitInput.value) || 50;
+    
+    // Disable button and show progress
+    syncBtn.disabled = true;
+    syncStatus.style.display = 'block';
+    syncResult.style.display = 'none';
+    syncMessage.textContent = `Syncing ${limit} messages...`;
+    
+    try {
+        const response = await fetch('/api/discord/sync-history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ limit: limit })
+        });
+        
+        const data = await response.json();
+        
+        // Hide progress indicator
+        syncStatus.style.display = 'none';
+        syncResult.style.display = 'block';
+        
+        if (data.success) {
+            const stats = data.result.statistics;
+            syncResult.firstElementChild.className = 'alert alert-success mb-0';
+            syncResultText.innerHTML = `
+                <strong>Sync completed!</strong><br>
+                Total: ${stats.total} | Stored: ${stats.stored} | Skipped: ${stats.skipped} | Errors: ${stats.errors}
+            `;
+            
+            // Update live metrics after successful sync
+            setTimeout(updateLiveMetrics, 1000);
+        } else {
+            syncResult.firstElementChild.className = 'alert alert-danger mb-0';
+            syncResultText.innerHTML = `<strong>Sync failed:</strong> ${data.error}`;
+        }
+        
+    } catch (error) {
+        // Hide progress indicator and show error
+        syncStatus.style.display = 'none';
+        syncResult.style.display = 'block';
+        syncResult.firstElementChild.className = 'alert alert-danger mb-0';
+        syncResultText.innerHTML = `<strong>Network error:</strong> ${error.message}`;
+    } finally {
+        // Re-enable button
+        syncBtn.disabled = false;
+        
+        // Auto-hide result after 10 seconds
+        setTimeout(() => {
+            if (syncResult.style.display !== 'none') {
+                syncResult.style.display = 'none';
+            }
+        }, 10000);
     }
 }
 
