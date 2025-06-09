@@ -262,15 +262,15 @@ class TradingDiscordBot(discord.Client):
                 from features.ingestion.service import IngestionService
                 self.ingestion_service = IngestionService()
             
-            # Collect messages from Discord
+            # Collect messages from Discord using flatten approach
             messages = []
             try:
                 logger.info(f"Fetching up to {limit} messages from channel {channel.name} ({channel.id})")
                 
-                message_count = 0
-                async for message in channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None):
-                    message_count += 1
-                    logger.debug(f"Found message {message_count}: {message.id} from {message.author.name}")
+                # Use channel.history().flatten() to get all messages at once
+                history_messages = await channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None).flatten()
+                
+                for message in history_messages:
                     messages.append({
                         "id": str(message.id),
                         "content": message.content,
