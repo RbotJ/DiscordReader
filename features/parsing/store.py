@@ -59,21 +59,8 @@ class ParsingStore:
             # Process A+ setups with enhanced schema fields
             if aplus_setups:
                 for setup_dto in aplus_setups:
-                    try:
-                        # Check if setup already exists for this message and ticker
-                        existing_setup = self.get_setup_by_message_and_ticker(message_id, setup_dto.ticker)
-                        
-                        if existing_setup:
-                            logger.info(f"Setup already exists for {setup_dto.ticker} from message {message_id}")
-                            created_setups.append(existing_setup)
-                            # Get existing levels using proper query
-                            existing_levels = db.session.query(ParsedLevel).filter_by(setup_id=existing_setup.id).all()
-                            created_levels.extend(existing_levels)
-                            continue
-                    except Exception as e:
-                        logger.error(f"Error checking existing setup for {setup_dto.ticker}: {e}")
-                        db.session.rollback()
-                        continue
+                    # Remove duplicate check to allow multiple setups per ticker per message
+                    # Each individual setup line should create its own trade setup entry
                     
                     try:
                         # Create new enhanced setup with profile name and trigger level

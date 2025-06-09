@@ -169,94 +169,110 @@ class APlusMessageParser:
         if bias_match:
             bias_note = bias_match.group(1).strip()
         
-        # Parse each setup type
-        for setup_key, pattern in self.setup_patterns.items():
-            matches = pattern.findall(section_content)
+        # Parse each line individually to create separate setups
+        lines = section_content.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('⚠️'):  # Skip empty lines and bias lines
+                continue
             
-            for match in matches:
-                try:
-                    if setup_key == 'bounce_zone':
-                        # Special handling for bounce zone (has two entry prices)
-                        entry_low = float(match[0])
-                        entry_high = float(match[1])
-                        targets = self.extract_price_list(match[2])
-                        
-                        # Create setup with combined entry range
-                        setup = APlusSetupDTO(
-                            ticker=ticker,
-                            setup_type='bounce',
-                            profile_name='BounceFrom',
-                            direction='bullish',
-                            strategy='zone',
-                            trigger_level=(entry_low + entry_high) / 2,  # Use midpoint
-                            target_prices=targets,
-                            entry_condition=f"Price drops to {entry_low}-{entry_high} zone, holds support, then shows higher-low/higher-high",
-                            raw_line=f"Bounce Zone {entry_low}–{entry_high} → {', '.join(map(str, targets))}"
-                        )
-                        setups.append(setup)
-                        
-                    else:
-                        # Standard setup parsing
-                        entry_price = float(match[0])
-                        targets = self.extract_price_list(match[1])
-                        
-                        # Determine direction and strategy
-                        if 'breakdown' in setup_key or 'rejection' in setup_key:
-                            direction = 'bearish'
-                        else:
-                            direction = 'bullish'
+            # Try to match this line against each setup pattern
+            setup_created = False
+            for setup_key, pattern in self.setup_patterns.items():
+                match = pattern.search(line)
+                
+                if match:
+                    try:
+                        if setup_key == 'bounce_zone':
+                            # Handle bounce zone with range
+                            entry_low = float(match.group(1))
+                            entry_high = float(match.group(2)) if match.group(2) else entry_low
+                            targets = self.extract_price_list(match.group(3))
                             
-                        if 'aggressive' in setup_key:
-                            strategy = 'aggressive'
-                        elif 'conservative' in setup_key:
-                            strategy = 'conservative'
-                        elif 'rejection' in setup_key:
-                            strategy = 'rejection'
+                            setup = APlusSetupDTO(
+                                ticker=ticker,
+                                setup_type='bounce',
+                                profile_name='BounceZone',
+                                direction='bullish',
+                                strategy='zone',
+                                trigger_level=(entry_low + entry_high) / 2,
+                                target_prices=targets,
+                                entry_condition=f"Price drops to {entry_low}-{entry_high} zone and bounces",
+                                raw_line=line
+                            )
+                            setups.append(setup)
+                            setup_created = True
+                            
                         else:
-                            strategy = 'standard'
-                        
-                        # Map setup types and profile names
-                        if 'breakdown' in setup_key:
-                            setup_type = 'breakdown'
-                            if 'aggressive' in setup_key:
-                                profile_name = 'AggressiveBreakdown'
-                                entry_condition = f"5-min candle close below {entry_price} with volume confirmation"
+                            # Handle standard setups (breakdown, breakout, rejection)
+                            trigger_price = float(match.group(1))
+                            targets = self.extract_price_list(match.group(2))
+                            
+                            # Determine direction and strategy
+                            if 'breakdown' in setup_key or 'rejection' in setup_key:
+                                direction = 'bearish'
                             else:
-                                profile_name = 'ConservativeBreakdown'
-                                entry_condition = f"Price creeps below {entry_price} with sustained bearish momentum"
-                        elif 'breakout' in setup_key:
-                            setup_type = 'breakout'
+                                direction = 'bullish'
+                                
                             if 'aggressive' in setup_key:
-                                profile_name = 'AggressiveBreakout'
-                                entry_condition = f"5-min candle close above {entry_price} with volume confirmation"
+                                strategy = 'aggressive'
+                            elif 'conservative' in setup_key:
+                                strategy = 'conservative'
+                            elif 'rejection' in setup_key:
+                                strategy = 'rejection'
                             else:
-                                profile_name = 'ConservativeBreakout'
-                                entry_condition = f"Price creeps above {entry_price} with sustained bullish momentum"
-                        elif 'rejection' in setup_key:
-                            setup_type = 'rejection'
-                            profile_name = 'RejectionNear'
-                            entry_condition = f"Price pokes to {entry_price} then reverses sharply away"
-                        else:
-                            setup_type = 'other'
-                            profile_name = 'Unknown'
-                            entry_condition = f"Monitor price action near {entry_price}"
+                                strategy = 'standard'
+                            
+                            # Map setup types and profile names
+                            if 'breakdown' in setup_key:
+                                setup_type = 'breakdown'
+                                if 'aggressive' in setup_key:
+                                    profile_name = 'AggressiveBreakdown'
+                                    entry_condition = f"5-min candle close below {trigger_price} with volume confirmation"
+                                else:
+                                    profile_name = 'ConservativeBreakdown'
+                                    entry_condition = f"Price creeps below {trigger_price} with sustained bearish momentum"
+                            elif 'breakout' in setup_key:
+                                setup_type = 'breakout'
+                                if 'aggressive' in setup_key:
+                                    profile_name = 'AggressiveBreakout'
+                                    entry_condition = f"5-min candle close above {trigger_price} with volume confirmation"
+                                else:
+                                    profile_name = 'ConservativeBreakout'
+                                    entry_condition = f"Price creeps above {trigger_price} with sustained bullish momentum"
+                            elif 'rejection' in setup_key:
+                                setup_type = 'rejection'
+                                profile_name = 'RejectionNear'
+                                entry_condition = f"Price pokes to {trigger_price} then reverses sharply away"
+                            else:
+                                setup_type = 'other'
+                                profile_name = 'Unknown'
+                                entry_condition = f"Monitor price action near {trigger_price}"
+                            
+                            setup = APlusSetupDTO(
+                                ticker=ticker,
+                                setup_type=setup_type,
+                                profile_name=profile_name,
+                                direction=direction,
+                                strategy=strategy,
+                                trigger_level=trigger_price,
+                                target_prices=targets,
+                                entry_condition=entry_condition,
+                                raw_line=line
+                            )
+                            setups.append(setup)
+                            setup_created = True
                         
-                        setup = APlusSetupDTO(
-                            ticker=ticker,
-                            setup_type=setup_type,
-                            profile_name=profile_name,
-                            direction=direction,
-                            strategy=strategy,
-                            trigger_level=entry_price,
-                            target_prices=targets,
-                            entry_condition=entry_condition,
-                            raw_line=f"{setup_key}: {entry_price} → {', '.join(map(str, targets))}"
-                        )
-                        setups.append(setup)
+                        break  # Stop checking other patterns for this line
                         
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Error parsing setup {setup_key} for {ticker}: {e}")
-                    continue
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"Error parsing line '{line}' for {ticker}: {e}")
+                        continue
+            
+            # If no pattern matched, log the unrecognized line
+            if not setup_created and line.strip():
+                logger.debug(f"Unrecognized setup line for {ticker}: '{line}'")
         
         return setups, bias_note
 

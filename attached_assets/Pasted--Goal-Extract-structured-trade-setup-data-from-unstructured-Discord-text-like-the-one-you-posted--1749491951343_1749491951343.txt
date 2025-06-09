@@ -1,0 +1,114 @@
+🔍 Goal:
+Extract structured trade setup data from unstructured Discord text like the one you posted.
+
+🧠 High-Level Steps:
+Split Message by Ticker
+
+Use regular expressions to detect lines like NVDA, SPY, TSLA as section headers.
+
+Everything after that until the next ticker is considered part of that ticker’s setup block.
+
+Parse Each Setup Line Within a Ticker
+For each line in a ticker block:
+
+Match Pattern:
+
+Each setup follows a general structure:
+
+css
+Copy
+Edit
+[emoji] [Setup Type] [Condition] [Trigger Level] [emoji] [Targets]
+Regex can be used to extract:
+
+Setup Type: Rejection, Breakdown, Breakout, Bounce
+
+Aggressive/Conservative (if present)
+
+Direction: "🔻" = short, "🔼" = long
+
+Trigger Level (e.g. 141.33)
+
+Targets: comma-separated list of levels
+
+Bias Line:
+
+Line starts with ⚠️ Bias — or ⚠️ and contains narrative.
+
+Parse:
+
+Bias Note (text)
+
+Bias Pivot Level (e.g. “bullish above 146.20” → 146.20)
+
+Bounce Zone:
+
+Line includes Bounce Zone with range A–B or = A–B.
+
+Followed by Targets.
+
+Build Parsed Setup Objects
+Each matched line becomes a ParsedSetup (Pydantic or dataclass) with fields like:
+
+python
+Copy
+Edit
+{
+  "ticker": "NVDA",
+  "setup_type": "Aggressive Breakout",
+  "direction": "long",
+  "trigger_level": 144.02,
+  "targets": [146.20, 148.00, 150.00],
+  "profile_name": "Aggressive Breakout Above 144.02",
+  "bias_note": "...",
+  "bias_pivot": 146.20,
+  "raw_content": "🔼 Aggressive Breakout Above 144.02 🔼 146.20, 148.00, 150.00",
+  ...
+}
+🗄️ 3. Storage Layer (setups/store.py)
+📥 Purpose:
+Persist parsed setups in a PostgreSQL database, making them queryable for real-time monitoring and trading.
+
+🔑 Table: trade_setups
+Each parsed setup is stored as a single row with columns like:
+
+Field	Description
+id	Auto ID
+message_id	ID of the original Discord message
+ticker	"NVDA", "SPY", etc.
+trading_day	Derived from header like "Thursday May 29"
+setup_type	e.g. "Aggressive Breakout"
+profile_name	e.g. "Aggressive Breakout Above 144.02"
+direction	"long" or "short"
+trigger_level	e.g. 144.02
+targets	Array of floats, e.g. [146.20, 148.00, 150.00]
+bias_note	Text description of the bias
+bias_pivot	Extracted bias price level, if any
+entry_condition	e.g. “Break above with confirmation”
+parsed_metadata	JSON blob of original line parse
+raw_content	Original line text from message
+created_at / updated_at	Timestamps
+
+These fields allow the strategy engine to later fetch setups for a given ticker and trading day and monitor for when the trigger_level is reached.
+
+📌 Example:
+Here's how one line:
+
+mathematica
+Copy
+Edit
+🔼 Aggressive Breakout Above 144.02 🔼 146.20, 148.00, 150.00 
+would be parsed and stored:
+
+json
+Copy
+Edit
+{
+  "ticker": "NVDA",
+  "setup_type": "Aggressive Breakout",
+  "direction": "long",
+  "trigger_level": 144.02,
+  "targets": [146.20, 148.00, 150.00],
+  "profile_name": "Aggressive Breakout Above 144.02",
+  "raw_content": "🔼 Aggressive Breakout Above 144.02 🔼 146.20, 148.00, 150.00"
+}
