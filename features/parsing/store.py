@@ -101,18 +101,24 @@ class ParsingStore:
                         # Create target levels for each price
                         for i, target_price in enumerate(setup_dto.target_prices):
                             try:
-                                level = ParsedLevel()
-                                level.setup_id = new_setup.id
-                                level.level_type = 'target'
-                                level.direction = setup_dto.direction
-                                level.trigger_price = target_price
-                                level.sequence_order = i + 1
-                                level.strategy = setup_dto.strategy
-                                level.description = f"Target {i + 1} for {setup_dto.ticker}"
-                                level.active = True
+                                from datetime import datetime
+                                level = ParsedLevel(
+                                    setup_id=new_setup.id,
+                                    level_type='target',
+                                    direction=setup_dto.direction,
+                                    trigger_price=target_price,
+                                    sequence_order=i + 1,
+                                    strategy=setup_dto.strategy,
+                                    description=f"Target {i + 1} for {setup_dto.ticker}",
+                                    active=True,
+                                    triggered=False,
+                                    created_at=datetime.utcnow(),
+                                    updated_at=datetime.utcnow()
+                                )
                                 
                                 db.session.add(level)
                                 created_levels.append(level)
+                                logger.debug(f"Created level {i+1} with price {target_price} for setup {new_setup.id}")
                             except Exception as e:
                                 logger.error(f"Error creating level {i+1} for setup {new_setup.id}: {e}")
                                 db.session.rollback()
