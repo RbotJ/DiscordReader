@@ -117,13 +117,18 @@ class MessageParser:
                         setup_dto = ParsedSetupDTO(
                             ticker=aplus_setup.ticker,
                             setup_type=aplus_setup.setup_type,
+                            bias_note=result.get('bias_note'),
                             direction=aplus_setup.direction,
-                            strategy=aplus_setup.strategy,
-                            confidence=0.8,  # A+ setups are high confidence
-                            raw_line=aplus_setup.raw_line,
-                            profile_name=aplus_setup.profile_name,
-                            trigger_level=aplus_setup.trigger_level,
-                            entry_condition=aplus_setup.entry_condition
+                            confidence_score=0.8,  # A+ setups are high confidence
+                            raw_content=aplus_setup.raw_line,
+                            parsed_metadata={
+                                'profile_name': aplus_setup.profile_name,
+                                'trigger_level': aplus_setup.trigger_level,
+                                'entry_condition': aplus_setup.entry_condition,
+                                'strategy': aplus_setup.strategy,
+                                'target_count': len(aplus_setup.target_prices),
+                                'parser_type': 'aplus_specialized'
+                            }
                         )
                         setups.append(setup_dto)
                         
