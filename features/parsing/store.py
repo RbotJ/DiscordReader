@@ -9,6 +9,7 @@ from datetime import datetime, date
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
 from common.db import db
 from .models import TradeSetup, ParsedLevel

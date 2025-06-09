@@ -89,7 +89,7 @@ def handle_message_stored(event_data: Dict[str, Any]):
             'event_type': 'message.stored'
         })
 
-@register_event_handler('parsing.backlog_requested') 
+# Event handler for backlog parsing requests 
 def handle_backlog_parsing(event_data: Dict[str, Any]):
     """
     Handle manual backlog parsing requests from the dashboard.

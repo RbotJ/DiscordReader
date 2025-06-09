@@ -10,6 +10,7 @@ from flask import Blueprint, render_template, request, jsonify
 
 from .service import get_parsing_service
 from .store import get_parsing_store
+from .events import trigger_backlog_parsing
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,74 @@ def setups_json():
             
     except Exception as e:
         logger.error(f"Error getting setups JSON: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@parsing_bp.route('/backlog/trigger', methods=['POST'])
+def trigger_backlog():
+    """Trigger manual backlog parsing for unparsed messages"""
+    try:
+        # Get optional parameters from request
+        channel_id = request.json.get('channel_id') if request.json else None
+        since_timestamp = request.json.get('since_timestamp') if request.json else None
+        limit = int(request.json.get('limit', 100)) if request.json else 100
+        
+        # Trigger backlog parsing via event system
+        success = trigger_backlog_parsing(
+            channel_id=channel_id,
+            since_timestamp=since_timestamp,
+            limit=limit,
+            requested_by='dashboard_user'
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Backlog parsing triggered successfully',
+                'parameters': {
+                    'channel_id': channel_id,
+                    'since_timestamp': since_timestamp,
+                    'limit': limit
+                }
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to trigger backlog parsing'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error triggering backlog parsing: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@parsing_bp.route('/backlog/status')
+def backlog_status():
+    """Get status of unparsed messages available for backlog processing"""
+    try:
+        parsing_store = get_parsing_store()
+        
+        # Get count of unparsed messages
+        unparsed_messages = parsing_store.get_unparsed_messages(limit=1000)
+        
+        # Group by channel for summary
+        channel_counts = {}
+        total_unparsed = len(unparsed_messages)
+        
+        for message in unparsed_messages:
+            channel_id = message.get('channel_id', 'unknown')
+            channel_counts[channel_id] = channel_counts.get(channel_id, 0) + 1
+        
+        return jsonify({
+            'total_unparsed': total_unparsed,
+            'channel_breakdown': channel_counts,
+            'sample_messages': unparsed_messages[:5],  # Show first 5 as samples
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting backlog status: {e}")
         return jsonify({'error': str(e)}), 500
 
 @parsing_bp.route('/health')
