@@ -37,8 +37,8 @@ class APlusMessageParser:
         # Message validation patterns
         self.header_pattern = re.compile(r'A\+\s*SCALP\s*SETUPS.*(\d+/\d+/\d+)', re.IGNORECASE)
         
-        # Ticker section pattern
-        self.ticker_pattern = re.compile(r'^([A-Z]{2,5})$', re.MULTILINE)
+        # Ticker section pattern (matches **TICKER** format)
+        self.ticker_pattern = re.compile(r'^\*\*([A-Z]{2,5})\*\*\s*$', re.MULTILINE)
         
         # Setup line patterns with emoji indicators matching actual format
         self.setup_patterns = {
@@ -235,7 +235,7 @@ class APlusMessageParser:
         
         return setups, bias_note
 
-    def parse_message(self, content: str, message_id: str = None) -> Dict[str, Any]:
+    def parse_message(self, content: str, message_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Parse complete A+ scalp setups message.
         
