@@ -48,6 +48,7 @@ class TradingDiscordBot(discord.Client):
         self._messages_today = 0
         self._triggers_today = 0
         self._last_reset_date = datetime.utcnow().date()
+        self._start_time = datetime.utcnow()
 
     def _reset_if_needed(self):
         """Reset daily counters at midnight UTC."""
@@ -220,9 +221,20 @@ class TradingDiscordBot(discord.Client):
                 
             channel = self.get_channel(self.aplus_setups_channel_id)
             if not channel:
+                logger.error(f"Cannot access channel {self.aplus_setups_channel_id}. Bot may lack permissions.")
                 return {
                     'success': False,
-                    'error': 'Target channel not accessible',
+                    'error': 'Target channel not accessible - check bot permissions',
+                    'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
+                }
+            
+            # Check if bot has permission to read message history
+            permissions = channel.permissions_for(channel.guild.me)
+            if not permissions.read_message_history:
+                logger.error(f"Bot lacks read_message_history permission in channel {channel.name}")
+                return {
+                    'success': False,
+                    'error': 'Bot lacks permission to read message history in target channel',
                     'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
                 }
             
@@ -236,7 +248,12 @@ class TradingDiscordBot(discord.Client):
             # Collect messages from Discord
             messages = []
             try:
+                logger.info(f"Fetching up to {limit} messages from channel {channel.name} ({channel.id})")
+                
+                message_count = 0
                 async for message in channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None):
+                    message_count += 1
+                    logger.debug(f"Found message {message_count}: {message.id} from {message.author.name}")
                     messages.append({
                         "id": str(message.id),
                         "content": message.content,
@@ -247,6 +264,9 @@ class TradingDiscordBot(discord.Client):
                         "attachments": [{"url": att.url, "filename": att.filename} for att in message.attachments],
                         "embeds": [embed.to_dict() for embed in message.embeds]
                     })
+                
+                logger.info(f"Successfully fetched {len(messages)} messages from Discord")
+                
             except Exception as e:
                 logger.error(f"Error fetching message history: {e}")
                 return {
@@ -339,6 +359,10 @@ class TradingDiscordBot(discord.Client):
     def is_ready(self) -> bool:
         """Check if bot is ready."""
         return self.ready_status
+    
+    def get_uptime_seconds(self) -> int:
+        """Get bot uptime in seconds."""
+        return int((datetime.utcnow() - self._start_time).total_seconds())
 
 
 class DiscordClientManager:

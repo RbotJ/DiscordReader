@@ -70,7 +70,8 @@ def get_discord_status():
         return jsonify({
             'status': 'connected' if bot.is_ready() else 'disconnected',
             'user': str(bot.user) if bot.user else None,
-            'latency_ms': round(bot.latency * 1000) if bot.latency else None
+            'latency_ms': round(bot.latency * 1000) if bot.latency else None,
+            'uptime_seconds': bot.get_uptime_seconds() if hasattr(bot, 'get_uptime_seconds') else 0
         })
         
     except Exception as e:
