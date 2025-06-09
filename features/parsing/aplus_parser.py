@@ -83,9 +83,19 @@ class APlusMessageParser:
             Trading date or None if not found
         """
         try:
-            # Look for date pattern after the header: "A+ Scalp Trade Setups — Jun 2"
-            date_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—-]\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
-            date_match = date_pattern.search(content)
+            # Look for date patterns after the header:
+            # Format 1: "A+ Scalp Trade Setups — Jun 2"
+            # Format 2: "A+ Scalp Trade Setups — Thursday May 29"
+            date_patterns = [
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—-]\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—-]\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
+            ]
+            
+            date_match = None
+            for pattern in date_patterns:
+                date_match = pattern.search(content)
+                if date_match:
+                    break
             
             if not date_match:
                 logger.warning("No date found in A+ message header")
