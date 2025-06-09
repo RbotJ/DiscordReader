@@ -341,6 +341,9 @@ class TradingDiscordBot(discord.Client):
                         # Fallback: direct async call (should not happen in manual sync)
                         result = await self.ingestion_service.process_message(message_dto)
                     
+                    # Update bot's daily message counter for all processed messages
+                    self._messages_today += 1
+                    
                     if result:
                         stored_count += 1
                     else:
