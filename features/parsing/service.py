@@ -94,7 +94,19 @@ class ParsingService:
             
             # Extract trading day from parsed data or use provided/default
             if trading_day is None:
-                trading_day = parsed_data.get('trading_day') or date.today()
+                # A+ parser returns 'trading_date' not 'trading_day'
+                trading_day = parsed_data.get('trading_date') or parsed_data.get('trading_day')
+                if not trading_day:
+                    # Fallback: convert Discord message timestamp to NYSE trading day
+                    import pytz
+                    from datetime import datetime
+                    nyse_tz = pytz.timezone('America/New_York')
+                    # Get current time in NYSE timezone
+                    nyse_now = datetime.now(nyse_tz)
+                    trading_day = nyse_now.date()
+                    logger.info(f"No trading date in message, using NYSE date: {trading_day}")
+                else:
+                    logger.info(f"Using extracted trading date: {trading_day}")
             
             # Store the parsed setups with enhanced schema
             aplus_setups = parsed_data.get('setups', [])
