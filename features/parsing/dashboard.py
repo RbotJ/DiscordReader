@@ -160,20 +160,28 @@ def trigger_backlog():
             logger.info(f"[ParseBacklog] Processing message {message_id} with content length: {len(content)}")
             
             try:
-                # Process the message through parsing service
-                message_data = {
-                    'message_id': message_id,
-                    'content': content,
-                    'channel_id': message.get('channel_id'),
-                    'timestamp': message.get('timestamp'),
-                    'author_id': message.get('author_id')
-                }
+                # Check if this is an A+ message and route to specialized service
+                from .aplus_parser import get_aplus_parser
+                aplus_parser = get_aplus_parser()
                 
                 # Log content preview for debugging
                 content_preview = content[:200] + "..." if len(content) > 200 else content
                 logger.info(f"[ParseBacklog] Message {message_id} content preview: {content_preview}")
                 
-                result = parsing_service.parse_message(message_data)
+                if aplus_parser.validate_message(content):
+                    logger.info(f"[ParseBacklog] Routing A+ message {message_id} to specialized service")
+                    # Use specialized A+ service to preserve individual setups
+                    result = parsing_service.parse_aplus_message(content, message_id)
+                else:
+                    # Process the message through generic parsing service
+                    message_data = {
+                        'message_id': message_id,
+                        'content': content,
+                        'channel_id': message.get('channel_id'),
+                        'timestamp': message.get('timestamp'),
+                        'author_id': message.get('author_id')
+                    }
+                    result = parsing_service.parse_message(message_data)
                 
                 if result and result.get('success'):
                     successful_inserts += 1
