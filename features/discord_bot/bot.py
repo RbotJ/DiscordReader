@@ -262,13 +262,27 @@ class TradingDiscordBot(discord.Client):
                 from features.ingestion.service import IngestionService
                 self.ingestion_service = IngestionService()
             
-            # Collect messages from Discord using flatten approach
+            # Collect messages from Discord using safe async execution
             messages = []
             try:
                 logger.info(f"Fetching up to {limit} messages from channel {channel.name} ({channel.id})")
                 
-                # Use channel.history().flatten() to get all messages at once
-                history_messages = await channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None).flatten()
+                # Define async function to fetch messages
+                async def fetch_history():
+                    history_messages = []
+                    async for msg in channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None):
+                        history_messages.append(msg)
+                    return history_messages
+                
+                # Execute async function safely in bot's event loop
+                if hasattr(self, 'loop') and self.loop and self.loop.is_running():
+                    # Use bot's existing event loop from different thread
+                    import concurrent.futures
+                    future = asyncio.run_coroutine_threadsafe(fetch_history(), self.loop)
+                    history_messages = future.result(timeout=30)  # 30 second timeout
+                else:
+                    # Fallback: use list comprehension for message collection
+                    history_messages = [msg async for msg in channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None)]
                 
                 for message in history_messages:
                     messages.append({
@@ -299,8 +313,35 @@ class TradingDiscordBot(discord.Client):
             
             for msg_data in messages:
                 try:
-                    result = self.ingestion_service.ingest_discord_message(msg_data)
-                    if result and result.get('status') == 'success':
+                    # Convert to DTO and ingest the message
+                    from common.models import DiscordMessageDTO
+                    from datetime import datetime
+                    
+                    message_dto = DiscordMessageDTO(
+                        message_id=msg_data["id"],
+                        channel_id=msg_data["channel_id"],
+                        author_id=msg_data["author_id"],
+                        content=msg_data["content"],
+                        timestamp=datetime.fromisoformat(msg_data["timestamp"].replace('Z', '+00:00')),
+                        guild_id=str(channel.guild.id),
+                        author_username=msg_data["author_username"],
+                        channel_name=channel.name,
+                        attachments=msg_data["attachments"],
+                        embeds=msg_data["embeds"]
+                    )
+                    
+                    # Process the message through ingestion service using safe async execution
+                    if hasattr(self, 'loop') and self.loop and self.loop.is_running():
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.ingestion_service.process_message(message_dto), 
+                            self.loop
+                        )
+                        result = future.result(timeout=10)  # 10 second timeout per message
+                    else:
+                        # Fallback: direct async call (should not happen in manual sync)
+                        result = await self.ingestion_service.process_message(message_dto)
+                    
+                    if result:
                         stored_count += 1
                     else:
                         skipped_count += 1
