@@ -272,13 +272,23 @@ class ParsingStore:
             return []
     
     def get_available_trading_days(self) -> List[date]:
-        """Get list of distinct trading days that have active setups."""
+        """Get list of distinct trading days that have active setups, filtered to weekdays only."""
         try:
             from sqlalchemy import distinct
             days = self.session.query(distinct(TradeSetup.trading_day)).filter_by(
                 active=True
             ).order_by(TradeSetup.trading_day.desc()).all()
-            return [day[0] for day in days if day[0] is not None]
+            
+            # Filter out weekends (Saturday=5, Sunday=6) to show only trading days
+            trading_days = []
+            for day_tuple in days:
+                if day_tuple[0] is not None:
+                    day = day_tuple[0]
+                    # Only include weekdays (Monday=0 to Friday=4)
+                    if day.weekday() < 5:
+                        trading_days.append(day)
+            
+            return trading_days
         except SQLAlchemyError as e:
             logger.error(f"Error querying available trading days: {e}")
             return []
