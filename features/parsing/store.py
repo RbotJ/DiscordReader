@@ -108,26 +108,17 @@ class ParsingStore:
                                 logger.debug(f"Created level {i+1} with price {target_price} for setup {new_setup.id}")
                             except Exception as e:
                                 logger.error(f"Error creating level {i+1} for setup {new_setup.id}: {e}")
-                                db.session.rollback()
+                                # Don't rollback here - just skip this level
                                 continue
                     except Exception as e:
                         logger.error(f"Error creating setup for {setup_dto.ticker}: {e}")
-                        db.session.rollback()
+                        # Don't rollback here - just skip this setup
                         continue
             
             # Process standard setups if provided
             elif setups:
                 for setup_dto in setups:
-                    # Check if setup already exists for this message and ticker
-                    existing_setup = self.get_setup_by_message_and_ticker(message_id, setup_dto.ticker)
-                    
-                    if existing_setup:
-                        logger.info(f"Setup already exists for {setup_dto.ticker} from message {message_id}")
-                        created_setups.append(existing_setup)
-                        # Get existing levels
-                        existing_levels = ParsedLevel.get_by_setup_id(existing_setup.id)
-                        created_levels.extend(existing_levels)
-                        continue
+                    # Allow multiple setups per ticker per message
                     
                     # Create new standard setup
                     new_setup = TradeSetup()
