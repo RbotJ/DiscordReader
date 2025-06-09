@@ -91,6 +91,84 @@
             </div>
         </div>
 
+        <!-- Data Quality Audit -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-{% if audit_data.weekend_count > 0 or audit_data.today_setups_count > 50 %}warning{% else %}success{% endif %}">
+                    <div class="card-header">
+                        <h5><i class="fas fa-clipboard-check me-2"></i>Data Quality Audit</h5>
+                        <small class="text-muted">Monitor setup entries for anomalies and parsing errors</small>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="alert {% if audit_data.weekend_count > 0 %}alert-warning{% else %}alert-success{% endif %} mb-3">
+                                    <h6 class="alert-heading">Weekend Setups</h6>
+                                    <h4 class="mb-1">{{ audit_data.weekend_count or 0 }}</h4>
+                                    <small>Setups on non-trading days (Saturday/Sunday)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="alert {% if audit_data.today_setups_count > 50 %}alert-warning{% else %}alert-info{% endif %} mb-3">
+                                    <h6 class="alert-heading">Today's Date Setups</h6>
+                                    <h4 class="mb-1">{{ audit_data.today_setups_count or 0 }}</h4>
+                                    <small>Setups with current date (possible parsing failures)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="alert alert-info mb-3">
+                                    <h6 class="alert-heading">High Volume Messages</h6>
+                                    <h4 class="mb-1">{{ audit_data.duplicate_messages|length or 0 }}</h4>
+                                    <small>Messages with >20 setups</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="alert alert-secondary mb-3">
+                                    <h6 class="alert-heading">Last Audit</h6>
+                                    <small>{{ audit_data.audit_timestamp or 'N/A' }}</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {% if audit_data.weekend_setups %}
+                        <div class="mt-3">
+                            <h6 class="text-warning">⚠️ Weekend Setup Details:</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Ticker</th>
+                                            <th>Trading Day</th>
+                                            <th>Weekday</th>
+                                            <th>Setup Type</th>
+                                            <th>Profile</th>
+                                            <th>Message ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for setup in audit_data.weekend_setups[:10] %}
+                                        <tr>
+                                            <td><strong>{{ setup.ticker }}</strong></td>
+                                            <td>{{ setup.trading_day }}</td>
+                                            <td><span class="badge bg-warning">{{ setup.weekday }}</span></td>
+                                            <td>{{ setup.setup_type or 'N/A' }}</td>
+                                            <td>{{ setup.profile_name or 'N/A' }}</td>
+                                            <td><code>{{ setup.message_id[:12] }}...</code></td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% if audit_data.weekend_setups|length > 10 %}
+                                <small class="text-muted">Showing first 10 of {{ audit_data.weekend_setups|length }} weekend setups</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Recent Activity -->
         {% if recent_setups %}
         <div class="row">

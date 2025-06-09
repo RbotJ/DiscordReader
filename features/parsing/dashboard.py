@@ -35,10 +35,19 @@ def overview():
         service = get_parsing_service_safe()
         if service:
             metrics = service.get_service_stats()
+            
+            # Get audit data for anomaly monitoring
+            from .store import get_parsing_store
+            store = get_parsing_store()
+            audit_data = store.get_audit_anomalies()
+            
             logger.info(f"Parsing metrics: {metrics}")
             logger.info(f"Metrics type: {type(metrics)}")
+            logger.info(f"Audit anomalies found: {audit_data.get('weekend_count', 0)} weekend setups")
+            
             return render_template('parsing/overview.html',
                                  metrics=metrics,
+                                 audit_data=audit_data,
                                  current_time=datetime.utcnow())
         else:
             return render_template('parsing/error.html', 

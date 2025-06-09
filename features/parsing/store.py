@@ -272,23 +272,13 @@ class ParsingStore:
             return []
     
     def get_available_trading_days(self) -> List[date]:
-        """Get list of distinct trading days that have active setups, filtered to weekdays only."""
+        """Get list of distinct trading days that have active setups."""
         try:
             from sqlalchemy import distinct
             days = self.session.query(distinct(TradeSetup.trading_day)).filter_by(
                 active=True
             ).order_by(TradeSetup.trading_day.desc()).all()
-            
-            # Filter out weekends (Saturday=5, Sunday=6) to show only trading days
-            trading_days = []
-            for day_tuple in days:
-                if day_tuple[0] is not None:
-                    day = day_tuple[0]
-                    # Only include weekdays (Monday=0 to Friday=4)
-                    if day.weekday() < 5:
-                        trading_days.append(day)
-            
-            return trading_days
+            return [day[0] for day in days if day[0] is not None]
         except SQLAlchemyError as e:
             logger.error(f"Error querying available trading days: {e}")
             return []
@@ -378,6 +368,61 @@ class ParsingStore:
         except SQLAlchemyError as e:
             logger.error(f"Error getting parsing statistics: {e}")
             return {}
+
+    def get_audit_anomalies(self) -> Dict[str, Any]:
+        """Get audit data for anomalies in trade setup dates and data quality."""
+        try:
+            # Find setups on non-trading days (weekends)
+            weekend_setups = []
+            all_setups = self.session.query(TradeSetup).filter_by(active=True).all()
+            
+            for setup in all_setups:
+                if setup.trading_day and setup.trading_day.weekday() >= 5:  # Saturday=5, Sunday=6
+                    weekend_setups.append({
+                        'id': setup.id,
+                        'ticker': setup.ticker,
+                        'trading_day': setup.trading_day.isoformat(),
+                        'weekday': setup.trading_day.strftime('%A'),
+                        'message_id': setup.message_id,
+                        'setup_type': setup.setup_type,
+                        'profile_name': setup.profile_name
+                    })
+            
+            # Find dates that appear to be current date (possible parsing failures)
+            today = date.today()
+            today_setups = self.session.query(TradeSetup).filter(
+                TradeSetup.active == True,
+                TradeSetup.trading_day == today
+            ).count()
+            
+            # Find duplicate message processing
+            from sqlalchemy import func
+            duplicate_messages = self.session.query(
+                TradeSetup.message_id,
+                func.count(TradeSetup.id).label('setup_count')
+            ).filter_by(active=True).group_by(TradeSetup.message_id).having(
+                func.count(TradeSetup.id) > 20  # Flag messages with unusually high setup counts
+            ).all()
+            
+            return {
+                'weekend_setups': weekend_setups,
+                'weekend_count': len(weekend_setups),
+                'today_setups_count': today_setups,
+                'duplicate_messages': [
+                    {'message_id': msg_id, 'setup_count': count} 
+                    for msg_id, count in duplicate_messages
+                ],
+                'audit_timestamp': date.today().isoformat()
+            }
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting audit anomalies: {e}")
+            return {
+                'weekend_setups': [],
+                'weekend_count': 0,
+                'today_setups_count': 0,
+                'duplicate_messages': [],
+                'audit_timestamp': date.today().isoformat()
+            }
 
     def get_available_trading_days(self, limit=30):
         """Get list of trading days with setup data"""
