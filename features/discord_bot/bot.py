@@ -103,12 +103,11 @@ class TradingDiscordBot(discord.Client):
             self.ingestion_service = IngestionService()
             logger.info("Ingestion service initialized with bot client")
             
-            # Trigger startup catch-up ingestion if target channel found
+            # Startup complete - manual sync now available via API
             if self.aplus_setups_channel_id:
-                logger.info(f"Triggering startup catchup ingestion for channel: {self.aplus_setups_channel_id}")
-                await self._startup_catchup_ingestion()
+                logger.info(f"Bot ready - manual message sync available for channel: {self.aplus_setups_channel_id}")
             else:
-                logger.warning("No aplus-setups channel found, skipping catchup ingestion")
+                logger.warning("No aplus-setups channel found - manual sync unavailable")
                 
         except Exception as e:
             logger.error(f"Error during bot startup ingestion setup: {e}")
@@ -199,6 +198,101 @@ class TradingDiscordBot(discord.Client):
                 
         except Exception as e:
             logger.error(f"Error during startup catchup ingestion: {e}")
+
+    async def _manual_sync_history(self, limit: int = 50, before_id: str = None):
+        """
+        Manually sync message history from the target channel.
+        
+        Args:
+            limit: Number of messages to sync (max 200)
+            before_id: Sync messages before this message ID
+            
+        Returns:
+            Dict with sync results and statistics
+        """
+        try:
+            if not self.aplus_setups_channel_id:
+                return {
+                    'success': False,
+                    'error': 'No target channel configured',
+                    'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
+                }
+                
+            channel = self.get_channel(self.aplus_setups_channel_id)
+            if not channel:
+                return {
+                    'success': False,
+                    'error': 'Target channel not accessible',
+                    'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
+                }
+            
+            logger.info(f"Starting manual message sync for channel: {self.aplus_setups_channel_id} (limit: {limit})")
+            
+            # Create ingestion service if not available
+            if not self.ingestion_service:
+                from features.ingestion.service import IngestionService
+                self.ingestion_service = IngestionService()
+            
+            # Collect messages from Discord
+            messages = []
+            try:
+                async for message in channel.history(limit=limit, before=discord.Object(id=before_id) if before_id else None):
+                    messages.append({
+                        "id": str(message.id),
+                        "content": message.content,
+                        "author_id": str(message.author.id),
+                        "author_username": message.author.name,
+                        "timestamp": message.created_at.isoformat(),
+                        "channel_id": str(message.channel.id),
+                        "attachments": [{"url": att.url, "filename": att.filename} for att in message.attachments],
+                        "embeds": [embed.to_dict() for embed in message.embeds]
+                    })
+            except Exception as e:
+                logger.error(f"Error fetching message history: {e}")
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch messages: {str(e)}',
+                    'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
+                }
+            
+            # Process messages through ingestion
+            stored_count = 0
+            skipped_count = 0
+            error_count = 0
+            
+            for msg_data in messages:
+                try:
+                    result = self.ingestion_service.ingest_discord_message(msg_data)
+                    if result and result.get('status') == 'success':
+                        stored_count += 1
+                    else:
+                        skipped_count += 1
+                except Exception as e:
+                    logger.error(f"Error ingesting message {msg_data.get('id')}: {e}")
+                    error_count += 1
+            
+            statistics = {
+                'total': len(messages),
+                'stored': stored_count,
+                'skipped': skipped_count,
+                'errors': error_count
+            }
+            
+            logger.info(f"Manual sync complete: {statistics}")
+            
+            return {
+                'success': True,
+                'statistics': statistics,
+                'channel_id': str(self.aplus_setups_channel_id)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during manual message sync: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
+            }
 
     async def _trigger_ingestion(self, channel_id: str):
         """Trigger message ingestion for a specific channel with correlation tracking."""
