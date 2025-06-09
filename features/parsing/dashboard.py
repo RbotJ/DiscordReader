@@ -63,35 +63,7 @@ def metrics():
         logger.error(f"Error getting parsing metrics: {e}")
         return jsonify({'error': str(e)}), 500
 
-@parsing_bp.route('/setups')
-def setups_view():
-    """View parsed setups with filtering"""
-    try:
-        trading_day_str = request.args.get('trading_day')
-        ticker = request.args.get('ticker')
-        
-        # Parse trading day
-        trading_day = None
-        if trading_day_str:
-            try:
-                trading_day = datetime.strptime(trading_day_str, '%Y-%m-%d').date()
-            except ValueError:
-                trading_day = date.today()
-        
-        service = get_parsing_service_safe()
-        if service:
-            setups = service.get_active_setups(trading_day, ticker)
-            return render_template('parsing/setups.html', 
-                                 setups=setups, 
-                                 trading_day=trading_day or date.today(),
-                                 ticker=ticker)
-        else:
-            return render_template('parsing/error.html', 
-                                 error="Parsing service unavailable"), 500
-            
-    except Exception as e:
-        logger.error(f"Error loading setups view: {e}")
-        return render_template('parsing/error.html', error=str(e)), 500
+
 
 @parsing_bp.route('/setups.json')
 def setups_json():
