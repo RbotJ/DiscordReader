@@ -58,7 +58,9 @@ class ParsingStore:
         try:
             # Process A+ setups with enhanced schema fields
             if aplus_setups:
-                for setup_dto in aplus_setups:
+                logger.info(f"Processing {len(aplus_setups)} A+ setups for message {message_id}")
+                for i, setup_dto in enumerate(aplus_setups):
+                    logger.info(f"Processing setup {i+1}/{len(aplus_setups)}: {setup_dto.ticker} {setup_dto.profile_name}")
                     # Remove duplicate check to allow multiple setups per ticker per message
                     # Each individual setup line should create its own trade setup entry
                     

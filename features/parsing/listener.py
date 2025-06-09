@@ -83,7 +83,34 @@ class ParsingListener:
                 logger.debug(f"Skipping message {message_id}: content too short")
                 return
             
-            # Parse the message
+            # Check if this is an A+ message and route to specialized service
+            from .aplus_parser import get_aplus_parser
+            aplus_parser = get_aplus_parser()
+            
+            if aplus_parser.validate_message(content):
+                logger.info(f"Routing A+ message {message_id} to specialized service")
+                # Use specialized A+ service to preserve individual setups
+                from .service import ParsingService
+                service = ParsingService()
+                result = service.parse_aplus_message(content, message_id)
+                
+                if result.get('success'):
+                    setups_created = result.get('setups_created', 0)
+                    levels_created = result.get('levels_created', 0)
+                    
+                    # Update stats
+                    self.stats['messages_processed'] += 1
+                    self.stats['setups_created'] += setups_created
+                    self.stats['levels_created'] += levels_created
+                    self.stats['last_processed'] = datetime.utcnow().isoformat()
+                    
+                    logger.info(f"A+ message {message_id} processed: {setups_created} setups, {levels_created} levels")
+                    return
+                else:
+                    logger.warning(f"A+ service failed to process message {message_id}: {result.get('error')}")
+                    # Fall through to generic parsing
+            
+            # Parse the message using generic parser
             setups, all_levels = self.parser.parse_message_to_setups(message_info)
             
             if not setups:
