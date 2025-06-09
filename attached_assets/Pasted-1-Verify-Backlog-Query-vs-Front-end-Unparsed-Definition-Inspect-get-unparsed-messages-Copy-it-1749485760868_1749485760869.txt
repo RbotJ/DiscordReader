@@ -1,0 +1,110 @@
+1. Verify Backlog Query vs. Front-end “Unparsed” Definition
+Inspect get_unparsed_messages()
+
+Copy its SQL and run it directly in psql (or your database client) against your 39 messages.
+
+Does it actually return all 39 rows?
+
+If not, your “unparsed” filter (e.g. WHERE message_id NOT IN (SELECT message_id FROM trade_setups)) may be wrong (perhaps it’s pointing at the old trade_setups table instead of your “new” table).
+
+Cross–check table names
+
+Make sure your backlog code is looking at the same table the ingestion UI shows (discord_messages) and writing to the same table your dropdown reads (trade_setups or new_trade_setups). A mismatch here could make you process into one table while the UI reads from another.
+
+2. Add Detailed Logging Around Each Message
+Wrap your parsing loop so you log, for each message:
+
+python
+Copy
+Edit
+for raw in unparsed_messages:
+    try:
+        setup_dto, levels = parse_message_to_setup(raw)
+    except Exception as e:
+        logger.error(f"[ParseBacklog] message {raw.id} failed to parse: {e}")
+        continue
+
+    try:
+        insert_trade_setup_and_levels(raw.id, setup_dto, levels, raw.timestamp)
+        logger.info(f"[ParseBacklog] message {raw.id} → setup created")
+    except Exception as e:
+        logger.error(f"[ParseBacklog] message {raw.id} failed to store: {e}")
+Then tail your logs when you click “Parse Backlog.” You’ll see exactly which messages:
+
+never enter the parse_message_to_setup success block (i.e. parser exceptions)
+
+parse but fail on the DB insert
+
+If you see zero “→ setup created” lines, you know the parser regex is simply rejecting every message.
+
+3. Unit-Test a Known Good Message
+Take one of your sample messages directly from the DB:
+
+sql
+Copy
+Edit
+SELECT message_id, content
+  FROM discord_messages
+ LIMIT 1;
+Then in a REPL or small script:
+
+python
+Copy
+Edit
+from features.parsing.parser import parse_message_to_setup
+
+raw = {"id": "...", "content": "<that content>", "timestamp": "..."}
+try:
+    setup, levels = parse_message_to_setup(raw)
+    print("Parsed:", setup, levels)
+except Exception as e:
+    print("Parse error:", e)
+If this throws “Cannot parse header” or “Entry/Target/Stop not found,” tweak your regex to match the exact formatting (watch for extra whitespace, punctuation, multiple tickers per message, etc.).
+
+4. Confirm Trading-Day Logic
+Your “No Trading days available” dropdown only appears when at least one trade_setups.created_at::date maps to a valid trading day. If your parser:
+
+is inserting with the wrong timestamp (e.g. using UTC vs. local), or
+
+using a placeholder date outside market days,
+
+then your day-picker will stay empty.
+
+Check:
+
+sql
+Copy
+Edit
+SELECT DISTINCT DATE(created_at) AS day
+  FROM trade_setups;
+— if that returns nothing, you still have zero inserts. If it returns dates, ensure your front end’s get_available_trading_days() matches those dates (timezones, date formats).
+
+5. Improve “Success” Feedback
+Right now your backlog action probably shows “success” because it:
+
+python
+Copy
+Edit
+return jsonify({"processed_count": len(unparsed_messages)})
+Instead, include:
+
+python
+Copy
+Edit
+return jsonify({
+  "processed": len(unparsed_messages),
+  "created": successful_inserts,
+  "failed": failures
+})
+That way you’ll immediately know if your parser is firing but simply never yielding any valid setups.
+
+6. Recap & Next Steps
+Validate your unparsed-messages SQL returns the IDs you expect.
+
+Log parsing vs. storing success per message.
+
+Unit-test your parser against a known sample.
+
+Check that inserts carry correct created_at dates.
+
+Enhance your API response to show real parsing/create counts.
