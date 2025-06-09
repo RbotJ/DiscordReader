@@ -35,20 +35,19 @@ class APlusMessageParser:
     def __init__(self):
         """Initialize A+ parser with specific patterns."""
         # Message validation patterns
-        self.header_pattern = re.compile(r'A\+.*Trade Setups.*(\w+)\s+(\w+)\s+(\d+)', re.IGNORECASE)
+        self.header_pattern = re.compile(r'A\+\s*SCALP\s*SETUPS.*(\d+/\d+/\d+)', re.IGNORECASE)
         
         # Ticker section pattern
         self.ticker_pattern = re.compile(r'^([A-Z]{2,5})$', re.MULTILINE)
         
-        # Setup line patterns with emoji indicators
+        # Setup line patterns with emoji indicators matching actual format
         self.setup_patterns = {
-            'rejection_short': re.compile(r'❌\s*Rejection\s+Short\s+Near\s+(\d+\.?\d*)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
-            'rejection_near': re.compile(r'❌\s*Rejection\s+Near\s+(\d+\.?\d*)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
-            'aggressive_breakdown': re.compile(r'🔻\s*Aggressive\s+Breakdown\s+Below\s+(\d+\.?\d*)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
-            'conservative_breakdown': re.compile(r'🔻\s*Conservative\s+Breakdown\s+Below\s+(\d+\.?\d*)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
-            'aggressive_breakout': re.compile(r'🔼\s*Aggressive\s+Breakout\s+Above\s+(\d+\.?\d*)\s+🔼\s+([\d.,\s]+)', re.IGNORECASE),
-            'conservative_breakout': re.compile(r'🔼\s*Conservative\s+Breakout\s+Above\s+(\d+\.?\d*)\s+🔼\s+([\d.,\s]+)', re.IGNORECASE),
-            'bounce_zone': re.compile(r'🔄\s*Bounce\s+Zone[=\s]*(\d+\.?\d*)[-–](\d+\.?\d*)\s+🔼\s+[Tt]argets?[:=]?\s*([\d.,\s]+)', re.IGNORECASE)
+            'aggressive_breakdown': re.compile(r'🔽\s*\*\*Aggressive\s+Breakdown:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
+            'conservative_breakdown': re.compile(r'🔽\s*\*\*Conservative\s+Breakdown:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
+            'aggressive_breakout': re.compile(r'🔼\s*\*\*Aggressive\s+Breakout:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
+            'conservative_breakout': re.compile(r'🔼\s*\*\*Conservative\s+Breakout:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
+            'bounce_zone': re.compile(r'📍\s*\*\*Bounce\s+Zone:\*\*\s+(\d+\.?\d*)[-–](\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE),
+            'rejection_near': re.compile(r'⚠️\s*\*\*Rejection\s+Near:\*\*\s+(\d+\.?\d*)\s+→\s+([\d.,\s]+)', re.IGNORECASE)
         }
         
         # Bias pattern
@@ -88,20 +87,17 @@ class APlusMessageParser:
             return None
             
         try:
-            # Extract day name, month, and day number
-            day_name = header_match.group(1).lower()
-            month_name = header_match.group(2).lower()
-            day_number = int(header_match.group(3))
+            # Extract date in MM/DD/YY format
+            date_str = header_match.group(1)
+            month, day, year = date_str.split('/')
             
-            # Get month number
-            month_number = self.month_map.get(month_name)
-            if not month_number:
-                return None
-                
-            # Assume current year
-            current_year = datetime.now().year
-            
-            return date(current_year, month_number, day_number)
+            # Convert to full year
+            year = int(year)
+            if year < 50:
+                year += 2000
+            else:
+                year += 1900
+            return date(year, int(month), int(day))
             
         except (ValueError, IndexError) as e:
             logger.warning(f"Error parsing trading date: {e}")
