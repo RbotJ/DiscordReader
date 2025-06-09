@@ -1,0 +1,113 @@
+1. Setup Definition Schema
+yaml
+Copy
+Edit
+Setup:
+  ticker:             # e.g. SPY
+  date:               # e.g. 2025-05-19
+  preMarketPrice:     # last traded price before open
+  profileName:        # descriptive term, see table below
+  triggerLevel:       # first price to watch
+  targetLevels:       # [next1, next2, next3]
+  biasPivot:          # level that flips bullish ↔ bearish
+  entryCondition:     # e.g. “5-min candle close > triggerLevel”
+  entryPrice:         # e.g. next candle’s open
+  stopLoss:           # e.g. opposite side of triggerLevel ± buffer
+  takeProfits:        # sell at each target in thirds
+  htfFilter:          # optional, e.g. “1-hr MACD > 0 for longs”
+  notes:              # any context or custom rule
+2. Descriptive “profileName” Glossary
+Term	What it Means
+RejectionNear	Price pokes to triggerLevel, then reverses sharply away.
+AggressiveBreakdown	Clean 5-min close below triggerLevel; strong bearish momentum.
+ConservativeBreakdown	Price creeps below triggerLevel; weaker momentum but still bearish.
+AggressiveBreakout	Clean 5-min close above triggerLevel; strong bullish momentum.
+ConservativeBreakout	Price creeps above triggerLevel; weaker but still bullish.
+BounceFrom	Price drops to triggerLevel, holds it, then makes a higher-low/higher-high.
+BiasInCharge	“Bulls in charge while holding X”—only break below biasPivot flips bias.
+
+3. Example: SPY “AggressiveBreakdown” Setup
+yaml
+Copy
+Edit
+ticker: SPY
+date: 2025-05-19
+preMarketPrice: 593.10
+profileName: AggressiveBreakdown
+triggerLevel: 590.20
+targetLevels: [588.00, 585.50, 582.80]
+biasPivot: 585.50
+entryCondition: |
+  On the 5-min chart, wait for a full candle close < 590.20,
+  confirmed by above‐average 5-min volume.
+entryPrice: Next 5-min candle’s open
+stopLoss: 590.20 + 0.10 (10¢ buffer)
+takeProfits:
+  - sell 1/3 at 588.00
+  - sell 1/3 at 585.50
+  - sell final 1/3 at 582.80
+htfFilter: “Only enter puts if 1-hr MACD histogram < 0”
+notes: “Only one contract per ticker.  Remove card when exit fills.”
+4. Implementation Notes for Your Developer
+Parser
+
+Read each line of your morning message, map the emoji to profileName.
+
+Extract the numeric levels into triggerLevel + targetLevels.
+
+Chart Overlay
+
+Draw triggerLevel as a bold line; targetLevels as dashed lines; biasPivot as a dotted line.
+
+Color‐code lines by bullish (green) vs bearish (red) profiles.
+
+Signal Detection
+
+python
+Copy
+Edit
+def check_entry(candle, setup):
+    # higher‐TF filter
+    if setup.profileName in ['AggressiveBreakdown','RejectionNear'] \
+      and htf_macd_1h.hist < 0:
+        # OK
+    else if setup.profileName in ['AggressiveBreakout','BounceFrom'] \
+      and htf_macd_1h.hist > 0:
+        # OK
+    else:
+        return False
+
+    # entry candle logic
+    if setup.profileName.endswith('Breakdown') \
+      and candle.close < setup.triggerLevel:
+        return True
+    if setup.profileName.endswith('Breakout') \
+      and candle.close > setup.triggerLevel:
+        return True
+    if setup.profileName == 'RejectionNear' \
+      and candle.high > setup.triggerLevel \
+      and candle.close < setup.triggerLevel:
+        return True
+    if setup.profileName == 'BounceFrom' \
+      and candle.low <= setup.triggerLevel \
+      and candle.close > candle.open:
+        return True
+
+    return False
+Lifecycle
+
+Monitor until check_entry returns True.
+
+Enter one oDTE option on next candle open.
+
+Attach stop‐loss & bracket orders per stopLoss/takeProfits.
+
+On exit: mark the chart card “✅ closed” and remove.
+
+With this schema and examples in hand, you’ll have:
+
+Consistent naming for every line item
+
+Clear logic for exactly when to enter or skip
+
+Standard fields your backend and UI can all rely on

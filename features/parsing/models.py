@@ -30,10 +30,19 @@ class TradeSetup(db.Model):
     ticker = Column(String(10), nullable=False, index=True)
     trading_day = Column(Date, nullable=False, index=True)
     
-    # Setup characteristics
+    # Enhanced setup characteristics
     setup_type = Column(String(50), nullable=True)  # breakout, breakdown, rejection, bounce
+    profile_name = Column(String(50), nullable=True)  # RejectionNear, AggressiveBreakdown, etc.
     bias_note = Column(Text, nullable=True)  # Free-form bias description
     direction = Column(String(20), nullable=True)  # bullish, bearish, neutral
+    
+    # Price levels
+    trigger_level = Column(Numeric(10, 4), nullable=True)  # Primary entry price
+    bias_pivot = Column(Numeric(10, 4), nullable=True)  # Level that flips bullish/bearish
+    premarket_price = Column(Numeric(10, 4), nullable=True)  # Reference price context
+    
+    # Entry conditions
+    entry_condition = Column(Text, nullable=True)  # Structured trigger logic
     
     # Status tracking
     active = Column(Boolean, default=True, index=True)
@@ -100,10 +109,15 @@ class ParsedLevel(db.Model):
     # Foreign key to trade setup
     setup_id = Column(Integer, ForeignKey("trade_setups.id", ondelete="CASCADE"), nullable=False, index=True)
     
-    # Level information
-    level_type = Column(String(30), nullable=False)  # entry, target, stop, bounce, rejection, breakout, breakdown
+    # Enhanced level information
+    level_type = Column(String(30), nullable=False)  # trigger, target, stop_loss, bias_pivot
     direction = Column(String(10), nullable=True)  # up, down, long, short
     trigger_price = Column(Numeric(12, 4), nullable=False)
+    
+    # Sequencing and risk management
+    sequence_order = Column(Integer, nullable=True)  # 1st, 2nd, 3rd target
+    buffer_amount = Column(Numeric(8, 4), nullable=True)  # Stop-loss buffer
+    take_profit_percentage = Column(Float, nullable=True)  # 0.33 for 1/3 strategy
     
     # Strategy classification
     strategy = Column(String(20), nullable=True)  # aggressive, conservative, normal
@@ -134,7 +148,7 @@ class ParsedLevel(db.Model):
             'setup_id': self.setup_id,
             'level_type': self.level_type,
             'direction': self.direction,
-            'trigger_price': float(self.trigger_price) if self.trigger_price is not None else None,
+            'trigger_price': float(self.trigger_price) if self.trigger_price else None,
             'strategy': self.strategy,
             'confidence': self.confidence,
             'description': self.description,

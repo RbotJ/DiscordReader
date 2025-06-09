@@ -32,7 +32,8 @@ class ParsingStore:
         message_id: str,
         setups: List[ParsedSetupDTO], 
         levels_by_setup: Dict[str, List[ParsedLevelDTO]], 
-        trading_day: Optional[date] = None
+        trading_day: Optional[date] = None,
+        aplus_setups: List = None
     ) -> Tuple[List[TradeSetup], List[ParsedLevel]]:
         """
         Store parsed setups and levels from a message.
@@ -42,6 +43,7 @@ class ParsingStore:
             setups: List of parsed setup DTOs
             levels_by_setup: Dict mapping setup ticker to its levels
             trading_day: Trading day (defaults to today)
+            aplus_setups: List of enhanced A+ setup DTOs with profile names
             
         Returns:
             Tuple of (created_setups, created_levels)

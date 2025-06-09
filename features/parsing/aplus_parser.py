@@ -17,10 +17,12 @@ class APlusSetupDTO(NamedTuple):
     """Data transfer object for A+ parsed setup."""
     ticker: str
     setup_type: str
+    profile_name: str  # RejectionNear, AggressiveBreakdown, etc.
     direction: str  # bullish, bearish
     strategy: str  # aggressive, conservative, rejection, bounce
-    entry_price: float
+    trigger_level: float  # Primary entry price
     target_prices: List[float]
+    entry_condition: str  # Structured trigger logic
     raw_line: str
 
 
@@ -162,10 +164,12 @@ class APlusMessageParser:
                         setup = APlusSetupDTO(
                             ticker=ticker,
                             setup_type='bounce',
+                            profile_name='BounceFrom',
                             direction='bullish',
                             strategy='zone',
-                            entry_price=(entry_low + entry_high) / 2,  # Use midpoint
+                            trigger_level=(entry_low + entry_high) / 2,  # Use midpoint
                             target_prices=targets,
+                            entry_condition=f"Price drops to {entry_low}-{entry_high} zone, holds support, then shows higher-low/higher-high",
                             raw_line=f"Bounce Zone {entry_low}–{entry_high} → {', '.join(map(str, targets))}"
                         )
                         setups.append(setup)
@@ -190,23 +194,41 @@ class APlusMessageParser:
                         else:
                             strategy = 'standard'
                         
-                        # Map setup types
+                        # Map setup types and profile names
                         if 'breakdown' in setup_key:
                             setup_type = 'breakdown'
+                            if 'aggressive' in setup_key:
+                                profile_name = 'AggressiveBreakdown'
+                                entry_condition = f"5-min candle close below {entry_price} with volume confirmation"
+                            else:
+                                profile_name = 'ConservativeBreakdown'
+                                entry_condition = f"Price creeps below {entry_price} with sustained bearish momentum"
                         elif 'breakout' in setup_key:
                             setup_type = 'breakout'
+                            if 'aggressive' in setup_key:
+                                profile_name = 'AggressiveBreakout'
+                                entry_condition = f"5-min candle close above {entry_price} with volume confirmation"
+                            else:
+                                profile_name = 'ConservativeBreakout'
+                                entry_condition = f"Price creeps above {entry_price} with sustained bullish momentum"
                         elif 'rejection' in setup_key:
                             setup_type = 'rejection'
+                            profile_name = 'RejectionNear'
+                            entry_condition = f"Price pokes to {entry_price} then reverses sharply away"
                         else:
                             setup_type = 'other'
+                            profile_name = 'Unknown'
+                            entry_condition = f"Monitor price action near {entry_price}"
                         
                         setup = APlusSetupDTO(
                             ticker=ticker,
                             setup_type=setup_type,
+                            profile_name=profile_name,
                             direction=direction,
                             strategy=strategy,
-                            entry_price=entry_price,
+                            trigger_level=entry_price,
                             target_prices=targets,
+                            entry_condition=entry_condition,
                             raw_line=f"{setup_key}: {entry_price} → {', '.join(map(str, targets))}"
                         )
                         setups.append(setup)
