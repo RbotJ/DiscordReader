@@ -219,12 +219,27 @@ class TradingDiscordBot(discord.Client):
                     'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
                 }
                 
-            channel = self.get_channel(self.aplus_setups_channel_id)
-            if not channel:
-                logger.error(f"Cannot access channel {self.aplus_setups_channel_id}. Bot may lack permissions.")
+            # Try to get the channel using integer conversion
+            try:
+                channel_id = int(self.aplus_setups_channel_id)
+                channel = self.get_channel(channel_id)
+                
+                if not channel:
+                    # Log available channels for debugging
+                    available_channels = [(c.id, c.name) for guild in self.guilds for c in guild.channels if hasattr(c, 'name')]
+                    logger.info(f"Available channels: {available_channels}")
+                    logger.error(f"Cannot access channel {channel_id}. Bot cache may not include this channel.")
+                    return {
+                        'success': False,
+                        'error': f'Target channel {channel_id} not found in bot cache - permissions may be insufficient',
+                        'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
+                    }
+                    
+            except ValueError:
+                logger.error(f"Invalid channel ID format: {self.aplus_setups_channel_id}")
                 return {
                     'success': False,
-                    'error': 'Target channel not accessible - check bot permissions',
+                    'error': 'Invalid channel ID format',
                     'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
                 }
             
