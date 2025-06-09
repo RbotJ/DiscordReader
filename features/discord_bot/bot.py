@@ -230,11 +230,13 @@ class TradingDiscordBot(discord.Client):
             
             # Check if bot has permission to read message history
             permissions = channel.permissions_for(channel.guild.me)
+            logger.info(f"Bot permissions in channel {channel.name}: read_messages={permissions.read_messages}, read_message_history={permissions.read_message_history}, view_channel={permissions.view_channel}")
+            
             if not permissions.read_message_history:
                 logger.error(f"Bot lacks read_message_history permission in channel {channel.name}")
                 return {
                     'success': False,
-                    'error': 'Bot lacks permission to read message history in target channel',
+                    'error': f'Bot lacks permission to read message history in #{channel.name}. Current permissions: read_messages={permissions.read_messages}, view_channel={permissions.view_channel}',
                     'statistics': {'total': 0, 'stored': 0, 'skipped': 0, 'errors': 1}
                 }
             
