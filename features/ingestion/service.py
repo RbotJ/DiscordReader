@@ -13,6 +13,7 @@ from common.events.bus import get_event_bus, publish_cross_slice_event
 from common.models import DiscordMessageDTO
 from .validator import MessageValidator, ValidationResult
 from .store import MessageStore
+from .processor import MessageProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class IngestionService:
         # Initialize dependencies
         self.validator = MessageValidator()
         self.store = MessageStore()
+        self.processor = MessageProcessor()
         
     async def process_message(self, message_dto: DiscordMessageDTO) -> bool:
         """
@@ -62,18 +64,8 @@ class IngestionService:
                 logger.warning(f"Message {message_dto.message_id} validation failed: {validation_result.error_message}")
                 return False
                 
-            # Store message using store layer
-            message_dict = {
-                "id": message_dto.message_id,
-                "channel_id": message_dto.channel_id,
-                "author_id": message_dto.author_id,
-                "content": message_dto.content,
-                "timestamp": message_dto.timestamp.isoformat(),
-                "guild_id": getattr(message_dto, 'guild_id', None),
-                "author": getattr(message_dto, 'author_username', ''),
-                "embeds": getattr(message_dto, 'embeds', []),
-                "attachments": getattr(message_dto, 'attachments', [])
-            }
+            # Prepare message for storage using processor
+            message_dict = self.processor.prepare_message_for_storage(message_dto)
             
             if not self.store.insert_message(message_dict):
                 logger.error(f"Failed to store message {message_dto.message_id}")
@@ -157,6 +149,46 @@ class IngestionService:
             rule_func: Function that takes DiscordMessageDTO and returns bool
         """
         self.validator.add_validation_rule(rule_func)
+    
+    def handle_event(self, event: Dict[str, Any]) -> bool:
+        """
+        Handle an ingestion event from the listener.
+        
+        Args:
+            event: Event dictionary from the event system
+            
+        Returns:
+            bool: True if event was handled successfully
+        """
+        try:
+            event_type = event.get('event_type', 'unknown')
+            payload = event.get('payload', {})
+            
+            if event_type == 'message.stored':
+                # Handle stored message event - delegate to parsing slice
+                return self._handle_message_stored_event(event)
+            else:
+                logger.debug(f"Unhandled event type: {event_type}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error handling event: {e}")
+            return False
+    
+    def _handle_message_stored_event(self, event: Dict[str, Any]) -> bool:
+        """Handle a message stored event by publishing to parsing slice."""
+        try:
+            # Simply publish the event for the parsing slice to handle
+            # Ingestion slice only handles storage, parsing handles analysis
+            await publish_cross_slice_event(
+                "parsing.message_available",
+                event.get('payload', {}),
+                "ingestion"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error handling message stored event: {e}")
+            return False
         
     async def get_processing_stats(self) -> Dict[str, Any]:
         """
@@ -167,8 +199,9 @@ class IngestionService:
         """
         return {
             "processed_messages_count": len(self._processed_messages),
-            "validation_rules_count": len(self._validation_rules),
-            "last_updated": datetime.now().isoformat()
+            "validation_rules_count": len(self.validator.validation_rules),
+            "last_updated": datetime.now().isoformat(),
+            "processor_stats": self.processor.get_processing_stats()
         }
         
     async def handle_startup_ingestion(self, trigger_data: Dict[str, Any]) -> IngestionResult:
