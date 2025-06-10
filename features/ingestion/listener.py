@@ -4,8 +4,8 @@ Ingestion Listener Module
 Focused listener that only handles event listening and delegates processing to service.
 Clean separation between listening and business logic.
 """
+import asyncio
 import logging
-import time
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -33,7 +33,7 @@ class IngestionListener:
             'last_activity': None
         }
     
-    def start_listening(self, poll_interval: float = 5.0):
+    async def start_listening(self, poll_interval: float = 5.0):
         """Start listening for ingestion events with configurable polling."""
         if not self.ingestion_service:
             logger.error("No ingestion service provided to listener")
@@ -44,23 +44,23 @@ class IngestionListener:
         
         while self.running:
             try:
-                self._process_pending_events()
+                await self._process_pending_events()
                 self._update_stats()
-                time.sleep(poll_interval)
+                await asyncio.sleep(poll_interval)
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal, stopping listener")
                 break
             except Exception as e:
                 logger.error(f"Error in listener main loop: {e}")
                 self.stats['errors'] += 1
-                time.sleep(poll_interval)
+                await asyncio.sleep(poll_interval)
     
     def stop_listening(self):
         """Stop the listener."""
         self.running = False
         logger.info("Ingestion listener stopped")
     
-    def _process_pending_events(self):
+    async def _process_pending_events(self):
         """Process any pending events and delegate to service."""
         try:
             events = get_latest_events(
@@ -76,7 +76,7 @@ class IngestionListener:
             self.stats['events_received'] += len(events)
             
             for event in events:
-                success = self._handle_event(event)
+                success = await self._handle_event(event)
                 if success:
                     self.last_processed_event_id = event.get('id')
                     self.stats['events_processed'] += 1
@@ -85,12 +85,12 @@ class IngestionListener:
             logger.error(f"Error processing pending events: {e}")
             self.stats['errors'] += 1
     
-    def _handle_event(self, event: Dict[str, Any]) -> bool:
+    async def _handle_event(self, event: Dict[str, Any]) -> bool:
         """Handle a single event by delegating to service."""
         try:
             # Simply pass the event to the service for processing
             # The service handles all business logic
-            return self.ingestion_service.handle_event(event)
+            return await self.ingestion_service.handle_event(event)
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")

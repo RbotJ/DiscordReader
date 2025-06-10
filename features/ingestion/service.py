@@ -150,7 +150,7 @@ class IngestionService:
         """
         self.validator.add_validation_rule(rule_func)
     
-    def handle_event(self, event: Dict[str, Any]) -> bool:
+    async def handle_event(self, event: Dict[str, Any]) -> bool:
         """
         Handle an ingestion event from the listener.
         
@@ -166,7 +166,7 @@ class IngestionService:
             
             if event_type == 'message.stored':
                 # Handle stored message event - delegate to parsing slice
-                return self._handle_message_stored_event(event)
+                return await self._handle_message_stored_event(event)
             else:
                 logger.debug(f"Unhandled event type: {event_type}")
                 return True
@@ -175,7 +175,7 @@ class IngestionService:
             logger.error(f"Error handling event: {e}")
             return False
     
-    def _handle_message_stored_event(self, event: Dict[str, Any]) -> bool:
+    async def _handle_message_stored_event(self, event: Dict[str, Any]) -> bool:
         """Handle a message stored event by publishing to parsing slice."""
         try:
             # Simply publish the event for the parsing slice to handle
