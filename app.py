@@ -164,7 +164,7 @@ def start_discord_bot_background(app):
                     
                     # Parsing slice
                     from features.parsing.service import start_parsing_service
-                    parsing_service = start_parsing_service()
+                    parsing_service = start_parsing_service(app=app)
                     logging.info("Parsing service started successfully")
 
                     # Discord slice
