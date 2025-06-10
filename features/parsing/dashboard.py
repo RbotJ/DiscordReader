@@ -292,6 +292,39 @@ def health():
             'timestamp': datetime.utcnow().isoformat()
         }), 500
 
+@parsing_bp.route('/setups/clear', methods=['POST'])
+def clear_trade_setups():
+    """Clear all trade setups and their associated parsed levels"""
+    try:
+        # Get confirmation parameter
+        data = request.get_json() or {}
+        confirmed = data.get('confirmed', False)
+        
+        if not confirmed:
+            return jsonify({
+                'success': False,
+                'error': 'Confirmation required to clear all trade setups'
+            }), 400
+        
+        # Get the parsing store and call clear method
+        store = get_parsing_store()
+        result = store.clear_all_trade_setups()
+        
+        if result['success']:
+            logger.info(f"Trade setups cleared: {result['deleted_setups']} setups, {result['deleted_levels']} levels")
+            return jsonify(result)
+        else:
+            logger.error(f"Failed to clear trade setups: {result['message']}")
+            return jsonify(result), 500
+            
+    except Exception as e:
+        logger.error(f"Error in clear trade setups endpoint: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to clear trade setups: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
 def register_dashboard_routes(app):
     """Register parsing dashboard routes"""
     app.register_blueprint(parsing_bp)

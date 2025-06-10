@@ -456,6 +456,50 @@ class ParsingStore:
             logger.error(f"Error getting setups for trading day {trading_day}: {e}")
             return []
 
+    def clear_all_trade_setups(self) -> Dict[str, Any]:
+        """
+        Clear all trade setups and their associated parsed levels.
+        
+        Returns:
+            Dict with operation results including counts of deleted records
+        """
+        try:
+            # Count records before deletion
+            setup_count = self.session.query(TradeSetup).count()
+            level_count = self.session.query(ParsedLevel).count()
+            
+            logger.info(f"Clearing {setup_count} trade setups and {level_count} parsed levels")
+            
+            # Delete parsed levels first (due to foreign key constraint)
+            deleted_levels = self.session.query(ParsedLevel).delete()
+            
+            # Delete trade setups
+            deleted_setups = self.session.query(TradeSetup).delete()
+            
+            # Commit the transaction
+            self.session.commit()
+            
+            logger.info(f"Successfully cleared {deleted_setups} trade setups and {deleted_levels} parsed levels")
+            
+            return {
+                'success': True,
+                'message': 'All trade setups cleared successfully',
+                'deleted_setups': deleted_setups,
+                'deleted_levels': deleted_levels,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error clearing trade setups: {e}")
+            return {
+                'success': False,
+                'message': f'Failed to clear trade setups: {str(e)}',
+                'deleted_setups': 0,
+                'deleted_levels': 0,
+                'timestamp': datetime.now().isoformat()
+            }
+
 
 # Global store instance
 _store = None
