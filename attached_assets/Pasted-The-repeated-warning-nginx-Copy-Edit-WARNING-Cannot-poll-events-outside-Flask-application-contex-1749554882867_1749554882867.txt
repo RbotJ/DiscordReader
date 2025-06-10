@@ -1,0 +1,63 @@
+The repeated warning:
+
+nginx
+Copy
+Edit
+WARNING - Cannot poll events outside Flask application context
+indicates that your event polling logic is trying to access Flask-specific resources (e.g. current_app, DB session, config) without an active Flask application context.
+
+✅ Resolution Strategy
+1. Wrap event polling in an app context:
+
+If you are polling events from outside a Flask route or CLI command, you need to manually push the app context:
+
+python
+Copy
+Edit
+from flask import current_app
+
+def start_polling():
+    from your_flask_app import create_app
+    app = create_app()
+    with app.app_context():
+        poll_events()
+This ensures your polling function can access things like current_app.config, DB sessions, and loggers.
+
+🔍 Additional Things to Check
+A. Who is calling poll_events()?
+Make sure you're not calling poll_events() directly from a script or background thread without wrapping it in the context shown above.
+
+B. Thread Safety / Context Handling
+If you're using threading, asyncio, or background schedulers like APScheduler, each thread or coroutine may require its own Flask app context.
+
+C. Celery Worker Setup
+If your event consumer runs as a background job via Celery, configure Celery to push the Flask context into each task:
+
+python
+Copy
+Edit
+from celery import Task
+from your_flask_app import create_app
+
+class ContextTask(Task):
+    def __call__(self, *args, **kwargs):
+        with create_app().app_context():
+            return self.run(*args, **kwargs)
+
+celery.Task = ContextTask
+🧪 Diagnostic Enhancements
+To make the problem more obvious in logs:
+
+python
+Copy
+Edit
+from flask import has_app_context
+if not has_app_context():
+    logger.warning("Polling attempted without app context!")
+💡 Bonus Recommendations
+Move event consumer into a CLI script (e.g. flask events consume) to leverage Flask’s CLI context.
+
+Use flask.current_app.logger instead of global loggers for better context-aware logging.
+
+Check that polling intervals don't outlive the app context, especially in while True loops or daemons.
+
