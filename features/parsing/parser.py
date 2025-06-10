@@ -9,6 +9,7 @@ import re
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional, Tuple, NamedTuple
 from decimal import Decimal
+from pytz import timezone, UTC
 
 from .aplus_parser import get_aplus_parser
 
@@ -82,8 +83,66 @@ class MessageParser:
             'setup', 'trade', 'signal', 'entry', 'target', 'stop', 'breakout', 'breakdown',
             'rejection', 'bounce', 'support', 'resistance', 'long', 'short', 'call', 'put'
         ]
+        
+        # Trading day extraction pattern
+        self.trading_day_pattern = re.compile(
+            r'\b(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+([A-Z][a-z]+)\s+(\d{1,2})\b', 
+            re.IGNORECASE
+        )
     
-    def parse_message_to_setups(self, raw_message: Dict[str, Any]) -> Tuple[List[ParsedSetupDTO], List[ParsedLevelDTO]]:
+    def _extract_trading_day(self, content: str) -> Optional[date]:
+        """Extract trading day from message header like 'Thursday May 29'."""
+        match = self.trading_day_pattern.search(content)
+        if match:
+            try:
+                month_name = match.group(1)
+                day = int(match.group(2))
+                month = datetime.strptime(month_name, "%B").month
+                year = datetime.now().year  # Could enhance this to roll over at year end
+                extracted_date = date(year, month, day)
+                logger.debug(f"Detected trading day: {extracted_date}")
+                return extracted_date
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Failed to parse trading day from '{match.group(0)}': {e}")
+        return None
+    
+    def _normalize_timestamp_to_est(self, raw_ts: str) -> datetime:
+        """Normalize message timestamp to US/Eastern timezone."""
+        try:
+            dt_utc = datetime.fromisoformat(raw_ts.replace('Z', '+00:00')).replace(tzinfo=UTC)
+            est = timezone('US/Eastern')
+            return dt_utc.astimezone(est)
+        except Exception as e:
+            logger.warning(f"Failed to normalize timestamp '{raw_ts}': {e}")
+            # Fallback to current time in EST
+            est = timezone('US/Eastern')
+            return datetime.now(est)
+    
+    def _split_by_ticker_sections(self, content: str) -> Dict[str, str]:
+        """Split message content by ticker sections to avoid over-parsing."""
+        lines = content.splitlines()
+        sections = {}
+        current_ticker = None
+        buffer = []
+
+        for line in lines:
+            stripped = line.strip()
+            # Matches ticker line (e.g., NVDA, SPY, TSLA)
+            if re.fullmatch(r'[A-Z]{1,5}', stripped):
+                if current_ticker and buffer:
+                    sections[current_ticker] = "\n".join(buffer).strip()
+                current_ticker = stripped
+                buffer = []
+            elif current_ticker:
+                buffer.append(stripped)
+        
+        if current_ticker and buffer:
+            sections[current_ticker] = "\n".join(buffer).strip()
+        
+        logger.debug(f"Tickers found: {list(sections.keys())}")
+        return sections
+    
+    def parse_message_to_setups(self, raw_message: Dict[str, Any]) -> Dict[str, Any]:
         """
         Parse a Discord message into trading setups and levels.
         
@@ -91,7 +150,7 @@ class MessageParser:
             raw_message: Dict containing message content, id, timestamp, etc.
             
         Returns:
-            Tuple of (setups, levels) extracted from the message
+            Dict containing success status, setups, levels, trading_day, and message_id
         """
         try:
             content = raw_message.get('content', '')
@@ -99,7 +158,21 @@ class MessageParser:
             
             if not content.strip():
                 logger.debug(f"Empty message content for {message_id}")
-                return [], []
+                return {
+                    'success': False,
+                    'setups': [],
+                    'levels': [],
+                    'trading_day': None,
+                    'message_id': message_id
+                }
+            
+            # Extract trading day from message header
+            trading_day = self._extract_trading_day(content)
+            
+            # Fallback to normalized timestamp if trading day extraction fails
+            if not trading_day and raw_message.get('timestamp'):
+                est_timestamp = self._normalize_timestamp_to_est(raw_message['timestamp'])
+                trading_day = est_timestamp.date()
             
             # Check if this is an A+ scalp setups message and route to specialized parser
             aplus_parser = get_aplus_parser()
@@ -157,22 +230,49 @@ class MessageParser:
                             all_levels.append(entry_level)
                     
                     logger.info(f"A+ parser extracted {len(setups)} setups and {len(all_levels)} levels from message {message_id}")
-                    return setups, all_levels
+                    return {
+                        'success': True,
+                        'setups': setups,
+                        'levels': all_levels,
+                        'trading_day': trading_day,
+                        'message_id': message_id
+                    }
                 else:
                     logger.debug(f"A+ parser found no valid setups in message {message_id}")
-                    return [], []
+                    return {
+                        'success': False,
+                        'setups': [],
+                        'levels': [],
+                        'trading_day': trading_day,
+                        'message_id': message_id
+                    }
             
             # Fall back to generic parsing for non-A+ messages
-            # Extract tickers from message
-            tickers = self._extract_tickers(content)
-            if not tickers:
-                logger.debug(f"No tickers found in message {message_id}")
-                return [], []
-            
-            # Check if message contains trading setup keywords
-            if not self._contains_setup_keywords(content):
-                logger.debug(f"No setup keywords found in message {message_id}")
-                return [], []
+            # Use ticker section splitting for better parsing
+            ticker_sections = self._split_by_ticker_sections(content)
+            if not ticker_sections:
+                # Fall back to traditional ticker extraction
+                tickers = self._extract_tickers(content)
+                if not tickers:
+                    logger.debug(f"No tickers found in message {message_id}")
+                    return {
+                        'success': False,
+                        'setups': [],
+                        'levels': [],
+                        'trading_day': trading_day,
+                        'message_id': message_id
+                    }
+                
+                # Check if message contains trading setup keywords
+                if not self._contains_setup_keywords(content):
+                    logger.debug(f"No setup keywords found in message {message_id}")
+                    return {
+                        'success': False,
+                        'setups': [],
+                        'levels': [],
+                        'trading_day': trading_day,
+                        'message_id': message_id
+                    }
             
             setups = []
             all_levels = []

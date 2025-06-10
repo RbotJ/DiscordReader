@@ -1,0 +1,101 @@
+✅ Proposed Improvements
+🔧 Fix 1: Extract Trading Day from Message Header
+Add logic to extract the date from lines like:
+
+css
+Copy
+Edit
+A+ Scalp Trade Setups — Thursday May 29
+python
+Copy
+Edit
+def _extract_trading_day(self, content: str) -> Optional[date]:
+    match = re.search(r'\b(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+([A-Z][a-z]+)\s+(\d{1,2})\b', content)
+    if match:
+        month_name = match.group(1)
+        day = int(match.group(2))
+        month = datetime.strptime(month_name, "%B").month
+        year = datetime.now().year  # You could enhance this to roll over at year end
+        return date(year, month, day)
+    return None
+Update parse_message_to_setups() to return this date (or include it in the result dict) and use it during DB storage in your store layer.
+
+🔧 Fix 2: Normalize Message Timestamp to US/Eastern
+If you're using raw_message['timestamp'], ensure it's converted to NYSE-local time:
+
+python
+Copy
+Edit
+from pytz import timezone, UTC
+
+def _normalize_timestamp_to_est(self, raw_ts: str) -> datetime:
+    dt_utc = datetime.fromisoformat(raw_ts).replace(tzinfo=UTC)
+    est = timezone('US/Eastern')
+    return dt_utc.astimezone(est)
+Use this to fallback to trading_day = _normalize_timestamp_to_est(timestamp).date() only if _extract_trading_day() fails.
+
+🔧 Fix 3: Avoid Over-parsing or Duplicate Ticker Blocks
+Use a section-based split strategy for A+ messages. For example:
+
+python
+Copy
+Edit
+def _split_by_ticker_sections(self, content: str) -> Dict[str, str]:
+    # Matches ticker line (e.g., NVDA, SPY, TSLA)
+    lines = content.splitlines()
+    sections = {}
+    current_ticker = None
+    buffer = []
+
+    for line in lines:
+        stripped = line.strip()
+        if re.fullmatch(r'[A-Z]{1,5}', stripped):
+            if current_ticker and buffer:
+                sections[current_ticker] = "\n".join(buffer).strip()
+            current_ticker = stripped
+            buffer = []
+        elif current_ticker:
+            buffer.append(stripped)
+    
+    if current_ticker and buffer:
+        sections[current_ticker] = "\n".join(buffer).strip()
+    
+    return sections
+Then iterate:
+
+python
+Copy
+Edit
+for ticker, ticker_block in self._split_by_ticker_sections(content).items():
+    setup_dto, levels = self._parse_ticker_setup(ticker, ticker_block, raw_message)
+This ensures each block of setups is isolated to its ticker and reduces false-positive matches.
+
+🔧 Fix 4: Use a Return Object With Trading Day
+Change the result from:
+
+python
+Copy
+Edit
+return setups, all_levels
+to something like:
+
+python
+Copy
+Edit
+return {
+  'success': True,
+  'setups': setups,
+  'levels': all_levels,
+  'trading_day': self._extract_trading_day(content) or fallback_est_date,
+  'message_id': message_id
+}
+Ensure the store layer honors trading_day from this result rather than using datetime.today() or message timestamp blindly.
+
+🧪 Optional Debug Additions
+Consider logging:
+
+python
+Copy
+Edit
+logger.debug(f"Detected trading day: {trading_day}")
+logger.debug(f"Tickers found: {list(sections.keys())}")
