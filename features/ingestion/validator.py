@@ -1,24 +1,29 @@
 """
 Message Validator Module
 
-Handles structural and date validation for Discord messages.
-This module ensures messages meet required format and business rules
-before being stored in the database.
+Consolidated validation logic for Discord messages.
+Single source of truth for all message validation rules.
 """
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 import re
+from common.models import DiscordMessageDTO
 
 logger = logging.getLogger(__name__)
 
 
+class ValidationResult:
+    """Result of message validation."""
+    def __init__(self, is_valid: bool, error_message: Optional[str] = None):
+        self.is_valid = is_valid
+        self.error_message = error_message
+
+
 class MessageValidator:
     """
-    Validates Discord messages for structural integrity and business rules.
-    
-    This class provides comprehensive validation for Discord messages including
-    required fields, data types, date ranges, and content validation.
+    Consolidated validator for Discord messages.
+    Single source of truth for all validation logic.
     """
     
     REQUIRED_FIELDS = ['id', 'content', 'author', 'timestamp', 'channel_id']
@@ -29,9 +34,51 @@ class MessageValidator:
         """Initialize message validator with default rules."""
         self.validation_rules = self._load_validation_rules()
     
+    def validate_message_dto(self, message_dto: DiscordMessageDTO) -> ValidationResult:
+        """
+        Validate a Discord message DTO.
+        
+        Args:
+            message_dto: Message DTO to validate
+            
+        Returns:
+            ValidationResult: Validation result with success status and error message
+        """
+        try:
+            # Basic validation
+            if not message_dto.message_id:
+                return ValidationResult(False, "Missing message ID")
+                
+            if not message_dto.channel_id:
+                return ValidationResult(False, "Missing channel ID")
+                
+            if not message_dto.author_id:
+                return ValidationResult(False, "Missing author ID")
+                
+            # Content validation
+            if len(message_dto.content) > self.MAX_CONTENT_LENGTH:
+                return ValidationResult(False, "Message content too long")
+                
+            if len(message_dto.content.strip()) < self.MIN_CONTENT_LENGTH:
+                return ValidationResult(False, "Message content too short")
+                
+            # Apply custom validation rules
+            for rule in self.validation_rules:
+                try:
+                    if not rule(message_dto):
+                        return ValidationResult(False, f"Custom validation rule failed: {rule.__name__}")
+                except Exception as e:
+                    return ValidationResult(False, f"Validation rule error: {str(e)}")
+                    
+            return ValidationResult(True)
+            
+        except Exception as e:
+            logger.error(f"Error validating message {message_dto.message_id}: {e}")
+            return ValidationResult(False, f"Validation error: {str(e)}")
+    
     def validate_message(self, message: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """
-        Validate a single Discord message.
+        Validate a single Discord message dictionary.
         
         Args:
             message: Message dictionary to validate

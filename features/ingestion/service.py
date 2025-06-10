@@ -1,9 +1,8 @@
 """
 Ingestion Service Layer
 
-Centralized service for message ingestion operations, providing a clean interface
-for processing Discord messages, validation, and storage without exposing
-implementation details to other components.
+Orchestrates message ingestion workflow: validation -> storage -> event publishing.
+Focuses on business logic coordination without direct validation or storage implementation.
 """
 import logging
 from datetime import datetime
@@ -12,6 +11,8 @@ from dataclasses import dataclass
 
 from common.events.bus import get_event_bus, publish_cross_slice_event
 from common.models import DiscordMessageDTO
+from .validator import MessageValidator, ValidationResult
+from .store import MessageStore
 
 logger = logging.getLogger(__name__)
 
@@ -25,27 +26,23 @@ class IngestionResult:
     errors: int
     errors_list: List[str]
     
-    
-@dataclass
-class ValidationResult:
-    """Result of message validation."""
-    is_valid: bool
-    error_message: Optional[str] = None
-    
 
 class IngestionService:
-    """Service for message ingestion operations."""
+    """Service for orchestrating message ingestion workflow."""
     
     def __init__(self):
         self._processed_messages = set()
-        self._validation_rules = []
         self.messages_ingested = 0
         self.ingestion_errors = 0
         self.last_ingestion_time = None
         
+        # Initialize dependencies
+        self.validator = MessageValidator()
+        self.store = MessageStore()
+        
     async def process_message(self, message_dto: DiscordMessageDTO) -> bool:
         """
-        Process a single Discord message.
+        Process a single Discord message through the full workflow.
         
         Args:
             message_dto: Discord message data transfer object
@@ -59,31 +56,28 @@ class IngestionService:
                 logger.debug(f"Message {message_dto.message_id} already processed, skipping")
                 return True
                 
-            # Validate message
-            validation_result = await self._validate_message(message_dto)
+            # Validate message using consolidated validator
+            validation_result = self.validator.validate_message_dto(message_dto)
             if not validation_result.is_valid:
                 logger.warning(f"Message {message_dto.message_id} validation failed: {validation_result.error_message}")
                 return False
                 
-            # Store message through event system
-            await publish_cross_slice_event(
-                "ingestion.message_store_request",
-                {
-                    "message": {
-                        "message_id": message_dto.message_id,
-                        "channel_id": message_dto.channel_id,
-                        "author_id": message_dto.author_id,
-                        "content": message_dto.content,
-                        "timestamp": message_dto.timestamp.isoformat(),
-                        "guild_id": message_dto.guild_id,
-                        "author_username": message_dto.author_username,
-                        "channel_name": message_dto.channel_name,
-                        "attachments": message_dto.attachments,
-                        "embeds": message_dto.embeds
-                    }
-                },
-                "ingestion"
-            )
+            # Store message using store layer
+            message_dict = {
+                "id": message_dto.message_id,
+                "channel_id": message_dto.channel_id,
+                "author_id": message_dto.author_id,
+                "content": message_dto.content,
+                "timestamp": message_dto.timestamp.isoformat(),
+                "guild_id": getattr(message_dto, 'guild_id', None),
+                "author": getattr(message_dto, 'author_username', ''),
+                "embeds": getattr(message_dto, 'embeds', []),
+                "attachments": getattr(message_dto, 'attachments', [])
+            }
+            
+            if not self.store.insert_message(message_dict):
+                logger.error(f"Failed to store message {message_dto.message_id}")
+                return False
             
             # Mark as processed
             self._processed_messages.add(message_dto.message_id)
