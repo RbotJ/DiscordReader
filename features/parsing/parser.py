@@ -250,6 +250,8 @@ class MessageParser:
             # Fall back to generic parsing for non-A+ messages
             # Use ticker section splitting for better parsing
             ticker_sections = self._split_by_ticker_sections(content)
+            tickers = []  # Initialize tickers variable
+            
             if not ticker_sections:
                 # Fall back to traditional ticker extraction
                 tickers = self._extract_tickers(content)
@@ -277,19 +279,39 @@ class MessageParser:
             setups = []
             all_levels = []
             
-            # Process each ticker found
-            for ticker in tickers:
-                setup_dto, levels_dto = self._parse_ticker_setup(ticker, content, raw_message)
-                if setup_dto:
-                    setups.append(setup_dto)
-                    all_levels.extend(levels_dto)
+            # Use ticker sections if available, otherwise fall back to traditional parsing
+            if ticker_sections:
+                for ticker, ticker_content in ticker_sections.items():
+                    setup_dto, levels_dto = self._parse_ticker_setup(ticker, ticker_content, raw_message)
+                    if setup_dto:
+                        setups.append(setup_dto)
+                        all_levels.extend(levels_dto)
+            else:
+                # Traditional parsing for when ticker sections aren't available
+                for ticker in tickers:
+                    setup_dto, levels_dto = self._parse_ticker_setup(ticker, content, raw_message)
+                    if setup_dto:
+                        setups.append(setup_dto)
+                        all_levels.extend(levels_dto)
             
             logger.info(f"Generic parser extracted {len(setups)} setups and {len(all_levels)} levels from message {message_id}")
-            return setups, all_levels
+            return {
+                'success': len(setups) > 0,
+                'setups': setups,
+                'levels': all_levels,
+                'trading_day': trading_day,
+                'message_id': message_id
+            }
             
         except Exception as e:
             logger.error(f"Error parsing message: {e}")
-            return [], []
+            return {
+                'success': False,
+                'setups': [],
+                'levels': [],
+                'trading_day': None,
+                'message_id': raw_message.get('message_id', raw_message.get('id', ''))
+            }
     
     def _extract_tickers(self, content: str) -> List[str]:
         """Extract ticker symbols from message content."""

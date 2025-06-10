@@ -110,13 +110,17 @@ class ParsingListener:
                     logger.warning(f"A+ service failed to process message {message_id}: {result.get('error')}")
                     # Fall through to generic parsing
             
-            # Parse the message using generic parser
-            setups, all_levels = self.parser.parse_message_to_setups(message_info)
+            # Parse the message using enhanced parser
+            parse_result = self.parser.parse_message_to_setups(message_info)
             
-            if not setups:
+            if not parse_result.get('success') or not parse_result.get('setups'):
                 logger.debug(f"No setups found in message {message_id}")
                 self.stats['messages_processed'] += 1
                 return
+            
+            setups = parse_result['setups']
+            all_levels = parse_result['levels']
+            trading_day = parse_result.get('trading_day')
             
             # Group levels by ticker
             levels_by_ticker = {}
@@ -124,13 +128,15 @@ class ParsingListener:
                 ticker = setup.ticker
                 # Find levels for this setup (they all come from the same message)
                 ticker_levels = [level for level in all_levels if any(
-                    kw in level.description.lower() for kw in [ticker.lower()]
-                ) if level.description] if all_levels else []
+                    kw in (level.description or '').lower() for kw in [ticker.lower()]
+                )] if all_levels else []
                 levels_by_ticker[ticker] = ticker_levels
             
             # Store parsed data
             try:
-                trading_day = self._extract_trading_day(message_info)
+                # Use trading day from parser result if available, otherwise extract from message
+                if not trading_day:
+                    trading_day = self._extract_trading_day(message_info)
                 created_setups, created_levels = self.store.store_parsed_message(
                     message_id, setups, levels_by_ticker, trading_day
                 )
@@ -291,10 +297,10 @@ class ParsingListener:
             Processing results
         """
         try:
-            # Parse the message
-            setups, all_levels = self.parser.parse_message_to_setups(message_data)
+            # Parse the message using enhanced parser
+            parse_result = self.parser.parse_message_to_setups(message_data)
             
-            if not setups:
+            if not parse_result.get('success') or not parse_result.get('setups'):
                 return {
                     'success': True,
                     'setups_created': 0,
@@ -302,20 +308,24 @@ class ParsingListener:
                     'message': 'No setups found in message'
                 }
             
-            # Extract trading date from A+ message if available
-            trading_date = None
-            content = message_data.get('content', '')
+            setups = parse_result['setups']
+            all_levels = parse_result['levels']
+            trading_date = parse_result.get('trading_day')
             
-            # Check if this is A+ message and extract its trading date
-            from .aplus_parser import get_aplus_parser
-            aplus_parser = get_aplus_parser()
-            if aplus_parser.validate_message(content):
-                trading_date = aplus_parser.extract_trading_date(content)
-                logger.info(f"Extracted A+ trading date: {trading_date}")
-            
-            # Fallback to message timestamp or today
+            # If parser didn't extract trading date, try A+ parser or fallback
             if not trading_date:
-                trading_date = self._extract_trading_day(message_data)
+                content = message_data.get('content', '')
+                
+                # Check if this is A+ message and extract its trading date
+                from .aplus_parser import get_aplus_parser
+                aplus_parser = get_aplus_parser()
+                if aplus_parser.validate_message(content):
+                    trading_date = aplus_parser.extract_trading_date(content)
+                    logger.info(f"Extracted A+ trading date: {trading_date}")
+                
+                # Fallback to message timestamp or today
+                if not trading_date:
+                    trading_date = self._extract_trading_day(message_data)
             
             # Group levels by ticker
             levels_by_ticker = {}
