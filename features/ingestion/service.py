@@ -379,6 +379,29 @@ class IngestionService:
             'validation_failures_today': int(self.ingestion_errors),
             'last_processed_message': last_processed
         }
+    
+    def clear_all_messages(self) -> int:
+        """
+        Clear all stored messages from the database.
+        
+        Returns:
+            int: Number of messages cleared
+        """
+        try:
+            # Use the store's clear method for consistency
+            cleared_count = self.store.clear_all_messages()
+            
+            # Reset stats after clearing
+            self.stats['messages_processed'] = 0
+            self.stats['processing_errors'] = 0
+            self.stats['last_activity'] = None
+            
+            logger.info(f"Cleared {cleared_count} messages from ingestion pipeline")
+            return cleared_count
+            
+        except Exception as e:
+            logger.error(f"Error clearing messages: {e}")
+            raise
 
 
 # Global service instance

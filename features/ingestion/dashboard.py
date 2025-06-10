@@ -4,7 +4,7 @@ Ingestion Dashboard Blueprint
 Provides operational insights into message ingestion pipeline, processing metrics,
 and validation statistics. This blueprint is isolated to the ingestion feature slice.
 """
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, request
 from datetime import datetime, timedelta
 import logging
 
@@ -120,3 +120,29 @@ def health():
     except Exception as e:
         logger.error(f"Error checking ingestion health: {e}")
         return jsonify({'error': str(e)}), 500
+
+@ingest_bp.route('/clear-data', methods=['POST'])
+def clear_data():
+    """Clear all stored messages from the ingestion pipeline."""
+    try:
+        service = get_ingestion_service()
+        if service:
+            cleared_count = service.clear_all_messages()
+            logger.info(f"Cleared {cleared_count} messages from ingestion pipeline")
+            
+            return jsonify({
+                'success': True,
+                'cleared_count': cleared_count,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Ingestion service unavailable'
+            }), 500
+    except Exception as e:
+        logger.error(f"Error clearing ingestion data: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
