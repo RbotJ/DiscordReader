@@ -32,7 +32,7 @@ class MessageValidator:
     
     def __init__(self):
         """Initialize message validator with default rules."""
-        self.validation_rules = self._load_validation_rules()
+        self.validation_rules = []
     
     def validate_message_dto(self, message_dto: DiscordMessageDTO) -> ValidationResult:
         """
@@ -65,8 +65,9 @@ class MessageValidator:
             # Apply custom validation rules
             for rule in self.validation_rules:
                 try:
-                    if not rule(message_dto):
-                        return ValidationResult(False, f"Custom validation rule failed: {rule.__name__}")
+                    if callable(rule) and not rule(message_dto):
+                        rule_name = getattr(rule, '__name__', 'unknown_rule')
+                        return ValidationResult(False, f"Custom validation rule failed: {rule_name}")
                 except Exception as e:
                     return ValidationResult(False, f"Validation rule error: {str(e)}")
                     
@@ -112,7 +113,34 @@ class MessageValidator:
         Returns:
             Dict[str, Any]: Validation summary with valid/invalid counts and errors
         """
-        pass
+        valid_count = 0
+        invalid_count = 0
+        all_errors = []
+        
+        for message in messages:
+            is_valid, errors = self.validate_message(message)
+            if is_valid:
+                valid_count += 1
+            else:
+                invalid_count += 1
+                all_errors.extend(errors)
+        
+        return {
+            'total_messages': len(messages),
+            'valid_messages': valid_count,
+            'invalid_messages': invalid_count,
+            'validation_errors': all_errors,
+            'success_rate': (valid_count / len(messages)) * 100 if messages else 0
+        }
+    
+    def add_validation_rule(self, rule_func):
+        """Add a custom validation rule."""
+        self.validation_rules.append(rule_func)
+    
+    def remove_validation_rule(self, rule_func):
+        """Remove a custom validation rule."""
+        if rule_func in self.validation_rules:
+            self.validation_rules.remove(rule_func)
     
     def _validate_structure(self, message: Dict[str, Any]) -> List[str]:
         """

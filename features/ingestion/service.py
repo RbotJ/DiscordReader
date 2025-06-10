@@ -149,53 +149,14 @@ class IngestionService:
         logger.info(f"Batch processing complete: {result}")
         return result
         
-    async def _validate_message(self, message_dto: DiscordMessageDTO) -> ValidationResult:
-        """
-        Validate a Discord message.
-        
-        Args:
-            message_dto: Message to validate
-            
-        Returns:
-            ValidationResult
-        """
-        try:
-            # Basic validation
-            if not message_dto.message_id:
-                return ValidationResult(False, "Missing message ID")
-                
-            if not message_dto.channel_id:
-                return ValidationResult(False, "Missing channel ID")
-                
-            if not message_dto.author_id:
-                return ValidationResult(False, "Missing author ID")
-                
-            # Content validation
-            if len(message_dto.content) > 4000:  # Discord's character limit
-                return ValidationResult(False, "Message content too long")
-                
-            # Apply custom validation rules
-            for rule in self._validation_rules:
-                try:
-                    if not rule(message_dto):
-                        return ValidationResult(False, f"Custom validation rule failed: {rule.__name__}")
-                except Exception as e:
-                    return ValidationResult(False, f"Validation rule error: {str(e)}")
-                    
-            return ValidationResult(True)
-            
-        except Exception as e:
-            logger.error(f"Error validating message {message_dto.message_id}: {e}")
-            return ValidationResult(False, f"Validation error: {str(e)}")
-            
     def add_validation_rule(self, rule_func):
         """
-        Add a custom validation rule.
+        Add a custom validation rule to the validator.
         
         Args:
             rule_func: Function that takes DiscordMessageDTO and returns bool
         """
-        self._validation_rules.append(rule_func)
+        self.validator.add_validation_rule(rule_func)
         
     async def get_processing_stats(self) -> Dict[str, Any]:
         """
