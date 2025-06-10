@@ -1,0 +1,109 @@
+Improved Message Flags
+Weekend Message Flag
+
+Shows which messages arrived on Saturday/Sunday.
+
+Helps filter out noise or misfires when markets are closed.
+
+Out-of-Hours Message Flag
+
+Marks messages posted outside typical premarket hours (e.g., before 4am or after 9:30am ET).
+
+Can help catch delays, testing artifacts, or posting issues.
+
+Backdated Message Flag
+
+Flags messages with discord.timestamp older than 24 hours at ingestion time.
+
+Useful for detecting late ingestion or Discord outages.
+
+📈 New Ingestion Performance Metrics
+Time-to-Ingest (ms)
+
+(Stored At - Discord Timestamp)
+
+Median, 90th percentile, and max are especially helpful for debugging latency.
+
+Last Message Published (Discord Timestamp)
+
+Most recent message as seen by the bot.
+
+Indicates feed freshness from Discord.
+
+Last Message Stored (DB Insert Timestamp)
+
+Latest successful DB write timestamp.
+
+Indicates ingestion process health.
+
+Message Delay Histogram
+
+Bar chart or bins showing how long messages waited before ingestion.
+
+Useful for identifying ingestion lag or race conditions.
+
+Daily Storage Velocity
+
+Count of messages stored per hour (line chart).
+
+Helps catch bursts, throttling, or failed fetches.
+
+🛠️ Validation Diagnostics
+Invalid Format Count
+
+How many messages failed parsing due to invalid structure.
+
+Separate into:
+
+Structural failures (missing lines, unreadable formats)
+
+Semantic mismatches (bad dates, unknown tickers)
+
+Duplicate Detection Count
+
+Show how many messages were skipped due to message_id already existing.
+
+Parsing Coverage
+
+How many messages successfully yielded parsed setups.
+
+Useful to track parser effectiveness, e.g., 22/39 messages = 56.4% yield.
+
+📊 Message Composition Insights
+Top Authors
+
+Helps detect if a rogue test bot or non-admin user is posting in the channel.
+
+Message Length Stats
+
+Average and max message length.
+
+Can warn you if an unusually large message might break parsing logic.
+
+Daily Setup Count
+
+Show how many messages contain the A+ header string or a valid ticker setup per day.
+
+✅ Example Metric Section Additions
+text
+Copy
+Edit
+Message Timeliness
+------------------
+Last Message Published (Discord): 2025-06-05T13:57:00
+Last Message Stored (DB):         2025-06-05T18:51:43
+Average Ingestion Delay:          5h 2m 19s
+
+Message Health Flags
+--------------------
+Weekend Messages: 2
+Backdated Messages: 1
+Out-of-Hours Messages: 3
+
+Parsing Stats
+-------------
+Total Messages: 39
+Parsed Setups: 24
+Parser Success Rate: 61.5%
+Invalid Format: 7
+Duplicates Skipped: 3
