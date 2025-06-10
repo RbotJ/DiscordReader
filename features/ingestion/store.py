@@ -159,6 +159,29 @@ class MessageStore:
         except Exception as e:
             logger.error(f"Error getting processed message count: {e}")
             return 0
+    
+    def clear_all_messages(self) -> int:
+        """
+        Clear all stored messages from the database.
+        
+        Returns:
+            int: Number of messages cleared
+        """
+        try:
+            # Get count before deletion
+            count = DiscordMessageModel.query.count()
+            
+            # Delete all messages
+            DiscordMessageModel.query.delete()
+            db.session.commit()
+            
+            logger.info(f"Cleared {count} messages from database")
+            return count
+            
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error clearing messages: {e}")
+            raise
 
 
 # Global store instance
@@ -179,3 +202,8 @@ def insert_message(message: Dict[str, Any]) -> bool:
 def get_message_by_id(message_id: str) -> Optional[DiscordMessageModel]:
     """Get message by ID."""
     return message_store.get_message_by_id(message_id)
+
+
+def clear_all_messages() -> int:
+    """Clear all stored messages from the database."""
+    return message_store.clear_all_messages()
