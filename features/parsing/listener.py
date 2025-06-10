@@ -23,7 +23,7 @@ class ParsingListener:
     Subscribes to MESSAGE_STORED events and publishes SETUP_PARSED events.
     """
     
-    def __init__(self):
+    def __init__(self, app=None):
         """Initialize the parsing listener."""
         self.parser = MessageParser()
         self.store = get_parsing_store()
@@ -36,8 +36,8 @@ class ParsingListener:
             'last_processed': None
         }
         
-        # Initialize event consumer
-        self.consumer = EventConsumer('parsing', ['ingestion:message'])
+        # Initialize event consumer with Flask app context
+        self.consumer = EventConsumer('parsing', ['ingestion:message'], app=app)
         logger.info("Parsing listener initialized")
     
     def start_listening(self):
@@ -353,11 +353,11 @@ class ParsingListener:
 # Global listener instance
 _listener = None
 
-def get_parsing_listener() -> ParsingListener:
+def get_parsing_listener(app=None) -> ParsingListener:
     """Get the global parsing listener instance."""
     global _listener
     if _listener is None:
-        _listener = ParsingListener()
+        _listener = ParsingListener(app=app)
     return _listener
 
 def start_parsing_service():

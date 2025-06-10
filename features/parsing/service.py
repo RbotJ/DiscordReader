@@ -23,12 +23,12 @@ class ParsingService:
     Orchestrates parser, store, and listener components.
     """
     
-    def __init__(self):
+    def __init__(self, app=None):
         """Initialize the parsing service."""
         self.parser = MessageParser()
         self.aplus_parser = get_aplus_parser()
         self.store = get_parsing_store()
-        self.listener = get_parsing_listener()
+        self.listener = get_parsing_listener(app=app)
         self._initialized = False
         logger.info("Parsing service initialized")
     
@@ -274,16 +274,16 @@ class ParsingService:
 # Global service instance
 _service = None
 
-def get_parsing_service() -> ParsingService:
+def get_parsing_service(app=None) -> ParsingService:
     """Get the global parsing service instance."""
     global _service
     if _service is None:
-        _service = ParsingService()
+        _service = ParsingService(app=app)
     return _service
 
-def start_parsing_service():
+def start_parsing_service(app=None):
     """Start the parsing service."""
-    service = get_parsing_service()
+    service = get_parsing_service(app=app)
     service.start_service()
     return service
 

@@ -278,7 +278,7 @@ class EventConsumer:
     Event consumer class for subscribing to and processing events.
     """
     
-    def __init__(self, service_name: str, channels: List[str], poll_interval: int = 5):
+    def __init__(self, service_name: str, channels: List[str], poll_interval: int = 5, app=None):
         """Initialize event consumer."""
         self.service_name = service_name
         self.channels = channels
@@ -287,6 +287,7 @@ class EventConsumer:
         self.running = False
         self.thread = None
         self.last_timestamp = None
+        self.app = app
         
     def subscribe(self, event_type: str, callback_func):
         """Subscribe to a specific event type."""
@@ -321,15 +322,21 @@ class EventConsumer:
         
         while self.running:
             try:
-                events = poll_events(self.channels, since_timestamp=self.last_timestamp)
-                
-                if events:
-                    # Update timestamp for next poll
-                    self.last_timestamp = max(event['timestamp'] for event in events)
-                    
-                    # Process each event
-                    for event in events:
-                        self._process_event(event)
+                # Ensure we have Flask app context when polling
+                if self.app:
+                    with self.app.app_context():
+                        events = poll_events(self.channels, since_timestamp=self.last_timestamp)
+                        
+                        if events:
+                            # Update timestamp for next poll
+                            self.last_timestamp = max(event['timestamp'] for event in events)
+                            
+                            # Process each event
+                            for event in events:
+                                self._process_event(event)
+                else:
+                    # Skip polling if no app context available
+                    logger.debug(f"Skipping event poll for {self.service_name} - no app context")
                 
                 time.sleep(self.poll_interval)
                 
