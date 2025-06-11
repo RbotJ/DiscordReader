@@ -161,7 +161,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for message in recent_messages[:10] %}
+                            {% for message in recent_messages[:5] %}
                             <tr class="message-row" data-message-id="{{ message.message_id }}">
                                 <td>
                                     <small class="text-monospace">{{ message.message_id }}</small>

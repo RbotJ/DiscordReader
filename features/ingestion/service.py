@@ -300,9 +300,9 @@ class IngestionService:
             from features.ingestion.models import DiscordMessageModel
             from common.db import db
             
-            # Query recent messages from database
+            # Query recent messages from database, sorted by timestamp (message time) descending
             messages = db.session.query(DiscordMessageModel)\
-                .order_by(DiscordMessageModel.created_at.desc())\
+                .order_by(DiscordMessageModel.timestamp.desc())\
                 .limit(limit)\
                 .all()
             
