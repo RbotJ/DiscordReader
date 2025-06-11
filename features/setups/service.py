@@ -71,14 +71,15 @@ class SetupService:
                 }
             
             # Create setup message record
-            setup_message = SetupMessage()
-            setup_message.message_id = message_id
-            setup_message.channel_id = channel_id
-            setup_message.author_id = author_id
-            setup_message.content = ""  # Content is processed by parsing slice
-            setup_message.source = source
-            setup_message.is_processed = False
-            setup_message.processing_status = 'processing'
+            setup_message = SetupMessage(
+                message_id=message_id,
+                channel_id=channel_id,
+                author_id=author_id,
+                content="",  # Content is processed by parsing slice
+                source=source,
+                is_processed=False,
+                processing_status='processing'
+            )
             
             db.session.add(setup_message)
             db.session.commit()
@@ -88,16 +89,17 @@ class SetupService:
             
             # Store the pre-parsed setups
             for setup_data in setups:
-                ticker_setup = TickerSetup()
-                ticker_setup.setup_message_id = setup_message.id
-                ticker_setup.symbol = setup_data.get('symbol')
-                ticker_setup.setup_type = setup_data.get('setup_type')
-                ticker_setup.direction = setup_data.get('direction')
-                ticker_setup.entry_price = setup_data.get('entry_price')
-                ticker_setup.target_price = setup_data.get('target_price')
-                ticker_setup.stop_loss = setup_data.get('stop_loss')
-                ticker_setup.confidence = setup_data.get('confidence')
-                ticker_setup.notes = setup_data.get('notes')
+                ticker_setup = TickerSetup(
+                    setup_message_id=setup_message.id,
+                    symbol=setup_data.get('symbol'),
+                    setup_type=setup_data.get('setup_type'),
+                    direction=setup_data.get('direction'),
+                    entry_price=setup_data.get('entry_price'),
+                    target_price=setup_data.get('target_price'),
+                    stop_loss=setup_data.get('stop_loss'),
+                    confidence=setup_data.get('confidence'),
+                    notes=setup_data.get('notes')
+                )
                 
                 db.session.add(ticker_setup)
                 db.session.flush()  # Get the ID
