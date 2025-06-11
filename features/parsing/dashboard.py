@@ -259,7 +259,7 @@ def backlog_status():
             'total_unparsed': total_unparsed,
             'channel_breakdown': channel_counts,
             'sample_messages': unparsed_messages[:5],  # Show first 5 as samples
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': utc_now().isoformat()
         })
         
     except Exception as e:
@@ -323,7 +323,7 @@ def clear_trade_setups():
         return jsonify({
             'success': False,
             'error': f'Failed to clear trade setups: {str(e)}',
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': utc_now().isoformat()
         }), 500
 
 def register_dashboard_routes(app):

@@ -130,7 +130,7 @@
                             <div class="col-md-3">
                                 <div class="alert alert-secondary mb-3">
                                     <h6 class="alert-heading">Last Audit</h6>
-                                    <small>{{ audit_data.audit_timestamp or 'N/A' }}</small>
+                                    <small>{{ audit_data.audit_timestamp|localtime if audit_data.audit_timestamp else 'N/A' }}</small>
                                 </div>
                             </div>
                         </div>
