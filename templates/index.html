@@ -1,277 +1,51 @@
+<!--
+Template: Main Landing Page
+Purpose: Welcome page and main entry point for the A+ Trading Platform
+Used by: / route, home page functionality
+Dependencies: base.html, Bootstrap components
+-->
 {% extends "base.html" %}
-
-{% block title %}A+ Trading Dashboard{% endblock %}
-
-{% block page_title %}Dashboard{% endblock %}
-
-{% block extra_styles %}
-<style>
-    .status-indicator {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        margin-right: 8px;
-    }
-    .status-online { background-color: #28a745; }
-    .status-offline { background-color: #dc3545; }
-    .card-metric { 
-        font-size: 2rem; 
-        font-weight: bold; 
-        color: #007bff; 
-    }
-</style>
-{% endblock %}
+{% block title %}A+ Trading Platform{% endblock %}
 
 {% block content %}
-<!-- Status Bar -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center justify-content-between">
-                    <div class="d-flex align-items-center">
-                        <span class="status-indicator status-online" id="connectionStatus"></span>
-                        <span id="connectionText">Connected</span>
-                        <span class="ms-3 text-muted">Real-time Socket.IO connection</span>
-                    </div>
-                    <div class="text-muted">
-                        <i data-feather="clock" class="me-1"></i>
-                        Live data feed active
-                    </div>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-10 text-center">
+                <h1 class="display-4 mb-4">A+ Trading Platform</h1>
+                <p class="lead mb-4">An AI-powered options trading application with Discord integration for real-time signal processing</p>
+
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center mt-5">
+                    <a href="/dashboard" class="btn btn-primary btn-lg me-md-2">View Dashboard</a>
+                    <a href="/recent-setups" class="btn btn-outline-secondary btn-lg">View Recent Setups</a>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Metrics Cards -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card metric-card text-center">
-            <div class="card-body">
-                <i data-feather="activity" class="mb-2 text-primary" style="width: 48px; height: 48px;"></i>
-                <h5>System Status</h5>
-                <div class="card-metric text-success">Online</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card metric-card text-center">
-            <div class="card-body">
-                <i data-feather="trending-up" class="mb-2 text-success" style="width: 48px; height: 48px;"></i>
-                <h5>Active Setups</h5>
-                <div class="card-metric" id="activeSetups">--</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card metric-card text-center">
-            <div class="card-body">
-                <i data-feather="zap" class="mb-2 text-warning" style="width: 48px; height: 48px;"></i>
-                <h5>Signals Today</h5>
-                <div class="card-metric" id="signalsToday">--</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card metric-card text-center">
-            <div class="card-body">
-                <i data-feather="dollar-sign" class="mb-2 text-info" style="width: 48px; height: 48px;"></i>
-                <h5>Portfolio</h5>
-                <div class="card-metric" id="portfolioValue">--</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Quick Actions -->
-<div class="row">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i data-feather="zap" class="me-2"></i>
-                    Quick Actions
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <div class="card border-0 bg-light">
-                            <div class="card-body text-center">
-                                <i data-feather="message-square" class="mb-3 text-primary" style="width: 32px; height: 32px;"></i>
-                                <h6>Signal Parsing</h6>
-                                <p class="text-muted small">Monitor Discord channels for A+ trading signals</p>
-                                <a href="/dashboard/parsing/" class="btn btn-outline-primary btn-sm">
-                                    View Parsing Dashboard
-                                </a>
-                            </div>
-                        </div>
+        <div class="row mt-5 pt-5">
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 stat-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">Signal Detection</h3>
+                        <p class="card-text">Our system processes trading signals from multiple sources, including Discord channels with A+ setup messages.</p>
                     </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="card border-0 bg-light">
-                            <div class="card-body text-center">
-                                <i data-feather="bar-chart-2" class="mb-3 text-success" style="width: 32px; height: 32px;"></i>
-                                <h6>Market Data</h6>
-                                <p class="text-muted small">Real-time market data and price tracking</p>
-                                <a href="/dashboard/alpaca/" class="btn btn-outline-success btn-sm">
-                                    View Market Data
-                                </a>
-                            </div>
-                        </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 stat-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">Automated Trading</h3>
+                        <p class="card-text">Execute trades automatically when signals match your predefined criteria using Alpaca paper trading.</p>
                     </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="card border-0 bg-light">
-                            <div class="card-body text-center">
-                                <i data-feather="pie-chart" class="mb-3 text-info" style="width: 32px; height: 32px;"></i>
-                                <h6>Positions</h6>
-                                <p class="text-muted small">View and manage your trading positions</p>
-                                <a href="/dashboard/positions/" class="btn btn-outline-info btn-sm">
-                                    View Positions
-                                </a>
-                            </div>
-                        </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 stat-card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">Real-time Monitoring</h3>
+                        <p class="card-text">Monitor your positions, open orders, and trading performance in real-time on our dashboard.</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-
-<!-- Recent Activity -->
-<div class="row mt-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0">
-                    <i data-feather="activity" class="me-2"></i>
-                    Recent Signals
-                </h6>
-            </div>
-            <div class="card-body">
-                <div id="recentSignals" class="text-muted">
-                    <p class="mb-0">Loading recent signals...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0">
-                    <i data-feather="trending-up" class="me-2"></i>
-                    System Health
-                </h6>
-            </div>
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span>Discord Bot</span>
-                    <span class="status-badge status-ready">Ready</span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span>Parsing Service</span>
-                    <span class="status-badge status-ready">Active</span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span>Market Data</span>
-                    <span class="status-badge status-ready">Connected</span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center">
-                    <span>Database</span>
-                    <span class="status-badge status-ready">Online</span>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<script>
-// Socket.IO connection for real-time updates
-const socket = io();
-
-socket.on('connect', function() {
-    document.getElementById('connectionStatus').className = 'status-indicator status-online';
-    document.getElementById('connectionText').textContent = 'Connected';
-    console.log('Connected to server');
-});
-
-socket.on('disconnect', function() {
-    document.getElementById('connectionStatus').className = 'status-indicator status-offline';
-    document.getElementById('connectionText').textContent = 'Disconnected';
-    console.log('Disconnected from server');
-});
-
-socket.on('status', function(data) {
-    console.log('Status update:', data);
-});
-
-// Load dashboard metrics
-function loadDashboardMetrics() {
-    fetch('/parsing/api/metrics')
-        .then(response => response.json())
-        .then(data => {
-            if (data.parsing_stats) {
-                const activeSetups = data.parsing_stats.active_setups || 0;
-                const todaySetups = data.parsing_stats.today_setups || 0;
-                
-                document.getElementById('activeSetups').textContent = activeSetups;
-                document.getElementById('signalsToday').textContent = todaySetups;
-            }
-        })
-        .catch(error => console.log('Metrics not available:', error));
-}
-
-// Load portfolio data
-function loadPortfolioData() {
-    fetch('/alpaca/api/account')
-        .then(response => response.json())
-        .then(data => {
-            if (data.equity) {
-                const equity = parseFloat(data.equity);
-                document.getElementById('portfolioValue').textContent = '$' + equity.toLocaleString();
-            }
-        })
-        .catch(error => console.log('Portfolio data not available:', error));
-}
-
-// Load recent signals
-function loadRecentSignals() {
-    fetch('/setups/api/recent?limit=5')
-        .then(response => response.json())
-        .then(data => {
-            const container = document.getElementById('recentSignals');
-            if (data.length > 0) {
-                container.innerHTML = data.map(signal => 
-                    `<div class="border-bottom pb-2 mb-2">
-                        <strong>${signal.symbol}</strong> - ${signal.direction}
-                        <div class="text-muted small">${new Date(signal.created_at).toLocaleString()}</div>
-                    </div>`
-                ).join('');
-            } else {
-                container.innerHTML = '<p class="text-muted mb-0">No recent signals available</p>';
-            }
-        })
-        .catch(error => {
-            document.getElementById('recentSignals').innerHTML = '<p class="text-muted mb-0">Recent signals unavailable</p>';
-        });
-}
-
-// Load data on page load
-document.addEventListener('DOMContentLoaded', function() {
-    loadDashboardMetrics();
-    loadPortfolioData();
-    loadRecentSignals();
-    
-    // Refresh data every 30 seconds
-    setInterval(() => {
-        loadDashboardMetrics();
-        loadPortfolioData();
-        loadRecentSignals();
-    }, 30000);
-});
-</script>
 {% endblock %}
