@@ -17,6 +17,10 @@ BLUEPRINT_CONFIGS = [
     ("parsing_dashboard", "features.parsing.dashboard", "parsing_bp"),
     ("setups", "features.setups.api", "setups_bp"),
     ("discord_api", "features.discord_bot.api", "discord_api_bp"),
+    # Dashboard blueprints
+    ("discord_dashboard", "features.discord_bot.dashboard", "discord_bp"),
+    ("ingestion_dashboard", "features.ingestion.dashboard", "ingest_bp"),
+    ("channels_dashboard", "features.discord_channels.dashboard", "channels_bp"),
 ]
 
 # Required environment variables for the application
