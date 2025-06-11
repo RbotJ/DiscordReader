@@ -81,6 +81,27 @@ def register_all_blueprints(app):
         except ImportError as e:
             logging.warning(f"Could not import parsing dashboard blueprint: {e}")
         
+        # Discord Bot Dashboard
+        try:
+            from features.discord_bot.dashboard import discord_bp as discord_dashboard_bp
+            blueprints_to_register.append(('discord_dashboard', discord_dashboard_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import discord dashboard blueprint: {e}")
+
+        # Channels Dashboard
+        try:
+            from features.discord_channels.dashboard import channels_bp as channels_dashboard_bp
+            blueprints_to_register.append(('channels_dashboard', channels_dashboard_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import channels dashboard blueprint: {e}")
+
+        # Ingestion Dashboard
+        try:
+            from features.ingestion.dashboard import ingest_bp as ingestion_dashboard_bp
+            blueprints_to_register.append(('ingestion_dashboard', ingestion_dashboard_bp))
+        except ImportError as e:
+            logging.warning(f"Could not import ingestion dashboard blueprint: {e}")
+        
         # Setups features
         try:
             from features.setups.api import setups_bp as setups_bp
