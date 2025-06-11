@@ -10,6 +10,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from common.db import db
+from common.utils import parse_discord_timestamp, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,8 @@ class DiscordMessageModel(db.Model):
     raw_data = Column(JSONB, nullable=True)
     
     # Audit fields
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     
     def __repr__(self) -> str:
         """String representation of the message model."""
@@ -66,9 +67,9 @@ class DiscordMessageModel(db.Model):
         # Parse timestamp
         timestamp_str = message_data.get('timestamp')
         if isinstance(timestamp_str, str):
-            timestamp = cls._parse_timestamp(timestamp_str)
+            timestamp = parse_discord_timestamp(timestamp_str)
         else:
-            timestamp = timestamp_str or datetime.utcnow()
+            timestamp = timestamp_str or utc_now()
         
         # Create model instance (no database operations)
         return cls(
@@ -85,33 +86,7 @@ class DiscordMessageModel(db.Model):
             raw_data=message_data
         )
     
-    @staticmethod
-    def _parse_timestamp(timestamp_str: str) -> datetime:
-        """
-        Parse timestamp string into datetime object.
-        
-        Args:
-            timestamp_str: Timestamp string to parse
-            
-        Returns:
-            datetime: Parsed datetime object
-        """
-        formats = [
-            "%Y-%m-%dT%H:%M:%S.%fZ",
-            "%Y-%m-%dT%H:%M:%SZ",
-            "%Y-%m-%dT%H:%M:%S.%f%z",
-            "%Y-%m-%dT%H:%M:%S%z"
-        ]
-        
-        for fmt in formats:
-            try:
-                return datetime.strptime(timestamp_str, fmt)
-            except ValueError:
-                continue
-        
-        # Fallback to current time if parsing fails
-        logger.warning(f"Could not parse timestamp: {timestamp_str}")
-        return datetime.utcnow()
+
     
     def to_dict(self) -> Dict[str, Any]:
         """

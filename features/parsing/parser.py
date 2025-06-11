@@ -106,17 +106,10 @@ class MessageParser:
                 logger.warning(f"Failed to parse trading day from '{match.group(0)}': {e}")
         return None
     
-    def _normalize_timestamp_to_est(self, raw_ts: str) -> datetime:
-        """Normalize message timestamp to US/Eastern timezone."""
-        try:
-            dt_utc = datetime.fromisoformat(raw_ts.replace('Z', '+00:00')).replace(tzinfo=UTC)
-            est = timezone('US/Eastern')
-            return dt_utc.astimezone(est)
-        except Exception as e:
-            logger.warning(f"Failed to normalize timestamp '{raw_ts}': {e}")
-            # Fallback to current time in EST
-            est = timezone('US/Eastern')
-            return datetime.now(est)
+    def _normalize_timestamp_to_utc(self, raw_ts: str) -> datetime:
+        """Normalize message timestamp to UTC timezone."""
+        from common.utils import parse_discord_timestamp
+        return parse_discord_timestamp(raw_ts)
     
     def _split_by_ticker_sections(self, content: str) -> Dict[str, str]:
         """Split message content by ticker sections to avoid over-parsing."""

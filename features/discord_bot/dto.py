@@ -29,7 +29,7 @@ class RawMessageDto:
             author_id=str(msg.author.id),
             author_name=str(msg.author.display_name),
             content=msg.content,
-            timestamp=msg.created_at
+            timestamp=ensure_utc(msg.created_at)
         )
     
     def to_dict(self) -> Dict[str, Any]:

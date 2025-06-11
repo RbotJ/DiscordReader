@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from common.db import db
+from common.utils import utc_now
 
 
 class DiscordChannel(db.Model):
@@ -29,12 +30,12 @@ class DiscordChannel(db.Model):
     
     # Metadata tracking
     last_message_id = Column(String(50), nullable=True)
-    last_seen = Column(DateTime, nullable=True)
+    last_seen = Column(DateTime(timezone=True), nullable=True)
     message_count = Column(Integer, default=0)
     
     # Audit fields
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     def __repr__(self):
         return f"<DiscordChannel(name={self.channel_name}, channel_id={self.channel_id})>"
