@@ -272,6 +272,35 @@ function formatPrice(price, precision = 2) {
   return parseFloat(price).toFixed(precision);
 }
 
+/**
+ * Format a UTC timestamp for local display
+ * @param {string|Date} utcString - UTC timestamp string or Date object
+ * @param {string} [timeZone='America/Chicago'] - Target timezone
+ * @returns {string} Formatted timestamp string
+ */
+function formatTimestamp(utcString, timeZone = 'America/Chicago') {
+  if (!utcString) return 'N/A';
+  
+  const options = {
+    timeZone: timeZone,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short'
+  };
+  
+  try {
+    const date = new Date(utcString);
+    return date.toLocaleString('en-US', options);
+  } catch (error) {
+    console.warn('Failed to format timestamp:', utcString, error);
+    return 'Invalid Date';
+  }
+}
+
 // Export utilities for ES modules
 export {
   formatCurrency,
@@ -279,6 +308,7 @@ export {
   formatDate,
   formatTime,
   formatDateTime,
+  formatTimestamp,
   truncateString,
   debounce,
   createElement,

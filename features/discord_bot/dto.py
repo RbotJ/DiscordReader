@@ -7,6 +7,7 @@ Provides clean interfaces between Discord and other features.
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any
+from common.utils import ensure_utc
 
 
 @dataclass(frozen=True)

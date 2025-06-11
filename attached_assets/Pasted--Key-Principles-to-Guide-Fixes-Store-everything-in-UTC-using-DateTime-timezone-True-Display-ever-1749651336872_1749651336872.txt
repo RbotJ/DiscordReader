@@ -1,0 +1,121 @@
+✅ Key Principles to Guide Fixes
+Store everything in UTC using DateTime(timezone=True).
+
+Display everything in local time (e.g. America/Chicago) at the UI layer.
+
+Never serialize/deserialize timestamps without preserving timezone info.
+
+Consolidate logic: timestamp normalization belongs in one place (ingestion layer or shared utility), and timezone formatting should only happen at display time.
+
+🔧 Next Steps by Feature Slice
+1. Common Utilities (/common/utils.py)
+✅ Add universal time helpers:
+
+python
+Copy
+Edit
+from datetime import datetime
+from pytz import timezone, UTC
+
+CENTRAL = timezone("America/Chicago")
+
+def ensure_utc(dt: datetime) -> datetime:
+    """Ensure datetime is timezone-aware in UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+def to_local(dt: datetime, tz: str = "America/Chicago") -> datetime:
+    return ensure_utc(dt).astimezone(timezone(tz))
+🔄 Apply these in parsing/ingestion layers where needed.
+
+2. Ingestion Feature (/features/ingestion/)
+✅ Your DB schema is already using DateTime(timezone=True)—good.
+
+🛠 Refactor all datetime.utcnow() to datetime.now(tz=timezone.utc)
+
+🛠 Centralize prepare_message_for_storage() to avoid .isoformat() string conversion.
+
+Store Python datetime objects, not strings.
+
+3. Discord Bot (/features/discord_bot/)
+❌ msg.created_at is being stored without explicit UTC assignment.
+
+✅ Fix in DTO construction:
+
+python
+Copy
+Edit
+timestamp=msg.created_at.astimezone(timezone.utc)
+4. Parsing Feature (/features/parsing/)
+❌ Hardcoding EST violates the UTC principle.
+
+✅ Replace _normalize_timestamp_to_est() with a call to ensure_utc() and push display logic to the UI layer.
+
+✅ For trading day logic:
+
+python
+Copy
+Edit
+def get_trading_day(ts: datetime) -> date:
+    return to_local(ts).date()
+5. Templates / Jinja Filters
+✅ Add a Jinja filter in your Flask app setup:
+
+python
+Copy
+Edit
+@app.template_filter('localtime')
+def localtime_filter(utc_dt):
+    return to_local(utc_dt).strftime('%b %d, %Y %I:%M %p %Z')
+🛠 Use this in your HTML:
+
+jinja2
+Copy
+Edit
+{{ message.timestamp | localtime }}
+6. JavaScript UI Utilities
+❌ formatTimestamp() undefined
+
+✅ Add it globally in base.html or a utils.js:
+
+javascript
+Copy
+Edit
+function formatTimestamp(utcString) {
+  const options = {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short"
+  };
+  return new Date(utcString).toLocaleString("en-US", options);
+}
+7. Database Migration Plan
+To fix column types:
+
+sql
+Copy
+Edit
+-- PostgreSQL SQL fix (run manually or via Alembic)
+ALTER TABLE discord_messages
+    ALTER COLUMN timestamp TYPE TIMESTAMPTZ USING timestamp AT TIME ZONE 'UTC';
+Do this for any DateTime column lacking timezone=True.
+
+🧼 Cleanup Suggestions
+🔁 Refactor and de-duplicate _parse_timestamp() logic into /common/utils.py.
+
+✅ Add unit tests for all timezone utilities.
+
+❗ Fix the psycopg2.ProgrammingError: can't adapt type 'dict' by JSON-encoding the data payload before DB insert.
+
+python
+Copy
+Edit
+import json
+...
+'data': json.dumps(event_data),

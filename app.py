@@ -14,6 +14,7 @@ from datetime import datetime
 from flask import Flask, jsonify, render_template
 from flask_socketio import SocketIO, emit
 from common.db import db, initialize_db
+from common.utils import format_timestamp_local, to_local
 
 # Configure logging
 logging.basicConfig(
@@ -249,6 +250,20 @@ def create_app():
             logging.warning(f"Could not initialize Alpaca WebSocket service: {e}")
     else:
         logging.info("Live price streaming disabled (ENABLE_LIVE_PRICE_STREAM=false)")
+
+    # Add Jinja template filters for timezone conversion
+    @app.template_filter('localtime')
+    def localtime_filter(utc_dt, tz_name="America/Chicago"):
+        """Convert UTC datetime to local timezone for display."""
+        return format_timestamp_local(utc_dt, tz_name)
+    
+    @app.template_filter('localdate')
+    def localdate_filter(utc_dt, tz_name="America/Chicago"):
+        """Convert UTC datetime to local date for display."""
+        if utc_dt is None:
+            return "N/A"
+        local_dt = to_local(utc_dt, tz_name)
+        return local_dt.strftime('%b %d, %Y')
 
     socketio.init_app(app, cors_allowed_origins="*")
     register_feature_routes(app)
