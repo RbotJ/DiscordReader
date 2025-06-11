@@ -36,26 +36,28 @@ class SetupService:
             'short': ['short', 'sell', 'put']
         }
         
-    def parse_message_content(
+    def store_parsed_setups(
         self, 
-        content: str, 
+        setups: List[Dict[str, Any]], 
+        trading_day: date,
         message_id: str = '', 
         channel_id: str = '', 
         author_id: str = '', 
         source: str = 'unknown'
     ) -> Dict[str, Any]:
         """
-        Parse message content and create setup records.
+        Store pre-parsed setups from the parsing slice.
         
         Args:
-            content: Message content to parse
+            setups: List of already parsed setup data
+            trading_day: The trading day for these setups
             message_id: Discord message ID
             channel_id: Discord channel ID
             author_id: Discord author ID
             source: Source of the message
             
         Returns:
-            Dict with parsing results
+            Dict with storage results
         """
         try:
             # Check if message already exists
@@ -69,43 +71,40 @@ class SetupService:
                 }
             
             # Create setup message record
-            setup_message = SetupMessage(
-                message_id=message_id,
-                channel_id=channel_id,
-                author_id=author_id,
-                content=content,
-                source=source,
-                is_processed=False,
-                processing_status='processing'
-            )
+            setup_message = SetupMessage()
+            setup_message.message_id = message_id
+            setup_message.channel_id = channel_id
+            setup_message.author_id = author_id
+            setup_message.content = ""  # Content is processed by parsing slice
+            setup_message.source = source
+            setup_message.is_processed = False
+            setup_message.processing_status = 'processing'
             
             db.session.add(setup_message)
             db.session.commit()
             
-            # Extract tickers and create setups
-            ticker_setups = self._extract_ticker_setups(content)
             setups_created = 0
             signals_created = 0
             
-            for ticker_data in ticker_setups:
-                ticker_setup = TickerSetup(
-                    setup_message_id=setup_message.id,
-                    symbol=ticker_data['symbol'],
-                    setup_type=ticker_data.get('setup_type'),
-                    direction=ticker_data.get('direction'),
-                    entry_price=ticker_data.get('entry_price'),
-                    target_price=ticker_data.get('target_price'),
-                    stop_loss=ticker_data.get('stop_loss'),
-                    confidence=ticker_data.get('confidence'),
-                    notes=ticker_data.get('notes')
-                )
+            # Store the pre-parsed setups
+            for setup_data in setups:
+                ticker_setup = TickerSetup()
+                ticker_setup.setup_message_id = setup_message.id
+                ticker_setup.symbol = setup_data.get('symbol')
+                ticker_setup.setup_type = setup_data.get('setup_type')
+                ticker_setup.direction = setup_data.get('direction')
+                ticker_setup.entry_price = setup_data.get('entry_price')
+                ticker_setup.target_price = setup_data.get('target_price')
+                ticker_setup.stop_loss = setup_data.get('stop_loss')
+                ticker_setup.confidence = setup_data.get('confidence')
+                ticker_setup.notes = setup_data.get('notes')
                 
                 db.session.add(ticker_setup)
                 db.session.flush()  # Get the ID
                 setups_created += 1
                 
                 # Create signals for this setup
-                for signal_data in ticker_data.get('signals', []):
+                for signal_data in setup_data.get('signals', []):
                     signal = Signal(
                         ticker_setup_id=ticker_setup.id,
                         signal_type=signal_data['signal_type'],
@@ -130,7 +129,8 @@ class SetupService:
                     'message_id': message_id,
                     'channel_id': channel_id,
                     'setups_created': setups_created,
-                    'signals_created': signals_created
+                    'signals_created': signals_created,
+                    'trading_day': trading_day.isoformat()
                 },
                 channel='setups',
                 source='setup_service'
@@ -143,7 +143,7 @@ class SetupService:
             }
             
         except Exception as e:
-            logger.error(f"Error parsing message content: {e}")
+            logger.error(f"Error storing parsed setups: {e}")
             db.session.rollback()
             
             # Update message with error status
@@ -153,138 +153,7 @@ class SetupService:
                 db.session.commit()
             
             raise
-    
-    def _extract_ticker_setups(self, content: str) -> List[Dict[str, Any]]:
-        """
-        Extract ticker setups from message content.
-        
-        Args:
-            content: Message content to parse
-            
-        Returns:
-            List of ticker setup data dictionaries
-        """
-        import re
-        
-        ticker_setups = []
-        
-        # Simple ticker extraction pattern
-        ticker_pattern = r'\b([A-Z]{1,5})\b'
-        tickers = re.findall(ticker_pattern, content)
-        
-        # Remove common non-ticker words
-        excluded_words = {'THE', 'AND', 'OR', 'BUT', 'FOR', 'WITH', 'THIS', 'THAT', 'FROM', 'TO', 'AT', 'BY', 'UP', 'DOWN', 'IN', 'OUT', 'ON', 'OFF', 'OVER', 'UNDER'}
-        tickers = [t for t in tickers if t not in excluded_words and len(t) <= 5]
-        
-        for ticker in set(tickers):  # Remove duplicates
-            # Extract basic setup information for this ticker
-            setup_data = {
-                'symbol': ticker,
-                'setup_type': self._extract_setup_type(content, ticker),
-                'direction': self._extract_direction(content, ticker),
-                'entry_price': self._extract_price(content, ticker, 'entry'),
-                'target_price': self._extract_price(content, ticker, 'target'),
-                'stop_loss': self._extract_price(content, ticker, 'stop'),
-                'confidence': self._calculate_confidence(content, ticker),
-                'signals': self._extract_signals(content, ticker)
-            }
-            
-            # Only include if we found meaningful setup information
-            if any([setup_data['setup_type'], setup_data['direction'], 
-                   setup_data['entry_price'], setup_data['signals']]):
-                ticker_setups.append(setup_data)
-        
-        return ticker_setups
-    
-    def _extract_setup_type(self, content: str, ticker: str) -> Optional[str]:
-        """Extract setup type from content."""
-        content_lower = content.lower()
-        
-        setup_types = {
-            'breakout': ['breakout', 'break out', 'breaking'],
-            'pullback': ['pullback', 'pull back', 'retrace'],
-            'reversal': ['reversal', 'reverse', 'bounce'],
-            'continuation': ['continuation', 'continue', 'trend'],
-            'momentum': ['momentum', 'ramp', 'squeeze']
-        }
-        
-        for setup_type, keywords in setup_types.items():
-            if any(keyword in content_lower for keyword in keywords):
-                return setup_type
-        
-        return None
-    
-    def _extract_direction(self, content: str, ticker: str) -> Optional[str]:
-        """Extract trade direction from content."""
-        content_lower = content.lower()
-        
-        # Look for directional keywords near the ticker
-        for direction, keywords in self._direction_keywords.items():
-            if any(keyword in content_lower for keyword in keywords):
-                return direction
-        
-        return None
-    
-    def _extract_price(self, content: str, ticker: str, price_type: str) -> Optional[float]:
-        """Extract price levels from content."""
-        import re
-        
-        # Simple price pattern - look for numbers that could be prices
-        price_pattern = r'\$?(\d+\.?\d*)'
-        prices = re.findall(price_pattern, content)
-        
-        # This is a simplified extraction - in reality, you'd want more
-        # sophisticated parsing to associate prices with specific tickers
-        # and price types (entry, target, stop)
-        
-        if prices:
-            try:
-                return float(prices[0])  # Return first found price as example
-            except ValueError:
-                pass
-        
-        return None
-    
-    def _calculate_confidence(self, content: str, ticker: str) -> float:
-        """Calculate confidence score based on setup completeness."""
-        score = 0.0
-        content_lower = content.lower()
-        
-        # Check for various confidence indicators
-        if any(keyword in content_lower for keyword in self._setup_keywords):
-            score += 0.2
-        
-        if self._extract_direction(content, ticker):
-            score += 0.2
-        
-        if self._extract_price(content, ticker, 'entry'):
-            score += 0.2
-        
-        if self._extract_price(content, ticker, 'target'):
-            score += 0.2
-        
-        if self._extract_price(content, ticker, 'stop'):
-            score += 0.2
-        
-        return min(score, 1.0)
-    
-    def _extract_signals(self, content: str, ticker: str) -> List[Dict[str, Any]]:
-        """Extract trading signals for a ticker."""
-        signals = []
-        
-        # Simple signal extraction - look for common signal patterns
-        direction = self._extract_direction(content, ticker)
-        if direction:
-            signal = {
-                'signal_type': direction,
-                'trigger_price': self._extract_price(content, ticker, 'trigger'),
-                'target_price': self._extract_price(content, ticker, 'target'),
-                'stop_loss': self._extract_price(content, ticker, 'stop'),
-                'confidence': self._calculate_confidence(content, ticker)
-            }
-            signals.append(signal)
-        
-        return signals
+
     
     def get_active_setups(self, symbol: Optional[str] = None) -> List[TickerSetup]:
         """Get active setups, optionally filtered by symbol."""

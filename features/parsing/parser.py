@@ -246,62 +246,9 @@ class MessageParser:
                         'trading_day': trading_day,
                         'message_id': message_id
                     }
-            
-            # Fall back to generic parsing for non-A+ messages
-            # Use ticker section splitting for better parsing
-            ticker_sections = self._split_by_ticker_sections(content)
-            tickers = []  # Initialize tickers variable
-            
-            if not ticker_sections:
-                # Fall back to traditional ticker extraction
-                tickers = self._extract_tickers(content)
-                if not tickers:
-                    logger.debug(f"No tickers found in message {message_id}")
-                    return {
-                        'success': False,
-                        'setups': [],
-                        'levels': [],
-                        'trading_day': trading_day,
-                        'message_id': message_id
-                    }
-                
-                # Check if message contains trading setup keywords
-                if not self._contains_setup_keywords(content):
-                    logger.debug(f"No setup keywords found in message {message_id}")
-                    return {
-                        'success': False,
-                        'setups': [],
-                        'levels': [],
-                        'trading_day': trading_day,
-                        'message_id': message_id
-                    }
-            
-            setups = []
-            all_levels = []
-            
-            # Use ticker sections if available, otherwise fall back to traditional parsing
-            if ticker_sections:
-                for ticker, ticker_content in ticker_sections.items():
-                    setup_dto, levels_dto = self._parse_ticker_setup(ticker, ticker_content, raw_message)
-                    if setup_dto:
-                        setups.append(setup_dto)
-                        all_levels.extend(levels_dto)
             else:
-                # Traditional parsing for when ticker sections aren't available
-                for ticker in tickers:
-                    setup_dto, levels_dto = self._parse_ticker_setup(ticker, content, raw_message)
-                    if setup_dto:
-                        setups.append(setup_dto)
-                        all_levels.extend(levels_dto)
-            
-            logger.info(f"Generic parser extracted {len(setups)} setups and {len(all_levels)} levels from message {message_id}")
-            return {
-                'success': len(setups) > 0,
-                'setups': setups,
-                'levels': all_levels,
-                'trading_day': trading_day,
-                'message_id': message_id
-            }
+                # Enforce A+ format - no fallback to generic parsing
+                raise ValueError(f"Invalid format: message {message_id} does not match A+ pattern")
             
         except Exception as e:
             logger.error(f"Error parsing message: {e}")
