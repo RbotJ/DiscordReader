@@ -26,99 +26,28 @@ socketio = SocketIO()
 
 def register_all_blueprints(app):
     """
-    Centralized blueprint registration to avoid duplicates.
+    Centralized blueprint registration using the blueprint registry.
     This function registers all feature blueprints in a consistent manner.
     """
-    blueprints_to_register = []
+    import importlib
+    from features.blueprint_registry import BLUEPRINT_REGISTRY
     
-    try:
-        # Market features - standardize on api_routes.py
+    for name, module_path, attr in BLUEPRINT_REGISTRY:
         try:
-            from features.market.api_routes import bp as market_bp
-            blueprints_to_register.append(('market', market_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import market blueprint: {e}")
-        
-        # Execution features  
-        try:
-            from features.execution.api_routes import bp as execution_bp
-            blueprints_to_register.append(('execution', execution_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import execution blueprint: {e}")
-        
-        # Options features
-        try:
-            from features.options.api_routes import bp as options_bp
-            blueprints_to_register.append(('options', options_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import options blueprint: {e}")
-        
-        # Account features
-        try:
-            from features.account.api_routes import bp as account_bp
-            blueprints_to_register.append(('account', account_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import account blueprint: {e}")
-        
-        # Alpaca features
-        try:
-            from features.alpaca.api import alpaca_bp as alpaca_bp
-            blueprints_to_register.append(('alpaca', alpaca_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import alpaca blueprint: {e}")
-        
-        # Parsing features
-        try:
-            from features.parsing.api import parsing_bp as parsing_api_bp
-            blueprints_to_register.append(('parsing_api', parsing_api_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import parsing API blueprint: {e}")
+            # Use importlib for safer dynamic imports
+            module = importlib.import_module(module_path)
+            blueprint = getattr(module, attr)
             
-        # Parsing dashboard
-        try:
-            from features.parsing.dashboard import parsing_bp as parsing_dashboard_bp
-            blueprints_to_register.append(('parsing_dashboard', parsing_dashboard_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import parsing dashboard blueprint: {e}")
-        
-        # Discord Bot Dashboard
-        try:
-            from features.discord_bot.dashboard import discord_bp as discord_dashboard_bp
-            blueprints_to_register.append(('discord_dashboard', discord_dashboard_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import discord dashboard blueprint: {e}")
-
-        # Channels Dashboard
-        try:
-            from features.discord_channels.dashboard import channels_bp as channels_dashboard_bp
-            blueprints_to_register.append(('channels_dashboard', channels_dashboard_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import channels dashboard blueprint: {e}")
-
-        # Ingestion Dashboard
-        try:
-            from features.ingestion.dashboard import ingest_bp as ingestion_dashboard_bp
-            blueprints_to_register.append(('ingestion_dashboard', ingestion_dashboard_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import ingestion dashboard blueprint: {e}")
-        
-        # Setups features
-        try:
-            from features.setups.api import setups_bp as setups_bp
-            blueprints_to_register.append(('setups', setups_bp))
-        except ImportError as e:
-            logging.warning(f"Could not import setups blueprint: {e}")
-        
-        # Register all blueprints
-        for name, blueprint in blueprints_to_register:
             if blueprint is not None:
                 app.register_blueprint(blueprint)
                 logging.info(f"Registered {name} blueprint successfully")
             else:
                 logging.warning(f"Blueprint {name} is None, skipping registration")
                 
-    except Exception as e:
-        logging.error(f"Error registering blueprints: {e}")
+        except (ImportError, AttributeError) as e:
+            logging.warning(f"Failed to register {name} blueprint: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error registering {name} blueprint: {e}")
 
 def register_feature_routes(app):
     """Legacy function - now redirects to centralized blueprint registration"""
