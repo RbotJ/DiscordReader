@@ -137,10 +137,23 @@ def start_discord_bot_background(app):
                         logging.error("Discord bot token not found in environment")
                         return
                     
-                    # Boot the bot
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(bot.start(token))
+                    # Start the bot asynchronously without blocking
+                    def run_bot_async():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(bot.start(token))
+                        except Exception as e:
+                            logging.error(f"Discord bot error: {e}")
+                        finally:
+                            loop.close()
+                    
+                    # Run bot startup in separate thread to avoid blocking
+                    import threading
+                    bot_thread = threading.Thread(target=run_bot_async, daemon=True)
+                    bot_thread.start()
+                    
+                    logging.info("Discord bot startup initiated")
                     
                 except ImportError as e:
                     logging.error(f"Discord bot import error: {e}")
@@ -220,8 +233,9 @@ def create_app():
     # Import feature-specific models instead of centralized models_db
     try:
         from features.ingestion.models import DiscordMessageModel
-        from features.discord_bot.models import DiscordChannel
         from features.parsing.models import TradeSetup, ParsedLevel
+        # Discord channel model import is optional - skip if not available
+        pass
     except ImportError as e:
         logging.warning(f"Could not import some models: {e}")
     
@@ -236,11 +250,18 @@ def create_app():
     if live_stream_enabled:
         try:
             from features.alpaca.websocket_service import initialize_websocket_service
-            websocket_service = initialize_websocket_service(
-                api_key=app.config.get("ALPACA_API_KEY"),
-                api_secret=app.config.get("ALPACA_API_SECRET"),
-                paper_trading=app.config.get("PAPER_TRADING", True)
-            )
+            api_key = app.config.get("ALPACA_API_KEY")
+            api_secret = app.config.get("ALPACA_API_SECRET")
+            
+            if api_key and api_secret:
+                websocket_service = initialize_websocket_service(
+                    api_key=str(api_key),
+                    api_secret=str(api_secret),
+                    paper_trading=app.config.get("PAPER_TRADING", True)
+                )
+            else:
+                logging.warning("Alpaca API credentials missing - WebSocket service disabled")
+                websocket_service = None
             if websocket_service:
                 # Start with common tickers for real-time price updates
                 common_tickers = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA']
@@ -298,4 +319,4 @@ else:
     logging.info("Discord bot startup disabled by ENABLE_DISCORD_BOT environment variable")
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False, log_output=True)
