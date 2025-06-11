@@ -153,7 +153,45 @@ def start_discord_bot_background(app):
     t.start()
     logging.info("Discord bot background thread launched")
 
+def validate_environment():
+    """
+    Validate required and optional environment variables.
+    Provides early detection of configuration issues.
+    """
+    # Required environment variables
+    REQUIRED_ENV_VARS = [
+        "DATABASE_URL",
+    ]
+    
+    # Optional but recommended environment variables
+    RECOMMENDED_ENV_VARS = [
+        "ALPACA_API_KEY",
+        "ALPACA_API_SECRET", 
+        "DISCORD_BOT_TOKEN",
+        "SESSION_SECRET"
+    ]
+    
+    # Check required variables
+    missing_required = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+    if missing_required:
+        logging.error(f"Missing required environment variables: {', '.join(missing_required)}")
+        raise ValueError(f"Required environment variables not set: {', '.join(missing_required)}")
+    
+    # Check recommended variables
+    missing_recommended = [var for var in RECOMMENDED_ENV_VARS if not os.getenv(var)]
+    if missing_recommended:
+        logging.warning(f"Missing recommended environment variables: {', '.join(missing_recommended)}")
+        logging.warning("Some features may not work properly without these variables")
+    
+    # Log configuration status
+    logging.info("Environment validation completed successfully")
+    if not missing_recommended:
+        logging.info("All recommended environment variables are configured")
+
 def create_app():
+    # Validate environment before creating app
+    validate_environment()
+    
     app = Flask(__name__)
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
 
@@ -224,8 +262,12 @@ def create_app():
 # Build & wire everything
 app = create_app()
 
-# Start the bot using the same function, now with proper dependencies
-start_discord_bot_background(app)
+# Start Discord bot only if enabled (default: true for backward compatibility)
+if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
+    start_discord_bot_background(app)
+    logging.info("Discord bot startup enabled")
+else:
+    logging.info("Discord bot startup disabled by ENABLE_DISCORD_BOT environment variable")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
