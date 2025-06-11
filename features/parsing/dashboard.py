@@ -7,6 +7,7 @@ and managing parsed trade setups. Follows the discord_channels feature slice pat
 import logging
 from datetime import date, datetime
 from flask import Blueprint, render_template, request, jsonify
+from common.utils import utc_now
 
 from .service import get_parsing_service
 from .store import get_parsing_store
@@ -48,7 +49,7 @@ def overview():
             return render_template('parsing/overview.html',
                                  metrics=metrics,
                                  audit_data=audit_data,
-                                 current_time=datetime.utcnow())
+                                 current_time=utc_now())
         else:
             return render_template('parsing/error.html', 
                                  error="Parsing service unavailable"), 500
@@ -64,7 +65,7 @@ def metrics():
         if service:
             metrics = service.get_service_stats()
             # Add operational timestamp
-            metrics['dashboard_timestamp'] = datetime.utcnow().isoformat()
+            metrics['dashboard_timestamp'] = utc_now().isoformat()
             return jsonify(metrics)
         else:
             return jsonify({'error': 'Parsing service unavailable'}), 503
@@ -276,20 +277,20 @@ def health():
                 'status': 'healthy',
                 'service_status': stats.get('service_status', 'unknown'),
                 'messages_processed': stats.get('listener_stats', {}).get('messages_processed', 0),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()
             })
         else:
             return jsonify({
                 'status': 'unhealthy',
                 'error': 'Service not available or unhealthy',
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()
             }), 503
     except Exception as e:
         logger.error(f"Error in parsing health check: {e}")
         return jsonify({
             'status': 'error',
             'error': str(e),
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': utc_now().isoformat()
         }), 500
 
 @parsing_bp.route('/setups/clear', methods=['POST'])
