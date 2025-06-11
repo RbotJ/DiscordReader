@@ -102,12 +102,14 @@ class MessageProcessor:
         Returns:
             Dict[str, Any]: Message dictionary ready for storage
         """
+        from common.utils import ensure_utc
+        
         return {
             "id": message_dto.message_id,
             "channel_id": message_dto.channel_id,
             "author_id": message_dto.author_id,
             "content": message_dto.content,
-            "timestamp": message_dto.timestamp.isoformat(),
+            "timestamp": ensure_utc(message_dto.timestamp),  # Store as timezone-aware datetime
             "guild_id": getattr(message_dto, 'guild_id', None),
             "author": getattr(message_dto, 'author_username', ''),
             "embeds": getattr(message_dto, 'embeds', []),

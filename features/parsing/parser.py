@@ -164,8 +164,9 @@ class MessageParser:
             
             # Fallback to normalized timestamp if trading day extraction fails
             if not trading_day and raw_message.get('timestamp'):
-                est_timestamp = self._normalize_timestamp_to_est(raw_message['timestamp'])
-                trading_day = est_timestamp.date()
+                from common.utils import get_trading_day
+                utc_timestamp = self._normalize_timestamp_to_utc(raw_message['timestamp'])
+                trading_day = get_trading_day(utc_timestamp)
             
             # Check if this is an A+ scalp setups message and route to specialized parser
             aplus_parser = get_aplus_parser()
