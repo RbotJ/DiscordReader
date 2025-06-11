@@ -1,0 +1,101 @@
+🔍 Problem Summary
+The Discord message’s timestamp field is in UTC, as seen in the raw WebSocket payload:
+
+bash
+Copy
+Edit
+'timestamp': '2025-06-11T13:53:25.075000+00:00'
+Your ingestion database stores it directly as:
+
+makefile
+Copy
+Edit
+2025-06-11T13:53:25
+But you're in Central Time (CST/CDT), and your manual expectation was:
+
+swift
+Copy
+Edit
+5/19/25, 8:49 AM CST ≠ 2025-05-19T13:49:08 UTC
+So: ✅ Discord sent the timestamp in UTC.
+And: ✅ You stored it faithfully in UTC.
+But: ❌ You're displaying or interpreting it without converting to your local time zone.
+
+✅ Best Practice for Timezones in Databases
+Always store timestamps in UTC.
+
+This is the modern global standard and what PostgreSQL recommends.
+
+Your existing storage format looks correct: TIMESTAMP WITH TIME ZONE (aka timestamptz in Postgres).
+
+Always convert timestamps to local time only at the UI/presentation layer.
+
+In Python:
+
+python
+Copy
+Edit
+import pytz
+from datetime import datetime
+
+utc_time = datetime.fromisoformat("2025-05-19T13:49:08")
+central_time = utc_time.replace(tzinfo=timezone.utc).astimezone(timezone("America/Chicago"))
+print(central_time.strftime("%Y-%m-%d %I:%M %p %Z"))
+Output:
+
+yaml
+Copy
+Edit
+2025-05-19 08:49 AM CDT
+Display local time (e.g. CST/CDT) using user's configured timezone.
+
+Frontend: format using user timezone via JavaScript, or
+
+Backend API: return UTC + user timezone offset or pre-converted local time.
+
+🔧 Recommended Fix
+In your dashboard rendering or API logic, apply this:
+
+python
+Copy
+Edit
+from pytz import timezone, UTC
+
+def to_local(timestamp_utc_str: str, tz_name: str = "America/Chicago") -> str:
+    utc_dt = datetime.fromisoformat(timestamp_utc_str).replace(tzinfo=UTC)
+    local_dt = utc_dt.astimezone(timezone(tz_name))
+    return local_dt.strftime("%Y-%m-%d %I:%M %p %Z")
+You can apply this:
+
+In your Flask route response
+
+Or within your Jinja template using a custom filter like:
+
+python
+Copy
+Edit
+app.jinja_env.filters['localtime'] = to_local
+Then in your HTML:
+
+jinja2
+Copy
+Edit
+{{ message.timestamp|localtime }}
+📌 Side Note: PostgreSQL Column Types
+Prefer timestamptz for anything coming from UTC sources.
+
+Avoid timestamp without time zone unless you're storing local time only (rarely needed).
+
+To convert in SQL:
+
+sql
+Copy
+Edit
+SELECT timestamp_column AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' AS local_time
+FROM discord_messages;
+✅ Summary
+Area	What to Do
+Store	Use UTC everywhere (timestamptz)
+Parse from Discord	Assume ISO timestamp is in UTC
+Display	Convert to user local time (e.g. CST/CDT) via code
+DB Queries	Use AT TIME ZONE if rendering from SQL
