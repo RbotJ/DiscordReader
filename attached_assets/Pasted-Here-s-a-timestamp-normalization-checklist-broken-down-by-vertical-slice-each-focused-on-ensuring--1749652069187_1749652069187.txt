@@ -1,0 +1,108 @@
+Here’s a timestamp normalization checklist broken down by vertical slice, each focused on ensuring:
+
+✅ UTC storage
+
+✅ Local-time presentation (e.g. America/Chicago)
+
+✅ Unified parsing and formatting behavior
+
+✅ Global (Applies Across All Slices)
+ Add common.utils.timezone module with:
+
+ensure_utc(dt)
+
+to_local(dt, tz="America/Chicago")
+
+ Replace all datetime.utcnow() with datetime.now(tz=timezone.utc)
+
+ Ensure SQLAlchemy models use DateTime(timezone=True)
+
+ Add Jinja2 filter in Flask:
+
+python
+Copy
+Edit
+@app.template_filter('localtime')
+def localtime_filter(dt):
+    return to_local(dt).strftime('%b %d, %Y %I:%M %p %Z')
+📥 features/ingestion/
+Goals: Ensure timestamp normalization at message intake
+ Confirm all SQLAlchemy columns use DateTime(timezone=True)
+
+ Ensure prepare_message_for_storage() stores native datetime, not .isoformat()
+
+ Unify any _parse_timestamp() logic under common.utils.timezone
+
+ Fix any test fixtures to use timezone-aware datetimes
+
+💬 features/discord_bot/
+Goals: Preserve Discord UTC and store correctly
+ In dto.py, wrap timestamps from msg.created_at with .astimezone(timezone.utc)
+
+ Ensure DTOs consistently represent timezone-aware datetimes
+
+ Replace any datetime.utcnow() in bot/service code with correct UTC-aware creation
+
+ Fix test fixtures in conftest.py to use datetime.now(UTC) instead of utcnow()
+
+📡 features/discord_channels/
+Goals: Normalize channel metadata timestamps
+ Migrate DB columns to DateTime(timezone=True)
+
+created_at, updated_at, last_seen
+
+ Update models: replace datetime.utcnow default with datetime.now(tz=timezone.utc)
+
+ Review any timestamps in sync/scheduling code for consistency
+
+🔎 features/parsing/
+Goals: Remove timezone logic from parsing; rely on storage/display layers
+ Delete or refactor _normalize_timestamp_to_est() into ensure_utc() from utils
+
+ Ensure parsing logic assumes UTC input (e.g. fromisoformat().replace(tzinfo=UTC))
+
+ Adjust trading day logic to call to_local(timestamp).date()
+
+ Fix any inconsistencies in test mocks and datetime parsing
+
+🧾 features/setups/ (if used for storage of parsed results)
+ Confirm trade_setups.timestamp and other datetime columns use timezone=True
+
+ Ensure parsed messages entering this layer have already been normalized (UTC)
+
+ Apply local time formatting only in display layers or metrics exports
+
+📈 features/notifications/ (dashboards / logs)
+ Use Jinja |localtime filter on all datetime fields
+
+ If using JavaScript, define and use a global formatTimestamp():
+
+javascript
+Copy
+Edit
+function formatTimestamp(utcString) {
+  return new Date(utcString).toLocaleString("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short"
+  });
+}
+ Ensure all timestamps rendered in HTML have a data-utc attribute if client JS is needed for dynamic updates
+
+🧪 Tests & Fixtures
+ Audit all test timestamps to use timezone-aware datetime(...) with tzinfo=UTC
+
+ Create sample_timestamp() utility in test utils to avoid duplication
+
+ Test that parsed and stored timestamps retain timezone info round-trip
+
+📊 features/dashboard/ or UI-rendering templates
+ All HTML templates use |localtime filter or JS formatTimestamp()
+
+ Base templates display “Last updated” in local time with timezone label
+
+ Create standard macro or component for consistent timestamp rendering

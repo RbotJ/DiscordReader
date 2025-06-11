@@ -301,24 +301,22 @@ function formatTimestamp(utcString, timeZone = 'America/Chicago') {
   }
 }
 
-// Export utilities for ES modules
-export {
-  formatCurrency,
-  formatPercent,
-  formatDate,
-  formatTime,
-  formatDateTime,
-  formatTimestamp,
-  truncateString,
-  debounce,
-  createElement,
-  addClass,
-  removeClass,
-  toggleClass,
-  hasClass,
-  getQueryParams,
-  formatNumber,
-  deepClone,
-  isNumeric,
-  formatPrice
-};
+// Make functions globally available for older browsers
+window.formatCurrency = formatCurrency;
+window.formatPercent = formatPercent;
+window.formatDate = formatDate;
+window.formatTime = formatTime;
+window.formatDateTime = formatDateTime;
+window.formatTimestamp = formatTimestamp;
+window.truncateString = truncateString;
+window.debounce = debounce;
+window.createElement = createElement;
+window.addClass = addClass;
+window.removeClass = removeClass;
+window.toggleClass = toggleClass;
+window.hasClass = hasClass;
+window.getQueryParams = getQueryParams;
+window.formatNumber = formatNumber;
+window.deepClone = deepClone;
+window.isNumeric = isNumeric;
+window.formatPrice = formatPrice;

@@ -322,13 +322,11 @@ class TradingApiClient extends ApiClient {
   }
 }
 
-// Export API clients
-export {
-  ApiClient,
-  ApiError,
-  AccountApiClient,
-  MarketApiClient,
-  SetupApiClient,
-  SignalApiClient,
-  TradingApiClient
-};
+// Make API clients globally available
+window.ApiClient = ApiClient;
+window.ApiError = ApiError;
+window.AccountApiClient = AccountApiClient;
+window.MarketApiClient = MarketApiClient;
+window.SetupApiClient = SetupApiClient;
+window.SignalApiClient = SignalApiClient;
+window.TradingApiClient = TradingApiClient;
