@@ -8,7 +8,8 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from features.parsing.aplus_parser import APlusMessageParser
-from datetime import datetime
+from datetime import datetime, timezone
+from common.utils import utc_now
 
 def test_real_message():
     """Test parser with real A+ message content from database"""
@@ -49,7 +50,7 @@ TSLA
         'message_id': '1377278128598155294',
         'content': message_content,
         'channel_id': '1372012942848954388',
-        'timestamp': datetime.now(),
+        'timestamp': utc_now(),
         'author_id': '808743496341127200'
     }
     

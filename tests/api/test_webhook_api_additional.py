@@ -7,7 +7,8 @@ and verifying that they are properly processed and stored in the database.
 import json
 import requests
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from common.utils import utc_now
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

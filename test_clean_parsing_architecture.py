@@ -5,8 +5,9 @@ Validates the cleaned parsing architecture with A+ format enforcement
 and unified message processing pipeline.
 """
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from features.parsing.message_processor import get_message_processor
+from common.utils import utc_now
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +37,7 @@ SPY
         'channel_id': 'test_channel',
         'author_id': 'test_author',
         'content': aplus_message_content,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': utc_now().isoformat()
     }
     
     try:
@@ -76,7 +77,7 @@ def test_non_aplus_message_rejection():
         'channel_id': 'test_channel',
         'author_id': 'test_author',
         'content': generic_message_content,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': utc_now().isoformat()
     }
     
     try:

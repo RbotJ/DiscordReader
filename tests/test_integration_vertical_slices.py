@@ -195,10 +195,7 @@ class TestVerticalSliceIntegration:
                 channel_id="456", 
                 author_id="789",
                 content="test",
-                created_at=utc_now(),
-                is_setup=False,
-                processed=False,
-                embed_data={}
+                timestamp=utc_now()
             )
             
             with patch('features.ingestion.models.DiscordMessageModel'):
