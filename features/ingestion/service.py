@@ -316,8 +316,8 @@ class IngestionService:
                     'author': msg.author_id,
                     'preview': preview,
                     'full_content': content_str,
-                    'timestamp': msg.timestamp.isoformat() if msg.timestamp is not None else None,
-                    'created_at': msg.created_at.isoformat() if msg.created_at is not None else None,
+                    'timestamp': msg.timestamp,  # Return raw datetime object for templates
+                    'created_at': msg.created_at,  # Return raw datetime object for templates
                     'channel_id': msg.channel_id,
                     'is_processed': getattr(msg, 'is_processed', False)
                 }

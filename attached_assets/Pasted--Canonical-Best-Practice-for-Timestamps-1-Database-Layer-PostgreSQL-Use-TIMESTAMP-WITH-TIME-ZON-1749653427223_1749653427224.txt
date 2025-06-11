@@ -1,0 +1,109 @@
+✅ Canonical Best Practice for Timestamps
+1. Database Layer (PostgreSQL)
+Use: TIMESTAMP WITH TIME ZONE (aka timestamptz)
+
+Store native Python datetime objects with tzinfo=timezone.utc
+
+Never store timestamps as strings
+
+2. Python / SQLAlchemy Layer
+Use: sqlalchemy.Column(DateTime(timezone=True))
+
+When inserting:
+
+python
+Copy
+Edit
+from datetime import datetime, timezone
+created_at=datetime.now(timezone.utc)  # timezone-aware
+When fetching: SQLAlchemy should return datetime objects, not strings
+
+3. Template Layer
+Accept only timezone-aware datetime objects
+
+Use a Jinja filter like:
+
+python
+Copy
+Edit
+@app.template_filter("localtime")
+def localtime_filter(value):
+    if isinstance(value, str):
+        # Fallback parsing, only if value was accidentally serialized
+        value = datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=UTC)
+    elif value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(timezone("America/Chicago")).strftime("%b %d, %Y %I:%M %p %Z")
+🚫 What's Going Wrong
+You're seeing:
+pgsql
+Copy
+Edit
+Dashboard Error: 'str' object has no attribute 'tzinfo'
+Which likely means:
+
+Somewhere in the pipeline, a datetime is being serialized as a string, likely via .isoformat() or json.dumps() (if you're putting timestamps into dictionaries).
+
+Avoid:
+Returning ISO strings from services like:
+
+python
+Copy
+Edit
+return {"timestamp": ts.isoformat()}  # ❌ Bad for templates
+Doing conversion or parsing in templates unless absolutely needed
+
+✅ Correct Fix
+A. Ensure all database returns are datetime, not strings
+Audit your data return path:
+
+python
+Copy
+Edit
+# BAD (serializes to string):
+return [msg.timestamp.isoformat() for msg in results]
+
+# GOOD (returns raw datetime objects):
+return [msg.timestamp for msg in results]
+B. Audit service layer and DTOs
+In DTOs or APIs:
+
+Make sure timestamp fields are passed as native datetime, not stringified
+
+If you're building a JSON API (e.g. REST or dashboard JSON):
+
+Then you should .isoformat() for JSON safety
+
+But for Jinja templates: pass raw datetime objects
+
+🛠 Optional: Safe Fallback Jinja Filter (if DB is mixed)
+If your data is currently mixed, use this robust filter short-term:
+
+python
+Copy
+Edit
+@app.template_filter("safe_localtime")
+def safe_localtime_filter(value):
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=UTC)
+        except Exception:
+            return "Invalid timestamp"
+    elif isinstance(value, datetime) and value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(timezone("America/Chicago")).strftime("%b %d, %Y %I:%M %p %Z")
+Use:
+
+jinja2
+Copy
+Edit
+{{ message.timestamp | safe_localtime }}
+✅ Summary
+Layer	Rule
+DB	Store as timestamptz, not strings
+Python	Use datetime.now(timezone.utc) and return raw datetime
+API	Only serialize to string if returning JSON
+Template	Always receive datetime, never .isoformat() strings
+Jinja	Add fallback filter for short-term protection
+
+Would you like a quick project-wide scan guide to find where .isoformat() might be leaking into your templates?

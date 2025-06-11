@@ -253,9 +253,22 @@ def create_app():
 
     # Add Jinja template filters for timezone conversion
     @app.template_filter('localtime')
-    def localtime_filter(utc_dt, tz_name="America/Chicago"):
+    def localtime_filter(utc_dt, format_str='%Y-%m-%d %H:%M:%S %Z', tz_name="America/Chicago"):
         """Convert UTC datetime to local timezone for display."""
-        return format_timestamp_local(utc_dt, tz_name)
+        from datetime import datetime
+        from common.utils import to_local, ensure_utc
+        
+        if utc_dt is None:
+            return "N/A"
+        
+        # Ensure we have a timezone-aware datetime object
+        try:
+            utc_dt = ensure_utc(utc_dt)
+            local_dt = to_local(utc_dt, tz_name)
+            return local_dt.strftime(format_str)
+        except Exception as e:
+            logging.warning(f"Failed to convert timestamp to local time: {e}")
+            return str(utc_dt)
     
     @app.template_filter('localdate')
     def localdate_filter(utc_dt, tz_name="America/Chicago"):
