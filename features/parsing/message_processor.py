@@ -37,8 +37,8 @@ class MessageProcessingService:
         Raises:
             ValueError: If parsing fails for A+ messages
         """
+        message_id = raw_message.get('message_id', raw_message.get('id', ''))
         try:
-            message_id = raw_message.get('message_id', raw_message.get('id', ''))
             logger.info(f"Processing Discord message {message_id}")
             
             # Parse the message using the unified parser
