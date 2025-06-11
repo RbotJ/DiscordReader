@@ -1,276 +1,277 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A+ Trading Platform</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css" rel="stylesheet">
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <style>
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        .status-online { background-color: #28a745; }
-        .status-offline { background-color: #dc3545; }
-        .card-metric { 
-            font-size: 2rem; 
-            font-weight: bold; 
-            color: #007bff; 
-        }
-        .nav-pills .nav-link.active {
-            background-color: #007bff;
-        }
-        .dashboard-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem 0;
-        }
-    </style>
-</head>
-<body class="bg-light">
-    <!-- Header -->
-    <div class="dashboard-header">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h1 class="mb-0">A+ Trading Platform</h1>
-                    <p class="mb-0 opacity-75">AI-Powered Options Trading Intelligence</p>
-                </div>
-                <div class="col-md-4 text-end">
-                    <div class="d-flex align-items-center justify-content-end">
+{% extends "base.html" %}
+
+{% block title %}A+ Trading Dashboard{% endblock %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block extra_styles %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+    .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+    .status-online { background-color: #28a745; }
+    .status-offline { background-color: #dc3545; }
+    .card-metric { 
+        font-size: 2rem; 
+        font-weight: bold; 
+        color: #007bff; 
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Status Bar -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
                         <span class="status-indicator status-online" id="connectionStatus"></span>
                         <span id="connectionText">Connected</span>
+                        <span class="ms-3 text-muted">Real-time Socket.IO connection</span>
+                    </div>
+                    <div class="text-muted">
+                        <i data-feather="clock" class="me-1"></i>
+                        Live data feed active
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Navigation -->
-    <div class="container mt-4">
-        <ul class="nav nav-pills mb-4" id="mainTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="dashboard-tab" data-bs-toggle="pill" data-bs-target="#dashboard" type="button" role="tab">
-                    <i data-feather="bar-chart-2" class="me-2"></i>Dashboard
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="parsing-tab" data-bs-toggle="pill" data-bs-target="#parsing" type="button" role="tab">
-                    <i data-feather="message-square" class="me-2"></i>Signal Parsing
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="setups-tab" data-bs-toggle="pill" data-bs-target="#setups" type="button" role="tab">
-                    <i data-feather="target" class="me-2"></i>Trade Setups
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="account-tab" data-bs-toggle="pill" data-bs-target="#account" type="button" role="tab">
-                    <i data-feather="user" class="me-2"></i>Account
-                </button>
-            </li>
-        </ul>
+<!-- Metrics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card metric-card text-center">
+            <div class="card-body">
+                <i data-feather="activity" class="mb-2 text-primary" style="width: 48px; height: 48px;"></i>
+                <h5>System Status</h5>
+                <div class="card-metric text-success">Online</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card text-center">
+            <div class="card-body">
+                <i data-feather="trending-up" class="mb-2 text-success" style="width: 48px; height: 48px;"></i>
+                <h5>Active Setups</h5>
+                <div class="card-metric" id="activeSetups">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card text-center">
+            <div class="card-body">
+                <i data-feather="zap" class="mb-2 text-warning" style="width: 48px; height: 48px;"></i>
+                <h5>Signals Today</h5>
+                <div class="card-metric" id="signalsToday">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card text-center">
+            <div class="card-body">
+                <i data-feather="dollar-sign" class="mb-2 text-info" style="width: 48px; height: 48px;"></i>
+                <h5>Portfolio</h5>
+                <div class="card-metric" id="portfolioValue">--</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-        <!-- Tab Content -->
-        <div class="tab-content" id="mainTabContent">
-            <!-- Dashboard Tab -->
-            <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <i data-feather="activity" class="mb-2 text-primary" style="width: 48px; height: 48px;"></i>
-                                <h5>System Status</h5>
-                                <div class="card-metric text-success">Online</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <i data-feather="trending-up" class="mb-2 text-success" style="width: 48px; height: 48px;"></i>
-                                <h5>Active Setups</h5>
-                                <div class="card-metric">--</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <i data-feather="zap" class="mb-2 text-warning" style="width: 48px; height: 48px;"></i>
-                                <h5>Signals Today</h5>
-                                <div class="card-metric">--</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <i data-feather="dollar-sign" class="mb-2 text-info" style="width: 48px; height: 48px;"></i>
-                                <h5>Portfolio</h5>
-                                <div class="card-metric">--</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+<!-- Quick Actions -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i data-feather="zap" class="me-2"></i>
+                    Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
                 <div class="row">
-                    <div class="col-md-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0">Quick Actions</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-3">
-                                        <a href="/parsing/dashboard" class="btn btn-outline-primary w-100 mb-2">
-                                            <i data-feather="message-square" class="me-2"></i>View Parsing Dashboard
-                                        </a>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <a href="/setups/dashboard" class="btn btn-outline-success w-100 mb-2">
-                                            <i data-feather="target" class="me-2"></i>View Trade Setups
-                                        </a>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <a href="/account/dashboard" class="btn btn-outline-info w-100 mb-2">
-                                            <i data-feather="user" class="me-2"></i>Account Overview
-                                        </a>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <a href="/health" class="btn btn-outline-secondary w-100 mb-2">
-                                            <i data-feather="heart" class="me-2"></i>System Health
-                                        </a>
-                                    </div>
-                                </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body text-center">
+                                <i data-feather="message-square" class="mb-3 text-primary" style="width: 32px; height: 32px;"></i>
+                                <h6>Signal Parsing</h6>
+                                <p class="text-muted small">Monitor Discord channels for A+ trading signals</p>
+                                <a href="/dashboard/parsing/" class="btn btn-outline-primary btn-sm">
+                                    View Parsing Dashboard
+                                </a>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Parsing Tab -->
-            <div class="tab-pane fade" id="parsing" role="tabpanel">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Signal Parsing Status</h5>
-                    </div>
-                    <div class="card-body">
-                        <p>The parsing service is monitoring Discord channels for A+ trading signals.</p>
-                        <div class="d-flex gap-2">
-                            <a href="/parsing/dashboard" class="btn btn-primary">
-                                <i data-feather="external-link" class="me-2"></i>Open Parsing Dashboard
-                            </a>
-                            <a href="/parsing/api/metrics" class="btn btn-outline-secondary">
-                                <i data-feather="bar-chart" class="me-2"></i>View Metrics
-                            </a>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body text-center">
+                                <i data-feather="bar-chart-2" class="mb-3 text-success" style="width: 32px; height: 32px;"></i>
+                                <h6>Market Data</h6>
+                                <p class="text-muted small">Real-time market data and price tracking</p>
+                                <a href="/dashboard/alpaca/" class="btn btn-outline-success btn-sm">
+                                    View Market Data
+                                </a>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Setups Tab -->
-            <div class="tab-pane fade" id="setups" role="tabpanel">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Trade Setups</h5>
-                    </div>
-                    <div class="card-body">
-                        <p>View and manage your active trading setups and price levels.</p>
-                        <div class="d-flex gap-2">
-                            <a href="/setups/dashboard" class="btn btn-success">
-                                <i data-feather="external-link" class="me-2"></i>Open Setups Dashboard
-                            </a>
-                            <a href="/setups/api/active" class="btn btn-outline-secondary">
-                                <i data-feather="list" class="me-2"></i>View Active Setups
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Account Tab -->
-            <div class="tab-pane fade" id="account" role="tabpanel">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Account Information</h5>
-                    </div>
-                    <div class="card-body">
-                        <p>Manage your trading account and view portfolio information.</p>
-                        <div class="d-flex gap-2">
-                            <a href="/account/dashboard" class="btn btn-info">
-                                <i data-feather="external-link" class="me-2"></i>Open Account Dashboard
-                            </a>
-                            <a href="/alpaca/api/account" class="btn btn-outline-secondary">
-                                <i data-feather="dollar-sign" class="me-2"></i>View Balance
-                            </a>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body text-center">
+                                <i data-feather="pie-chart" class="mb-3 text-info" style="width: 32px; height: 32px;"></i>
+                                <h6>Positions</h6>
+                                <p class="text-muted small">View and manage your trading positions</p>
+                                <a href="/dashboard/positions/" class="btn btn-outline-info btn-sm">
+                                    View Positions
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Footer -->
-    <footer class="mt-5 py-4 bg-dark text-light">
-        <div class="container text-center">
-            <p class="mb-0">&copy; 2025 A+ Trading Platform. Powered by AI-driven market intelligence.</p>
+<!-- Recent Activity -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i data-feather="activity" class="me-2"></i>
+                    Recent Signals
+                </h6>
+            </div>
+            <div class="card-body">
+                <div id="recentSignals" class="text-muted">
+                    <p class="mb-0">Loading recent signals...</p>
+                </div>
+            </div>
         </div>
-    </footer>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i data-feather="trending-up" class="me-2"></i>
+                    System Health
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Discord Bot</span>
+                    <span class="status-badge status-ready">Ready</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Parsing Service</span>
+                    <span class="status-badge status-ready">Active</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Market Data</span>
+                    <span class="status-badge status-ready">Connected</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Database</span>
+                    <span class="status-badge status-ready">Online</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Initialize Feather icons
-        if (typeof feather !== 'undefined') {
-            feather.replace();
-        }
+{% block extra_scripts %}
+<script>
+// Socket.IO connection for real-time updates
+const socket = io();
 
-        // Socket.IO connection
-        const socket = io();
-        
-        socket.on('connect', function() {
-            document.getElementById('connectionStatus').className = 'status-indicator status-online';
-            document.getElementById('connectionText').textContent = 'Connected';
-            console.log('Connected to server');
+socket.on('connect', function() {
+    document.getElementById('connectionStatus').className = 'status-indicator status-online';
+    document.getElementById('connectionText').textContent = 'Connected';
+    console.log('Connected to server');
+});
+
+socket.on('disconnect', function() {
+    document.getElementById('connectionStatus').className = 'status-indicator status-offline';
+    document.getElementById('connectionText').textContent = 'Disconnected';
+    console.log('Disconnected from server');
+});
+
+socket.on('status', function(data) {
+    console.log('Status update:', data);
+});
+
+// Load dashboard metrics
+function loadDashboardMetrics() {
+    fetch('/parsing/api/metrics')
+        .then(response => response.json())
+        .then(data => {
+            if (data.parsing_stats) {
+                const activeSetups = data.parsing_stats.active_setups || 0;
+                const todaySetups = data.parsing_stats.today_setups || 0;
+                
+                document.getElementById('activeSetups').textContent = activeSetups;
+                document.getElementById('signalsToday').textContent = todaySetups;
+            }
+        })
+        .catch(error => console.log('Metrics not available:', error));
+}
+
+// Load portfolio data
+function loadPortfolioData() {
+    fetch('/alpaca/api/account')
+        .then(response => response.json())
+        .then(data => {
+            if (data.equity) {
+                const equity = parseFloat(data.equity);
+                document.getElementById('portfolioValue').textContent = '$' + equity.toLocaleString();
+            }
+        })
+        .catch(error => console.log('Portfolio data not available:', error));
+}
+
+// Load recent signals
+function loadRecentSignals() {
+    fetch('/setups/api/recent?limit=5')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('recentSignals');
+            if (data.length > 0) {
+                container.innerHTML = data.map(signal => 
+                    `<div class="border-bottom pb-2 mb-2">
+                        <strong>${signal.symbol}</strong> - ${signal.direction}
+                        <div class="text-muted small">${new Date(signal.created_at).toLocaleString()}</div>
+                    </div>`
+                ).join('');
+            } else {
+                container.innerHTML = '<p class="text-muted mb-0">No recent signals available</p>';
+            }
+        })
+        .catch(error => {
+            document.getElementById('recentSignals').innerHTML = '<p class="text-muted mb-0">Recent signals unavailable</p>';
         });
-        
-        socket.on('disconnect', function() {
-            document.getElementById('connectionStatus').className = 'status-indicator status-offline';
-            document.getElementById('connectionText').textContent = 'Disconnected';
-            console.log('Disconnected from server');
-        });
-        
-        socket.on('status', function(data) {
-            console.log('Status update:', data);
-        });
+}
 
-        // Load dashboard metrics
-        function loadDashboardMetrics() {
-            fetch('/parsing/api/metrics')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.parsing_stats) {
-                        const activeSetups = data.parsing_stats.active_setups || 0;
-                        const todaySetups = data.parsing_stats.today_setups || 0;
-                        
-                        document.querySelector('#dashboard .card-metric:nth-of-type(2)').textContent = activeSetups;
-                        document.querySelector('#dashboard .card-metric:nth-of-type(3)').textContent = todaySetups;
-                    }
-                })
-                .catch(error => console.log('Metrics not available:', error));
-        }
-
-        // Load metrics when dashboard tab is active
-        document.getElementById('dashboard-tab').addEventListener('click', loadDashboardMetrics);
-        
-        // Load metrics on page load
+// Load data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardMetrics();
+    loadPortfolioData();
+    loadRecentSignals();
+    
+    // Refresh data every 30 seconds
+    setInterval(() => {
         loadDashboardMetrics();
-    </script>
-</body>
-</html>
+        loadPortfolioData();
+        loadRecentSignals();
+    }, 30000);
+});
+</script>
+{% endblock %}
