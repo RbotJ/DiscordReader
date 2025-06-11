@@ -7,6 +7,7 @@ and validation statistics. This blueprint is isolated to the ingestion feature s
 from flask import Blueprint, render_template, jsonify, request
 from datetime import datetime, timedelta
 import logging
+from common.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ def overview():
             return render_template('ingest/overview.html',
                                  metrics=metrics,
                                  recent_messages=recent_messages,
-                                 current_time=datetime.utcnow())
+                                 current_time=utc_now())
         else:
             return render_template('ingest/error.html', 
                                  error="Ingestion service unavailable"), 500
@@ -89,7 +90,7 @@ def metrics():
             ingestion_metrics = service.get_metrics()
             return jsonify({
                 'metrics': ingestion_metrics,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()
             })
         else:
             return jsonify({'error': 'Ingestion service unavailable'}), 500
@@ -109,13 +110,13 @@ def health():
             return jsonify({
                 'healthy': is_healthy,
                 'status': metrics['status'],
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()
             }), 200 if is_healthy else 503
         else:
             return jsonify({
                 'healthy': False,
                 'status': 'unavailable',
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()
             }), 503
     except Exception as e:
         logger.error(f"Error checking ingestion health: {e}")
