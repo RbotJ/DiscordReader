@@ -45,7 +45,9 @@ def get_bot_metrics():
             'messages_processed_today': getattr(bot, '_messages_today', 0),
             'messages_per_minute': 0,  # Can be calculated if needed
             'channels_monitored': 1 if bot.aplus_setups_channel_id else 0,
-            'error_count_last_hour': 0,
+            'error_count_last_hour': getattr(bot, '_storage_errors_today', 0),
+            'storage_errors_today': getattr(bot, '_storage_errors_today', 0),
+            'last_storage_error': getattr(bot, '_last_storage_error', None),
             'last_activity': datetime.utcnow().isoformat(),
             'connection_attempts': 1,
             'successful_connections': 1 if bot.is_ready() else 0,

@@ -69,7 +69,14 @@ class MessageStore:
             
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Error inserting message {message.get('id')}: {e}")
+            message_id = message.get('id', 'unknown')
+            error_type = type(e).__name__
+            logger.error(f"Error inserting message {message_id}: {error_type}: {e}")
+            logger.error(f"Message content length: {len(str(message.get('content', '')))}")
+            logger.error(f"Raw data type: {type(message.get('raw_data', 'None'))}")
+            # Log first 200 chars of content for debugging
+            content_preview = str(message.get('content', ''))[:200] + '...' if len(str(message.get('content', ''))) > 200 else str(message.get('content', ''))
+            logger.error(f"Content preview: {content_preview}")
             return False
     
     def get_message_by_id(self, message_id: str) -> Optional[DiscordMessageModel]:

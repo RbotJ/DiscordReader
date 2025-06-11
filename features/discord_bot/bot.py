@@ -48,6 +48,8 @@ class TradingDiscordBot(discord.Client):
         # Live metrics counters (in-memory, Discord slice only)
         self._messages_today = 0
         self._triggers_today = 0
+        self._storage_errors_today = 0
+        self._last_storage_error = None
         self._last_reset_date = datetime.utcnow().date()
         self._start_time = datetime.utcnow()
 
@@ -57,6 +59,8 @@ class TradingDiscordBot(discord.Client):
         if today != self._last_reset_date:
             self._messages_today = 0
             self._triggers_today = 0
+            self._storage_errors_today = 0
+            self._last_storage_error = None
             self._last_reset_date = today
             logger.info(f"Daily metrics counters reset for {today}")
 

@@ -5,6 +5,7 @@ Database models for Discord message ingestion.
 Contains the DiscordMessageModel for storing raw Discord messages.
 """
 import logging
+import json
 from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer
@@ -13,6 +14,27 @@ from common.db import db
 from common.utils import parse_discord_timestamp, utc_now
 
 logger = logging.getLogger(__name__)
+
+
+def make_json_serializable(obj: Any) -> Any:
+    """
+    Convert objects to JSON-serializable format.
+    Handles datetime objects and other non-serializable types.
+    
+    Args:
+        obj: Object to make JSON-serializable
+        
+    Returns:
+        JSON-serializable version of the object
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: make_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(item) for item in obj]
+    else:
+        return obj
 
 
 class DiscordMessageModel(db.Model):
@@ -72,6 +94,9 @@ class DiscordMessageModel(db.Model):
             timestamp = timestamp_str or utc_now()
         
         # Create model instance (no database operations)
+        # Make raw_data JSON-serializable to prevent database errors
+        serializable_raw_data = make_json_serializable(message_data)
+        
         return cls(
             message_id=str(message_data['id']),
             channel_id=str(message_data['channel_id']),
@@ -83,7 +108,7 @@ class DiscordMessageModel(db.Model):
             has_attachments=bool(message_data.get('attachments')),
             embed_data=message_data.get('embeds'),
             attachment_data=message_data.get('attachments'),
-            raw_data=message_data
+            raw_data=serializable_raw_data
         )
     
 
