@@ -7,11 +7,12 @@ slice boundaries and service interface compliance.
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 
 from features.discord_bot.bot import TradingDiscordBot
 from features.ingestion.service import IngestionService
 from features.discord_channels.channel_manager import ChannelManager
+from common.utils import utc_now
 
 
 class TestVerticalSliceIntegration:
@@ -121,7 +122,7 @@ class TestVerticalSliceIntegration:
         valid_message.author = MagicMock()
         valid_message.author.id = "user123"
         valid_message.content = "Valid trading setup message"
-        valid_message.created_at = datetime.utcnow()
+        valid_message.created_at = utc_now()
         
         with patch.object(ingestion, 'store_discord_message', return_value=True):
             result = await ingestion.process_realtime_message(valid_message)
@@ -151,7 +152,7 @@ class TestVerticalSliceIntegration:
         mock_message.channel.id = 999888777
         mock_message.author.id = "user123"
         mock_message.content = "Test message"
-        mock_message.created_at = datetime.utcnow()
+        mock_message.created_at = utc_now()
         
         with patch('features.ingestion.service.publish_event') as mock_publish:
             with patch.object(ingestion, 'store_discord_message', return_value=True):
@@ -194,7 +195,7 @@ class TestVerticalSliceIntegration:
                 channel_id="456", 
                 author_id="789",
                 content="test",
-                created_at=datetime.utcnow(),
+                created_at=utc_now(),
                 is_setup=False,
                 processed=False,
                 embed_data={}

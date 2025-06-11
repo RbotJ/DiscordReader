@@ -5,7 +5,7 @@ Provides shared fixtures and utilities for all tests to reduce duplication
 and enable slice-safe testing with proper isolation.
 """
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from typing import Dict, Any
 
@@ -13,6 +13,7 @@ from features.discord_bot.dto import RawMessageDto
 from features.ingestion.service import IngestionService
 from features.ingestion.interfaces import IIngestionService
 from common.models import DiscordMessageDTO
+from common.utils import utc_now
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def sample_raw_message():
         author_id="abc123def",
         author_name="TestUser",
         content="Sample test message content",
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
 
 
@@ -36,10 +37,10 @@ def sample_discord_message_dto():
         channel_id="999888777", 
         author_id="abc123def",
         content="Sample test message content",
-        created_at=datetime.utcnow(),
-        is_setup=False,
-        processed=False,
-        embed_data={}
+        timestamp=utc_now(),
+        guild_id="test_guild_123",
+        author_username="TestUser",
+        channel_name="test-channel"
     )
 
 
@@ -92,7 +93,7 @@ def mock_discord_message(mock_discord_channel):
     message.author.id = "user123"
     message.author.name = "TestUser"
     message.content = "Test message content"
-    message.created_at = datetime.utcnow()
+    message.created_at = utc_now()
     return message
 
 
