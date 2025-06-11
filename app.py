@@ -267,20 +267,7 @@ def create_app():
     register_web_routes(app)
     register_socketio_events()
     
-    # Register feature dashboard blueprints
-    try:
-        from features.discord_bot.dashboard import discord_bp
-        from features.discord_channels.dashboard import channels_bp
-        from features.ingestion.dashboard import ingest_bp
-        from features.parsing.dashboard import parsing_bp
-        
-        app.register_blueprint(discord_bp)
-        app.register_blueprint(channels_bp)
-        app.register_blueprint(ingest_bp)
-        app.register_blueprint(parsing_bp)
-        logging.info("Feature dashboard blueprints registered successfully")
-    except ImportError as e:
-        logging.warning(f"Could not register dashboard blueprints: {e}")
+    # Note: Feature dashboard blueprints are already registered through register_all_blueprints
 
     return app
 

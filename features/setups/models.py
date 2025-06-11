@@ -47,7 +47,7 @@ class Signal(db.Model):
     stop_loss = Column(Numeric(10, 2), nullable=True)
     confidence = Column(Numeric(5, 2), nullable=True)
     status = Column(String(50), default=SetupStatus.ACTIVE.value)
-    metadata = Column(JSON, nullable=True)
+    signal_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -73,7 +73,7 @@ class TickerSetup(db.Model):
     confidence = Column(Numeric(5, 2), nullable=True)
     status = Column(String(50), default=SetupStatus.ACTIVE.value)
     notes = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    setup_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -108,7 +108,7 @@ class SetupMessage(db.Model):
     is_processed = Column(Boolean, default=False)
     processing_status = Column(String(50), default='pending')
     error_message = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    message_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
