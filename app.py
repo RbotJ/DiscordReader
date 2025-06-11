@@ -122,7 +122,8 @@ def start_discord_bot_background(app):
                     from features.discord_bot.bot import TradingDiscordBot
                     bot = TradingDiscordBot(
                         ingestion_service=ingestion_svc,
-                        channel_manager=channel_svc
+                        channel_manager=channel_svc,
+                        flask_app=app
                     )
                     
                     # Store bot instance in app config for API access

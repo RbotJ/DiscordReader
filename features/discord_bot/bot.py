@@ -29,7 +29,7 @@ _global_client_manager = None
 class TradingDiscordBot(discord.Client):
     """Discord bot for real-time message monitoring and channel management."""
 
-    def __init__(self, ingestion_service=None, channel_manager=None, *args, **kwargs):
+    def __init__(self, ingestion_service=None, channel_manager=None, flask_app=None, *args, **kwargs):
         logger.debug("Instantiating Bot from %s @ %s", TradingDiscordBot.__module__, __file__)
         
         intents = discord.Intents.default()
@@ -43,6 +43,7 @@ class TradingDiscordBot(discord.Client):
         self.ingestion_service = ingestion_service
         self.channel_manager = channel_manager
         self.client_manager = None
+        self.flask_app = flask_app  # Store Flask app for context
         
         # Live metrics counters (in-memory, Discord slice only)
         self._messages_today = 0
@@ -116,16 +117,23 @@ class TradingDiscordBot(discord.Client):
     async def _discover_and_sync_channels(self):
         """Use channel manager for discovery and sync operations."""
         try:
-            # Sync all channels with database
-            await self.channel_manager.sync_guild_channels(self)
+            # Use Flask app context for database operations
+            if self.flask_app:
+                with self.flask_app.app_context():
+                    # Sync all channels with database
+                    await self.channel_manager.sync_guild_channels(self)
+            else:
+                logger.warning("No Flask app context available - skipping database sync")
             
-            # Discover target channel
+            # Discover target channel (no database operations needed)
             target_name = get_channel_name()
             self.aplus_setups_channel_id = await self.channel_manager.discover_target_channel(self, target_name)
             
             if self.aplus_setups_channel_id:
-                # Mark channel for listening
-                self.channel_manager.mark_channel_for_listening(self.aplus_setups_channel_id, True)
+                # Mark channel for listening (uses database - needs context)
+                if self.flask_app:
+                    with self.flask_app.app_context():
+                        self.channel_manager.mark_channel_for_listening(self.aplus_setups_channel_id, True)
                 logger.info(f"✅ Target channel configured: {self.aplus_setups_channel_id}")
             else:
                 logger.warning("❌ Could not find target channel for ingestion")
