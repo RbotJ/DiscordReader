@@ -9,7 +9,8 @@ import asyncio
 import json
 import os
 from unittest.mock import MagicMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
+from common.utils import utc_now
 
 # Path to the module to test
 import sys
@@ -27,7 +28,7 @@ class MessageFetcherTest(unittest.TestCase):
                 'id': '123456789',
                 'author': 'TestUser#1234',
                 'content': 'Test message',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': utc_now().isoformat(),
                 'is_forwarded': False
             }
         ]

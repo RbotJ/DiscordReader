@@ -6,9 +6,10 @@ This module contains tests for the webhook API functionality.
 import unittest
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask
 from unittest.mock import patch, MagicMock
+from common.utils import utc_now
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

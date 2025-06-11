@@ -8,7 +8,8 @@ to ensure our parser can handle different styles of A+ setup messages.
 import os
 import sys
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from common.utils import utc_now
 
 # Configure logging
 logging.basicConfig(

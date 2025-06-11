@@ -7,8 +7,9 @@ import os
 import sys
 import argparse
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask
+from common.utils import utc_now
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 

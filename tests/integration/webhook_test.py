@@ -8,7 +8,8 @@ import sys
 import json
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
+from common.utils import utc_now
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
