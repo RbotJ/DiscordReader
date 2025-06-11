@@ -360,9 +360,15 @@ class TradingDiscordBot(discord.Client):
                         stored_count += 1
                     else:
                         skipped_count += 1
+                        # Track storage errors in bot metrics
+                        self._storage_errors_today += 1
+                        self._last_storage_error = f"Failed to store message {msg_data.get('id')}"
                 except Exception as e:
                     logger.error(f"Error ingesting message {msg_data.get('id')}: {e}")
                     error_count += 1
+                    # Track storage errors in bot metrics
+                    self._storage_errors_today += 1
+                    self._last_storage_error = f"Exception processing {msg_data.get('id')}: {str(e)}"
             
             statistics = {
                 'total': len(messages),

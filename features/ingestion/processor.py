@@ -104,6 +104,32 @@ class MessageProcessor:
         """
         from common.utils import ensure_utc
         
+        # Import make_json_serializable locally to avoid circular imports
+        def make_json_serializable(obj):
+            """Convert objects to JSON-serializable format."""
+            from datetime import datetime
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            elif isinstance(obj, dict):
+                return {key: make_json_serializable(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [make_json_serializable(item) for item in obj]
+            else:
+                return obj
+        
+        # Create raw_data from the DTO fields
+        raw_data = {
+            "id": message_dto.message_id,
+            "channel_id": message_dto.channel_id,
+            "author_id": message_dto.author_id,
+            "content": message_dto.content,
+            "timestamp": message_dto.timestamp.isoformat() if message_dto.timestamp else None,
+            "guild_id": getattr(message_dto, 'guild_id', None),
+            "author_username": getattr(message_dto, 'author_username', ''),
+            "embeds": getattr(message_dto, 'embeds', []),
+            "attachments": getattr(message_dto, 'attachments', [])
+        }
+        
         return {
             "id": message_dto.message_id,
             "channel_id": message_dto.channel_id,
@@ -113,7 +139,8 @@ class MessageProcessor:
             "guild_id": getattr(message_dto, 'guild_id', None),
             "author": getattr(message_dto, 'author_username', ''),
             "embeds": getattr(message_dto, 'embeds', []),
-            "attachments": getattr(message_dto, 'attachments', [])
+            "attachments": getattr(message_dto, 'attachments', []),
+            "raw_data": make_json_serializable(raw_data)  # Include raw_data with proper serialization
         }
     
     def get_processing_stats(self) -> Dict[str, Any]:
