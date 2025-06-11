@@ -134,7 +134,7 @@ def clear_data():
             return jsonify({
                 'success': True,
                 'cleared_count': cleared_count,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()
             })
         else:
             return jsonify({
