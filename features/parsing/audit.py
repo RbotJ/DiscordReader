@@ -11,7 +11,7 @@ from sqlalchemy import func, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .models import TradeSetup, ParsedLevel
-from features.discord_channels.models import DiscordMessage
+from features.ingestion.models import DiscordMessageModel
 from common.database import get_database_manager
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class ParsingAudit:
         try:
             with self.db_manager.get_session() as session:
                 # Total messages ingested
-                total_messages = session.query(DiscordMessage).count()
+                total_messages = session.query(DiscordMessageModel).count()
                 
                 # Messages that led to setups
                 messages_with_setups = session.query(func.count(func.distinct(TradeSetup.message_id))).scalar()
