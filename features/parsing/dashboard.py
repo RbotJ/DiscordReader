@@ -75,6 +75,17 @@ def metrics():
         return jsonify({'error': str(e)}), 500
 
 
+@parsing_bp.route('/audit.json')
+def audit_json():
+    """Get comprehensive parsing audit data as JSON."""
+    try:
+        audit = get_parsing_audit()
+        audit_report = audit.get_comprehensive_audit_report()
+        return jsonify(audit_report)
+    except Exception as e:
+        logger.error(f"Error getting parsing audit data: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 @parsing_bp.route('/setups.json')
 def setups_json():
