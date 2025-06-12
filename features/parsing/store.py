@@ -61,19 +61,8 @@ class ParsingStore:
                 logger.info(f"Processing {len(aplus_setups)} A+ setups for message {message_id}")
                 for i, setup_dto in enumerate(aplus_setups):
                     logger.info(f"Processing setup {i+1}/{len(aplus_setups)}: {setup_dto.ticker} {setup_dto.profile_name}")
-                    
-                    # Check for existing setup to prevent duplicates
-                    existing = self.session.query(TradeSetup).filter_by(
-                        message_id=message_id,
-                        ticker=setup_dto.ticker,
-                        trading_day=trading_day,
-                        setup_type=setup_dto.setup_type,
-                        profile_name=setup_dto.profile_name
-                    ).first()
-                    
-                    if existing:
-                        logger.info(f"Skipping duplicate setup for {setup_dto.ticker} {setup_dto.profile_name} on {trading_day} from message {message_id}")
-                        continue
+                    # Remove duplicate check to allow multiple setups per ticker per message
+                    # Each individual setup line should create its own trade setup entry
                     
                     try:
                         # Create new enhanced setup with profile name and trigger level

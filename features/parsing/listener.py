@@ -312,9 +312,6 @@ class ParsingListener:
             all_levels = parse_result['levels']
             trading_date = parse_result.get('trading_day')
             
-            # Enhanced logging for trading day extraction debugging
-            logger.debug(f"Message {message_id}: Initial trading_day from parser = {trading_date}")
-            
             # If parser didn't extract trading date, try A+ parser or fallback
             if not trading_date:
                 content = message_data.get('content', '')
@@ -329,10 +326,6 @@ class ParsingListener:
                 # Fallback to message timestamp or today
                 if not trading_date:
                     trading_date = self._extract_trading_day(message_data)
-                    logger.debug(f"Message {message_id}: Fallback trading_day = {trading_date}")
-                    
-                    if not trading_date:
-                        logger.warning(f"Message {message_id}: No trading day found - parser failed and fallback failed for timestamp {message_data.get('timestamp')}")
             
             # Group levels by ticker
             levels_by_ticker = {}

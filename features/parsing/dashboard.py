@@ -12,7 +12,6 @@ from common.utils import utc_now
 from .service import get_parsing_service
 from .store import get_parsing_store
 from .events import trigger_backlog_parsing
-from .audit import get_parsing_audit
 
 logger = logging.getLogger(__name__)
 
@@ -74,17 +73,6 @@ def metrics():
         logger.error(f"Error getting parsing metrics: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-@parsing_bp.route('/audit.json')
-def audit_json():
-    """Get comprehensive parsing audit data as JSON."""
-    try:
-        audit = get_parsing_audit()
-        audit_report = audit.get_comprehensive_audit_report()
-        return jsonify(audit_report)
-    except Exception as e:
-        logger.error(f"Error getting parsing audit data: {e}")
-        return jsonify({'error': str(e)}), 500
 
 
 @parsing_bp.route('/setups.json')
