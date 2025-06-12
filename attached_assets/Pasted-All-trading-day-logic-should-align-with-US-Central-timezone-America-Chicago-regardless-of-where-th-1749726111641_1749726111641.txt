@@ -1,0 +1,164 @@
+All trading-day logic should align with US/Central timezone (America/Chicago) regardless of where the server runs (UTC or otherwise).
+
+🛠 Fix: Centralize Trading Day Resolution
+1. Create a Utility Function
+Move this into /common/utils/timezone.py or a shared module:
+
+python
+Copy
+Edit
+from datetime import datetime
+from pytz import timezone, UTC
+
+def get_central_trading_day(dt: datetime = None) -> datetime.date:
+    """Return the current trading day in Central Time"""
+    central = timezone("America/Chicago")
+    dt = dt or datetime.now(tz=UTC)
+    return dt.astimezone(central).date()
+You can optionally cache this value once per session with:
+
+python
+Copy
+Edit
+TODAY_TRADING_DAY = get_central_trading_day()
+2. Fix store.py references
+Update both lines in get_parsing_statistics() and get_audit_anomalies():
+
+python
+Copy
+Edit
+from common.utils.timezone import get_central_trading_day
+
+today = get_central_trading_day()
+today_setups = self.session.query(TradeSetup).filter_by(trading_day=today).count()
+and:
+
+python
+Copy
+Edit
+today = get_central_trading_day()
+today_setups = self.session.query(TradeSetup).filter(
+    TradeSetup.active == True,
+    TradeSetup.trading_day == today
+).count()
+✅ Bonus: Improvements You Should Consider
+🔄 Backfill/Validation Fix
+ Audit historical setups to confirm their trading_day field matches Central time, not UTC or local server time.
+
+ If corrupted, run a one-time script to fix trading days using:
+
+python
+Copy
+Edit
+for setup in session.query(TradeSetup).all():
+    if setup.timestamp:
+        setup.trading_day = get_central_trading_day(setup.timestamp)
+session.commit()
+📅 Weekend Setup Logic
+ Add a check:
+
+python
+Copy
+Edit
+def is_trading_day(dt: datetime = None) -> bool:
+    day = get_central_trading_day(dt).weekday()
+    return day < 5  # Monday=0, Sunday=6
+Use this when validating setups or emitting parsing metrics:
+
+python
+Copy
+Edit
+if not is_trading_day():
+    logger.warning("Attempted to parse setups on a weekend trading day.")
+🧪 Testing Utilities
+ Add test coverage to confirm that:
+
+UTC 2025-06-12T01:30:00Z maps to June 11 trading day
+
+Setup audit logic works across DST boundaries
+
+🧠 Future-Proofing Ideas
+Idea	Benefit
+Store both created_at (UTC) and trading_day (Central date)	Improves analytics granularity
+Add trading_day to logs / audit trails	Easy debugging of parsing activity
+Add tz_convert() Jinja filter for consistent date display	Better UI UX
+
+✅ Summary of Action Plan
+Fix Type	Action
+Logic Bug	Replace date.today() with get_central_trading_day()
+Utility	Create a shared get_central_trading_day() helper
+Validation	Audit and fix historical trading_day mismatches
+UX/UI Safety	Consider is_trading_day() for safe scheduling
+Metrics	Use trading day consistently in all dashboards and analytics
+
+Would you like help implementing a backfill_trading_day() script to run as a one-time fix for past records?
+
+
+
+
+
+
+You said:
+This seems a bit contrary to what we discussed earlier (database use UTC, only front end convert to local time)
+
+
+ChatGPT said:
+Excellent observation—and you're absolutely right to call that out.
+
+Let's clarify why this is not contradictory, and how trading_day fits into your UTC/Local separation model:
+
+🧭 Quick Recap: UTC vs Local Best Practice
+Layer	Field	Timezone	Why
+DB	created_at, timestamp	UTC (timezone-aware)	Standard for sorting, joining, audit logging
+UI	Display values	Convert to local (America/Chicago)	Human-readable timestamps
+Business Logic	trading_day	Local Date (e.g. Central)	Market rules follow U.S. exchange calendar
+
+🧠 Key Concept: trading_day ≠ timestamp.date()
+Your timestamp is UTC-accurate.
+Your trading_day is business logic, defined as:
+
+“The local calendar day the trade setup applies to, based on U.S. Central time.”
+
+That means trading_day should always be a Central Date—even though the underlying timestamp is stored in UTC.
+
+This is analogous to:
+
+A NYSE trade happening at 2025-06-12T01:00:00Z (UTC)
+
+But still counted as part of the June 11 trading session, because in America/Chicago it's still June 11
+
+✅ So Why is get_central_trading_day() Necessary?
+Because logic like:
+
+python
+Copy
+Edit
+today = date.today()  # ← uses server UTC clock
+Will break things on early mornings or late evenings, when your users are still in yesterday's trading day.
+
+✅ Recommended Schema Handling
+Field	Description	Type	Example
+timestamp	Raw ingestion time (UTC)	timestamptz	2025-06-12T01:00:00+00:00
+trading_day	Trading calendar day in Central Time	date (not datetime)	2025-06-11
+
+Compute trading_day at ingestion or parsing time, based on the Central time conversion of timestamp
+
+🧩 Example: Correct Parsing Logic
+python
+Copy
+Edit
+from common.utils.timezone import get_central_trading_day
+
+trade_setup.timestamp = msg.created_at.astimezone(timezone.utc)
+trade_setup.trading_day = get_central_trading_day(msg.created_at)
+And display remains unchanged—you're still converting timestamp for UI, while treating trading_day as a business-aligned Central-based date.
+
+✅ Summary: No Contradiction
+Principle	Applied Correctly?
+Store all datetime in UTC?	✅ Yes (timestamp)
+Convert for human display only?	✅ Yes (timestamp → UI)
+Business rules based on local day?	✅ Also correct (trading_day)
+
+trading_day is not a raw timestamp, but a derived label used for parsing, aggregation, scheduling, and filtering based on trading sessions.
+
+Would you like a schema validator or migration check that ensures trading_day == get_central_trading_day(timestamp) for all records?

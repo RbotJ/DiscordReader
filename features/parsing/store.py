@@ -341,14 +341,16 @@ class ParsingStore:
     def get_parsing_statistics(self) -> Dict[str, Any]:
         """Get statistics about parsed data."""
         try:
+            from common.timezone import get_central_trading_day
+            
             total_setups = self.session.query(TradeSetup).count()
             active_setups = self.session.query(TradeSetup).filter_by(active=True).count()
             total_levels = self.session.query(ParsedLevel).count()
             active_levels = self.session.query(ParsedLevel).filter_by(active=True, triggered=False).count()
             triggered_levels = self.session.query(ParsedLevel).filter_by(triggered=True).count()
             
-            # Today's stats
-            today = date.today()
+            # Today's stats - use Central Time trading day
+            today = get_central_trading_day()
             today_setups = self.session.query(TradeSetup).filter_by(trading_day=today).count()
             today_active_setups = self.session.query(TradeSetup).filter_by(
                 trading_day=today, active=True
@@ -372,6 +374,8 @@ class ParsingStore:
     def get_audit_anomalies(self) -> Dict[str, Any]:
         """Get audit data for anomalies in trade setup dates and data quality."""
         try:
+            from common.timezone import get_central_trading_day
+            
             # Find setups on non-trading days (weekends)
             weekend_setups = []
             all_setups = self.session.query(TradeSetup).filter_by(active=True).all()
@@ -388,8 +392,8 @@ class ParsingStore:
                         'profile_name': setup.profile_name
                     })
             
-            # Find dates that appear to be current date (possible parsing failures)
-            today = date.today()
+            # Find dates that appear to be current date (possible parsing failures) - use Central Time
+            today = get_central_trading_day()
             today_setups = self.session.query(TradeSetup).filter(
                 TradeSetup.active == True,
                 TradeSetup.trading_day == today
@@ -412,16 +416,17 @@ class ParsingStore:
                     {'message_id': msg_id, 'setup_count': count} 
                     for msg_id, count in duplicate_messages
                 ],
-                'audit_timestamp': date.today().isoformat()
+                'audit_timestamp': get_central_trading_day().isoformat()
             }
         except SQLAlchemyError as e:
             logger.error(f"Error getting audit anomalies: {e}")
+            from common.timezone import get_central_trading_day
             return {
                 'weekend_setups': [],
                 'weekend_count': 0,
                 'today_setups_count': 0,
                 'duplicate_messages': [],
-                'audit_timestamp': date.today().isoformat()
+                'audit_timestamp': get_central_trading_day().isoformat()
             }
 
     def get_available_trading_days(self, limit=30):
