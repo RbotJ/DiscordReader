@@ -12,6 +12,7 @@ from common.utils import utc_now
 from .service import get_parsing_service
 from .store import get_parsing_store
 from .events import trigger_backlog_parsing
+from .audit import get_parsing_audit
 
 logger = logging.getLogger(__name__)
 

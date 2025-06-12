@@ -1,0 +1,50 @@
+🧠 Issue 1: Multiple Message IDs per Trading Day
+Expected: One message per trading day
+Observed: Multiple messages linked to the same trading_day
+
+Potential Causes:
+A+ Parser Pass-Through: You're not enforcing a unique constraint at the DB or parser level. If the same trading_day is extracted multiple times (e.g. "Thursday May 29" in reused headers), it will associate each message with that date.
+
+Fallback to Timestamp: If _extract_trading_day() fails and fallback logic kicks in using the message timestamp, you may end up with trading days that are:
+
+Repeated for messages sent within the same calendar day (even hours apart).
+
+Pulled from incorrect timezones (if your get_trading_day() isn’t TZ-aware).
+
+🧠 Issue 2: Only 3 Unique Trading Days Found Despite 15+ Messages
+Expected: One unique trading_day per message, assuming 1 per day
+Observed: Setup records only exist for 3 unique dates
+
+Potential Causes:
+Missing Trading Day Match: _extract_trading_day() fails if the date string doesn’t match the exact “Thursday May 29” format. If messages lack this, they fall back to timestamp parsing.
+
+Fallback Failure: If the fallback get_trading_day() isn't accurate or isn’t run (e.g. due to missing timestamp field or exception raised), trading_day ends up None.
+
+Filtering in Store Layer: Even if the parser returns trading_day, the DB write logic may:
+
+Skip storing parsed setups if trading_day is None
+
+Overwrite or deduplicate setups unintentionally
+
+✅ Parser Audit Enhancements
+To debug and future-proof, I recommend:
+
+1. Add Logging + Metrics in parse_message_to_setups()
+Count how often _extract_trading_day() succeeds
+
+Log fallback usage and result
+
+Track how many parsed setups return trading_day = None
+
+python
+Copy
+Edit
+if not trading_day:
+    logger.warning(f"No trading day found for message {message_id}")
+2. New Audit: Message Count by Trading Day
+sql
+Copy
+Edit
+SELECT trading_day, COUNT(DISTINCT message_id) FROM trade_setups GROUP BY trading_day ORDER BY trading_day DESC;
+3. New Audit: Messages Without Associated Setups
+Compare count of messages in discord_messages vs trade_setups joined on message_id.

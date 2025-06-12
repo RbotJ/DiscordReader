@@ -1,0 +1,77 @@
+✅ Proposed Fixes & Enhancements
+1. 🕐 Fix Fallback Timezone Logic
+Update the default tz_name in get_trading_day() to Central Time:
+
+python
+Copy
+Edit
+# common/utils.py
+def get_trading_day(ts: datetime, tz_name: str = "America/Chicago") -> date:
+If needed, make the timezone configurable via env or constants module to avoid hardcoding.
+
+2. 🧼 Add Pre-store Deduplication in store.py
+You can add a check like:
+
+python
+Copy
+Edit
+# store.py
+existing = session.query(TradeSetup).filter_by(
+    message_id=parsed['message_id'],
+    ticker=setup.ticker,
+    trading_day=parsed['trading_day']
+).first()
+
+if existing:
+    logger.info(f"Skipping duplicate setup for {setup.ticker} on {parsed['trading_day']}")
+    continue  # Skip to next
+Or log and overwrite if updates are desired.
+
+3. 📊 Add Audits to Track Parsing Completeness
+Audit A: Setup Coverage vs Message Count
+sql
+Copy
+Edit
+SELECT COUNT(*) FROM discord_messages;  -- Total messages ingested
+SELECT COUNT(DISTINCT message_id) FROM trade_setups;  -- Messages that led to setups
+Audit B: Setups per Trading Day
+sql
+Copy
+Edit
+SELECT trading_day, COUNT(*) 
+FROM trade_setups 
+GROUP BY trading_day 
+ORDER BY trading_day DESC;
+Audit C: Setups Missing Trading Day
+sql
+Copy
+Edit
+SELECT COUNT(*) FROM trade_setups WHERE trading_day IS NULL;
+4. 🧪 Add Parser Debug Logging
+Inside parse_message_to_setups():
+
+python
+Copy
+Edit
+logger.debug(f"Message {message_id}: Extracted trading_day = {trading_day}")
+if not trading_day:
+    logger.warning(f"Fallback failed to extract trading_day from timestamp {raw_message.get('timestamp')}")
+5. (Optional) 🔐 Enforce DB-Level Uniqueness
+You could add a partial unique index to prevent future duplicates:
+
+sql
+Copy
+Edit
+CREATE UNIQUE INDEX uq_setup_message_ticker_day 
+ON trade_setups (message_id, ticker, trading_day) 
+WHERE trading_day IS NOT NULL;
+📦 Next Steps
+Would you like me to:
+
+Draft the updated store.py deduplication logic?
+
+Refactor your get_trading_day() fallback logic to default to Central Time?
+
+Add a CLI script or dashboard function to run these audits interactively?
+
+Let me know what you'd like to implement next, and I can generate the code directly.

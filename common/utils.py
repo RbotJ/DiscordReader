@@ -57,13 +57,13 @@ def to_local(dt: datetime, tz_name: str = "America/Chicago") -> datetime:
     return utc_dt.astimezone(local_tz)
 
 
-def get_trading_day(ts: datetime, tz_name: str = "America/New_York") -> date:
+def get_trading_day(ts: datetime, tz_name: str = "America/Chicago") -> date:
     """
     Get the trading day for a given timestamp.
     
     Args:
         ts: Input timestamp
-        tz_name: Trading timezone (default: America/New_York for NYSE)
+        tz_name: Trading timezone (default: America/Chicago for Central Time)
         
     Returns:
         date: Trading day in the specified timezone
