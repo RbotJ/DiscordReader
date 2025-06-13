@@ -363,10 +363,11 @@ class ParsingStore:
             return False
     
     def get_parsing_statistics(self) -> Dict[str, Any]:
-        """Get statistics about parsed data."""
+        """Get comprehensive statistics about parsed data and processing effectiveness."""
         try:
             from common.timezone import get_central_trading_day
             
+            # Basic setup and level stats
             total_setups = self.session.query(TradeSetup).count()
             active_setups = self.session.query(TradeSetup).filter_by(active=True).count()
             total_levels = self.session.query(ParsedLevel).count()
@@ -380,6 +381,39 @@ class ParsingStore:
                 trading_day=today, active=True
             ).count()
             
+            # Message processing effectiveness
+            total_discord_messages = self.session.execute(text("SELECT COUNT(*) FROM discord_messages")).scalar()
+            unique_parsed_messages = self.session.query(TradeSetup.message_id).distinct().count()
+            
+            # Duplicate detection
+            duplicate_query = text("""
+                SELECT COUNT(*) as duplicate_count
+                FROM (
+                    SELECT message_id, ticker, trading_day, COUNT(*) as cnt
+                    FROM trade_setups 
+                    GROUP BY message_id, ticker, trading_day 
+                    HAVING COUNT(*) > 1
+                ) as duplicates
+            """)
+            duplicate_count = self.session.execute(duplicate_query).scalar() or 0
+            
+            # Trading day distribution
+            trading_day_query = text("""
+                SELECT trading_day, COUNT(*) as setup_count
+                FROM trade_setups 
+                WHERE trading_day IS NOT NULL
+                GROUP BY trading_day 
+                ORDER BY trading_day DESC 
+                LIMIT 10
+            """)
+            trading_day_distribution = [
+                {'trading_day': row[0].isoformat() if row[0] else None, 'setup_count': row[1]}
+                for row in self.session.execute(trading_day_query).fetchall()
+            ]
+            
+            # Calculate processing rate
+            processing_rate = (unique_parsed_messages / total_discord_messages * 100) if total_discord_messages > 0 else 0
+            
             return {
                 'total_setups': total_setups,
                 'active_setups': active_setups,
@@ -388,12 +422,101 @@ class ParsingStore:
                 'triggered_levels': triggered_levels,
                 'today_setups': today_setups,
                 'today_active_setups': today_active_setups,
-                'setup_activation_rate': round((active_setups / total_setups * 100), 2) if total_setups > 0 else 0,
-                'level_trigger_rate': round((triggered_levels / total_levels * 100), 2) if total_levels > 0 else 0
+                'total_discord_messages': total_discord_messages,
+                'unique_parsed_messages': unique_parsed_messages,
+                'processing_rate': round(processing_rate, 2),
+                'duplicate_count': duplicate_count,
+                'trading_day_distribution': trading_day_distribution,
+                'data_quality': {
+                    'messages_with_setups': unique_parsed_messages,
+                    'messages_without_setups': total_discord_messages - unique_parsed_messages,
+                    'has_duplicates': duplicate_count > 0,
+                    'duplicate_groups': duplicate_count
+                }
             }
-        except SQLAlchemyError as e:
+        except Exception as e:
             logger.error(f"Error getting parsing statistics: {e}")
-            return {}
+            return {
+                'error': str(e),
+                'total_setups': 0,
+                'active_setups': 0,
+                'processing_rate': 0
+            }
+    
+    def cleanup_duplicate_setups(self, dry_run: bool = True) -> Dict[str, Any]:
+        """
+        Clean up duplicate trade setups, keeping the first occurrence of each duplicate group.
+        
+        Args:
+            dry_run: If True, only count duplicates without deleting
+            
+        Returns:
+            Dict with cleanup results
+        """
+        try:
+            # Find duplicate groups
+            duplicate_query = text("""
+                SELECT message_id, ticker, trading_day, COUNT(*) as duplicate_count, 
+                       array_agg(id ORDER BY created_at ASC) as setup_ids
+                FROM trade_setups 
+                GROUP BY message_id, ticker, trading_day 
+                HAVING COUNT(*) > 1
+                ORDER BY duplicate_count DESC
+            """)
+            
+            duplicate_groups = self.session.execute(duplicate_query).fetchall()
+            
+            if dry_run:
+                total_duplicates = sum(row[3] - 1 for row in duplicate_groups)  # -1 because we keep first one
+                return {
+                    'dry_run': True,
+                    'duplicate_groups_found': len(duplicate_groups),
+                    'total_duplicates_to_remove': total_duplicates,
+                    'groups': [
+                        {
+                            'message_id': row[0],
+                            'ticker': row[1], 
+                            'trading_day': row[2].isoformat() if row[2] else None,
+                            'duplicate_count': row[3],
+                            'setup_ids': row[4]
+                        }
+                        for row in duplicate_groups
+                    ]
+                }
+            
+            # Actually remove duplicates
+            removed_count = 0
+            for row in duplicate_groups:
+                setup_ids = row[4]
+                # Keep first setup, remove the rest
+                ids_to_remove = setup_ids[1:]  # Skip first ID
+                
+                for setup_id in ids_to_remove:
+                    # First remove associated levels
+                    self.session.execute(text("DELETE FROM parsed_levels WHERE setup_id = :setup_id"), 
+                                       {'setup_id': setup_id})
+                    # Then remove the setup
+                    self.session.execute(text("DELETE FROM trade_setups WHERE id = :setup_id"), 
+                                       {'setup_id': setup_id})
+                    removed_count += 1
+            
+            self.session.commit()
+            logger.info(f"Cleanup complete: removed {removed_count} duplicate setups")
+            
+            return {
+                'dry_run': False,
+                'duplicate_groups_processed': len(duplicate_groups),
+                'setups_removed': removed_count,
+                'success': True
+            }
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error during duplicate cleanup: {e}")
+            return {
+                'error': str(e),
+                'success': False
+            }
 
     def get_audit_anomalies(self) -> Dict[str, Any]:
         """Get audit data for anomalies in trade setup dates and data quality."""
@@ -425,26 +548,36 @@ class ParsingStore:
             
             # Find duplicate message processing
             from sqlalchemy import func
+            
             duplicate_messages = self.session.query(
                 TradeSetup.message_id,
                 func.count(TradeSetup.id).label('setup_count')
-            ).filter_by(active=True).group_by(TradeSetup.message_id).having(
-                func.count(TradeSetup.id) > 20  # Flag messages with unusually high setup counts
+            ).group_by(TradeSetup.message_id).having(
+                func.count(TradeSetup.id) > 5  # More than 5 setups per message seems unusual
             ).all()
             
             return {
                 'weekend_setups': weekend_setups,
-                'weekend_count': len(weekend_setups),
-                'today_setups_count': today_setups,
-                'duplicate_messages': [
-                    {'message_id': msg_id, 'setup_count': count} 
-                    for msg_id, count in duplicate_messages
+                'weekend_setup_count': len(weekend_setups),
+                'today_setup_count': today_setups,
+                'suspicious_messages': [
+                    {'message_id': msg[0], 'setup_count': msg[1]} 
+                    for msg in duplicate_messages
                 ],
-                'audit_timestamp': get_central_trading_day().isoformat()
+                'anomaly_summary': {
+                    'has_weekend_trading': len(weekend_setups) > 0,
+                    'has_suspicious_volume': len(duplicate_messages) > 0,
+                    'today_is_trading_day': today.weekday() < 5  # Monday=0 to Friday=4
+                }
             }
-        except SQLAlchemyError as e:
+            
+        except Exception as e:
             logger.error(f"Error getting audit anomalies: {e}")
-            from common.timezone import get_central_trading_day
+            return {
+                'error': str(e),
+                'weekend_setups': [],
+                'weekend_setup_count': 0
+            }
             return {
                 'weekend_setups': [],
                 'weekend_count': 0,
