@@ -61,8 +61,20 @@ class ParsingStore:
                 logger.info(f"Processing {len(aplus_setups)} A+ setups for message {message_id}")
                 for i, setup_dto in enumerate(aplus_setups):
                     logger.info(f"Processing setup {i+1}/{len(aplus_setups)}: {setup_dto.ticker} {setup_dto.profile_name}")
-                    # Remove duplicate check to allow multiple setups per ticker per message
-                    # Each individual setup line should create its own trade setup entry
+                    logger.debug(f"Message {message_id}: Extracted trading_day = {trading_day}")
+                    
+                    # Check for existing setup to prevent duplicates
+                    existing = self.session.query(TradeSetup).filter_by(
+                        message_id=message_id,
+                        ticker=setup_dto.ticker.upper(),
+                        trading_day=trading_day,
+                        profile_name=setup_dto.profile_name,
+                        trigger_level=setup_dto.trigger_level
+                    ).first()
+                    
+                    if existing:
+                        logger.info(f"Skipping duplicate setup for {setup_dto.ticker} {setup_dto.profile_name} on {trading_day}")
+                        continue
                     
                     try:
                         # Create new enhanced setup with profile name and trigger level
@@ -120,7 +132,19 @@ class ParsingStore:
             # Process standard setups if provided
             elif setups:
                 for setup_dto in setups:
-                    # Allow multiple setups per ticker per message
+                    logger.debug(f"Message {message_id}: Extracted trading_day = {trading_day}")
+                    
+                    # Check for existing setup to prevent duplicates
+                    existing = self.session.query(TradeSetup).filter_by(
+                        message_id=message_id,
+                        ticker=setup_dto.ticker.upper(),
+                        trading_day=trading_day,
+                        setup_type=setup_dto.setup_type
+                    ).first()
+                    
+                    if existing:
+                        logger.info(f"Skipping duplicate setup for {setup_dto.ticker} {setup_dto.setup_type} on {trading_day}")
+                        continue
                     
                     # Create new standard setup
                     new_setup = TradeSetup()

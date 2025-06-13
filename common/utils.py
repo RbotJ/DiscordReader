@@ -17,7 +17,7 @@ EASTERN = timezone("US/Eastern")
 UTC_TZ = UTC
 
 
-def ensure_utc(dt: datetime) -> datetime:
+def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     """
     Ensure datetime is timezone-aware in UTC.
     
@@ -38,7 +38,7 @@ def ensure_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
-def to_local(dt: datetime, tz_name: str = "America/Chicago") -> datetime:
+def to_local(dt: Optional[datetime], tz_name: str = "America/Chicago") -> Optional[datetime]:
     """
     Convert UTC datetime to local timezone.
     
@@ -53,17 +53,19 @@ def to_local(dt: datetime, tz_name: str = "America/Chicago") -> datetime:
         return None
         
     utc_dt = ensure_utc(dt)
+    if utc_dt is None:
+        return None
     local_tz = timezone(tz_name)
     return utc_dt.astimezone(local_tz)
 
 
-def get_trading_day(ts: datetime, tz_name: str = "America/New_York") -> date:
+def get_trading_day(ts: Optional[datetime], tz_name: str = "America/Chicago") -> Optional[date]:
     """
     Get the trading day for a given timestamp.
     
     Args:
         ts: Input timestamp
-        tz_name: Trading timezone (default: America/New_York for NYSE)
+        tz_name: Trading timezone (default: America/Chicago for Central Time)
         
     Returns:
         date: Trading day in the specified timezone
@@ -72,10 +74,12 @@ def get_trading_day(ts: datetime, tz_name: str = "America/New_York") -> date:
         return None
         
     local_dt = to_local(ts, tz_name)
+    if local_dt is None:
+        return None
     return local_dt.date()
 
 
-def format_timestamp_local(dt: datetime, tz_name: str = "America/Chicago", 
+def format_timestamp_local(dt: Optional[datetime], tz_name: str = "America/Chicago", 
                           include_seconds: bool = False) -> str:
     """
     Format datetime for local display.
@@ -92,6 +96,8 @@ def format_timestamp_local(dt: datetime, tz_name: str = "America/Chicago",
         return "N/A"
         
     local_dt = to_local(dt, tz_name)
+    if local_dt is None:
+        return "N/A"
     
     if include_seconds:
         return local_dt.strftime('%b %d, %Y %I:%M:%S %p %Z')
