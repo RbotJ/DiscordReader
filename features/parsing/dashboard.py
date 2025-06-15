@@ -44,7 +44,7 @@ def overview():
             
             logger.info(f"Parsing metrics: {metrics}")
             logger.info(f"Metrics type: {type(metrics)}")
-            logger.info(f"Audit anomalies found: {audit_data.get('weekend_count', 0)} weekend setups")
+            logger.info(f"Audit anomalies found: {audit_data.get('weekend_setup_count', 0)} weekend setups")
             
             return render_template('parsing/overview.html',
                                  metrics=metrics,
