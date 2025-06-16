@@ -148,11 +148,11 @@
                                 <tr>
                                     <th>ID</th>
                                     <th>Ticker</th>
-                                    <th>Setup Type</th>
+                                    <th>Label</th>
                                     <th>Direction</th>
-                                    <th>Price Target</th>
+                                    <th>Index</th>
+                                    <th>Trigger</th>
                                     <th>Confidence</th>
-                                    <th>Source</th>
                                     <th>Status</th>
                                     <th>Created</th>
                                 </tr>
@@ -162,25 +162,29 @@
                                 <tr>
                                     <td>{{ setup.id }}</td>
                                     <td><strong>{{ setup.ticker }}</strong></td>
-                                    <td>{{ setup.setup_type }}</td>
+                                    <td>{{ setup.label or 'N/A' }}</td>
                                     <td>
                                         <span class="{% if setup.direction == 'long' %}direction-long{% else %}direction-short{% endif %}">
-                                            {{ setup.direction|upper }}
+                                            {{ 'LONG' if setup.direction == 'long' else 'SHORT' if setup.direction == 'short' else (setup.direction|upper if setup.direction else 'N/A') }}
                                         </span>
                                     </td>
+                                    <td>{{ setup.index if setup.index is not none else 'N/A' }}</td>
                                     <td>
-                                        {% if setup.price_target %}
-                                            ${{ "%.2f"|format(setup.price_target) }}
+                                        {% if setup.trigger_level %}
+                                            ${{ "%.2f"|format(setup.trigger_level) }}
                                         {% else %}
                                             -
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="{% if setup.confidence >= 0.7 %}confidence-high{% elif setup.confidence >= 0.4 %}confidence-medium{% else %}confidence-low{% endif %}">
-                                            {{ "%.1f"|format(setup.confidence * 100) }}%
-                                        </span>
+                                        {% if setup.confidence_score %}
+                                            <span class="{% if setup.confidence_score >= 0.7 %}confidence-high{% elif setup.confidence_score >= 0.4 %}confidence-medium{% else %}confidence-low{% endif %}">
+                                                {{ "%.1f"|format(setup.confidence_score * 100) }}%
+                                            </span>
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
                                     </td>
-                                    <td>{{ setup.source }}</td>
                                     <td>
                                         {% if setup.active %}
                                             <span class="badge bg-success">Active</span>
@@ -217,9 +221,9 @@
                                 </div>
                                 <p class="mb-1">
                                     <span class="{% if ticker.direction == 'long' %}direction-long{% else %}direction-short{% endif %}">
-                                        {{ ticker.direction|upper }}
+                                        {{ 'LONG' if ticker.direction == 'long' else 'SHORT' if ticker.direction == 'short' else (ticker.direction|upper if ticker.direction else 'N/A') }}
                                     </span>
-                                    {{ ticker.setup_type }}
+                                    {{ ticker.label or 'N/A' }}
                                 </p>
                                 {% if ticker.watch_level %}
                                 <p class="mb-1">
