@@ -280,6 +280,7 @@ class ParsingStore:
         """Get comprehensive statistics about parsed data and processing effectiveness."""
         try:
             from common.timezone import get_central_trading_day
+            from collections import Counter
             
             # Basic setup and level stats
             total_setups = self.session.query(TradeSetup).count()
@@ -294,6 +295,18 @@ class ParsingStore:
             today_active_setups = self.session.query(TradeSetup).filter_by(
                 trading_day=today, active=True
             ).count()
+            
+            # Enhanced metrics using new field mappings
+            active_setups_query = self.session.query(TradeSetup).filter_by(active=True).all()
+            
+            # Metrics by setup.label
+            setups_by_label = Counter(s.label for s in active_setups_query if s.label)
+            
+            # Metrics by setup.direction 
+            direction_split = Counter(s.direction for s in active_setups_query if s.direction)
+            
+            # Count by setup.index (unique setups per message)
+            setup_index_distribution = Counter(s.index for s in active_setups_query if s.index is not None)
             
             # Message processing effectiveness
             total_discord_messages = self.session.execute(text("SELECT COUNT(*) FROM discord_messages")).scalar()
@@ -341,6 +354,10 @@ class ParsingStore:
                 'processing_rate': round(processing_rate, 2),
                 'duplicate_count': duplicate_count,
                 'trading_day_distribution': trading_day_distribution,
+                # Enhanced metrics using new field mappings
+                'setups_by_label': dict(setups_by_label),
+                'direction_split': dict(direction_split),
+                'setup_index_distribution': dict(setup_index_distribution),
                 'data_quality': {
                     'messages_with_setups': unique_parsed_messages,
                     'messages_without_setups': total_discord_messages - unique_parsed_messages,

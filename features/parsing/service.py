@@ -108,15 +108,16 @@ class ParsingService:
                 else:
                     logger.info(f"Using extracted trading date: {trading_day}")
             
-            # Store the parsed setups with enhanced schema
-            aplus_setups = parsed_data.get('setups', [])
-            if aplus_setups:
+            # Store the parsed setups using new TradeSetup dataclass
+            parsed_setups = parsed_data.get('setups', [])
+            ticker_bias_notes = parsed_data.get('ticker_bias_notes', {})
+            
+            if parsed_setups:
                 created_setups, created_levels = self.store.store_parsed_message(
                     message_id=message_id,
-                    setups=[],  # Empty for standard setups
-                    levels_by_setup={},  # Empty for standard levels
+                    parsed_setups=parsed_setups,  # New TradeSetup dataclass instances
                     trading_day=trading_day,
-                    aplus_setups=aplus_setups  # Enhanced A+ setups with profile names
+                    ticker_bias_notes=ticker_bias_notes
                 )
                 
                 logger.info(f"Stored {len(created_setups)} A+ setups and {len(created_levels)} levels from message {message_id}")
@@ -129,9 +130,10 @@ class ParsingService:
                     'setups_created': len(created_setups),
                     'levels_created': len(created_levels),
                     'enhanced_features': {
-                        'profile_names': [setup.profile_name for setup in created_setups if hasattr(setup, 'profile_name')],
+                        'labels': [setup.label for setup in created_setups if hasattr(setup, 'label') and setup.label],
                         'trigger_levels': [float(setup.trigger_level) for setup in created_setups if hasattr(setup, 'trigger_level') and setup.trigger_level],
-                        'entry_conditions': [setup.entry_condition for setup in created_setups if hasattr(setup, 'entry_condition')]
+                        'directions': [setup.direction for setup in created_setups if hasattr(setup, 'direction') and setup.direction],
+                        'keywords': [setup.keywords for setup in created_setups if hasattr(setup, 'keywords') and setup.keywords]
                     },
                     'tickers': list(set(setup.ticker for setup in created_setups))
                 }

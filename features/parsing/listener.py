@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 
 from common.events.consumer import EventConsumer
 from common.events.publisher import publish_event
-from .parser import MessageParser, ParsedSetupDTO, ParsedLevelDTO
+from .parser import MessageParser
 from .store import ParsingStore, get_parsing_store
 from .models import TradeSetup, ParsedLevel
 
@@ -137,8 +137,12 @@ class ParsingListener:
                 # Use trading day from parser result if available, otherwise extract from message
                 if not trading_day:
                     trading_day = self._extract_trading_day(message_info)
+                # Convert to new format - pass parsed TradeSetup dataclass instances directly
                 created_setups, created_levels = self.store.store_parsed_message(
-                    message_id, setups, levels_by_ticker, trading_day
+                    message_id=message_id,
+                    parsed_setups=setups,  # Direct pass-through of TradeSetup instances
+                    trading_day=trading_day,
+                    ticker_bias_notes={}  # Extract from levels if needed
                 )
                 
                 # Update stats
@@ -339,7 +343,10 @@ class ParsingListener:
             # Store the data with extracted trading date
             message_id = message_data.get('message_id', message_data.get('id'))
             created_setups, created_levels = self.store.store_parsed_message(
-                message_id, setups, levels_by_ticker, trading_date
+                message_id=message_id,
+                parsed_setups=setups,  # Direct pass-through of TradeSetup instances
+                trading_day=trading_date,
+                ticker_bias_notes={}  # Extract from levels if needed
             )
             
             return {
