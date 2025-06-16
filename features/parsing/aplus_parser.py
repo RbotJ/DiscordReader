@@ -323,8 +323,11 @@ class APlusMessageParser:
         all_setups = []
         ticker_bias_notes = {}
         
+        # Ensure we have a valid trading date
+        current_trading_date = trading_date or date.today()
+        
         for ticker, section_content in ticker_sections.items():
-            setups, bias_note = self.parse_ticker_section(ticker, section_content)
+            setups, bias_note = self.parse_ticker_section(ticker, section_content, current_trading_date)
             all_setups.extend(setups)
             if bias_note:
                 ticker_bias_notes[ticker] = bias_note

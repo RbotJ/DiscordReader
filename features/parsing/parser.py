@@ -179,47 +179,48 @@ class MessageParser:
                     setups = []
                     all_levels = []
                     
-                    for aplus_setup in result['setups']:
-                        # Convert APlusSetupDTO to ParsedSetupDTO
+                    for trade_setup in result['setups']:
+                        # Convert TradeSetup to ParsedSetupDTO
                         setup_dto = ParsedSetupDTO(
-                            ticker=aplus_setup.ticker,
-                            setup_type=aplus_setup.setup_type,
-                            bias_note=result.get('bias_note'),
-                            direction=aplus_setup.direction,
+                            ticker=trade_setup.ticker,
+                            setup_type=trade_setup.label,  # Use label as setup_type
+                            bias_note=result.get('ticker_bias_notes', {}).get(trade_setup.ticker),
+                            direction=trade_setup.direction,
                             confidence_score=0.8,  # A+ setups are high confidence
-                            raw_content=aplus_setup.raw_line,
+                            raw_content=trade_setup.raw_line,
                             parsed_metadata={
-                                'profile_name': aplus_setup.profile_name,
-                                'trigger_level': aplus_setup.trigger_level,
-                                'entry_condition': aplus_setup.entry_condition,
-                                'strategy': aplus_setup.strategy,
-                                'target_count': len(aplus_setup.target_prices),
-                                'parser_type': 'aplus_specialized'
+                                'setup_id': trade_setup.id,
+                                'label': trade_setup.label,
+                                'keywords': trade_setup.keywords,
+                                'emoji_hint': trade_setup.emoji_hint,
+                                'trigger_level': trade_setup.trigger_level,
+                                'target_count': len(trade_setup.target_prices),
+                                'parser_type': 'aplus_refactored'
                             }
                         )
                         setups.append(setup_dto)
                         
                         # Convert target prices to ParsedLevelDTO instances
-                        for i, target_price in enumerate(aplus_setup.target_prices):
+                        for i, target_price in enumerate(trade_setup.target_prices):
                             level_dto = ParsedLevelDTO(
                                 level_type='target',
-                                direction=aplus_setup.direction,
+                                direction=trade_setup.direction,
                                 trigger_price=target_price,
-                                strategy=aplus_setup.strategy,
+                                strategy=trade_setup.label,
                                 confidence=0.8,
-                                description=f"Target {i+1} for {aplus_setup.profile_name}"
+                                description=f"Target {i+1} for {trade_setup.label or 'Unknown'}"
                             )
                             all_levels.append(level_dto)
                         
                         # Add trigger level as entry
-                        if aplus_setup.trigger_level:
+                        if trade_setup.trigger_level:
                             entry_level = ParsedLevelDTO(
                                 level_type='entry',
-                                direction=aplus_setup.direction,
-                                trigger_price=aplus_setup.trigger_level,
-                                strategy=aplus_setup.strategy,
+                                direction=trade_setup.direction,
+                                trigger_price=trade_setup.trigger_level,
+                                strategy=trade_setup.label,
                                 confidence=0.8,
-                                description=f"Entry trigger for {aplus_setup.profile_name}"
+                                description=f"Entry trigger for {trade_setup.label or 'Unknown'}"
                             )
                             all_levels.append(entry_level)
                     

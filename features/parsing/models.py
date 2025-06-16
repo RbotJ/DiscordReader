@@ -18,38 +18,43 @@ logger = logging.getLogger(__name__)
 
 class TradeSetup(db.Model):
     """
-    New schema model for trade setups.
-    One setup per ticker per trading day, linked to source Discord message.
+    Refactored schema model for trade setups using the new token-based parsing approach.
+    Supports structured setup identification with flexible labeling and audit capabilities.
     """
     __tablename__ = "trade_setups"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    # Use string ID from the refactored parser (e.g., "20250616_NVDA_Setup_1")
+    id = Column(String(50), primary_key=True)
     
     # Core setup information
     message_id = Column(String(64), nullable=False, index=True)  # Discord message ID
     ticker = Column(String(10), nullable=False, index=True)
     trading_day = Column(Date, nullable=False, index=True)
+    index = Column(Integer, nullable=False)  # 1-based order within ticker section
     
-    # Enhanced setup characteristics
-    setup_type = Column(String(50), nullable=True)  # breakout, breakdown, rejection, bounce
-    profile_name = Column(String(50), nullable=True)  # RejectionNear, AggressiveBreakdown, etc.
-    bias_note = Column(Text, nullable=True)  # Free-form bias description
-    direction = Column(String(20), nullable=True)  # bullish, bearish, neutral
+    # Price information (required fields from refactored parser)
+    trigger_level = Column(Numeric(10, 4), nullable=False)  # Primary entry price
+    target_prices = Column(JSONB, nullable=False)  # Array of target prices
     
-    # Price levels
-    trigger_level = Column(Numeric(10, 4), nullable=True)  # Primary entry price
-    bias_pivot = Column(Numeric(10, 4), nullable=True)  # Level that flips bullish/bearish
-    premarket_price = Column(Numeric(10, 4), nullable=True)  # Reference price context
+    # Direction and classification (required fields)
+    direction = Column(String(10), nullable=False)  # 'long' or 'short'
+    label = Column(String(50), nullable=True)  # Human-readable label (AggressiveBreakout, etc.)
+    keywords = Column(JSONB, nullable=True)  # Array of matched keywords
+    emoji_hint = Column(String(10), nullable=True)  # Emoji indicator from message
     
-    # Entry conditions
-    entry_condition = Column(Text, nullable=True)  # Structured trigger logic
+    # Original content
+    raw_line = Column(Text, nullable=False)  # Original setup line from message
+    
+    # Legacy fields for backward compatibility
+    setup_type = Column(String(50), nullable=True)  # Derived from label
+    profile_name = Column(String(50), nullable=True)  # Same as label
+    bias_note = Column(Text, nullable=True)  # Per-ticker bias from message
     
     # Status tracking
     active = Column(Boolean, default=True, index=True)
     confidence_score = Column(Float, nullable=True)
     
     # Metadata
-    raw_content = Column(Text, nullable=True)  # Original message content for reference
     parsed_metadata = Column(JSONB, nullable=True)  # Additional parsing data
     
     # Audit fields
