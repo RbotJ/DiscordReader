@@ -9,6 +9,7 @@ import os
 sys.path.insert(0, os.path.abspath('.'))
 
 from datetime import date
+from app import create_app
 from features.parsing.aplus_parser import APlusMessageParser
 from features.parsing.setup_converter import save_parsed_setups_to_database
 from features.parsing.models import TradeSetup, ParsedLevel
@@ -117,30 +118,34 @@ def cleanup_test_data():
 
 def main():
     """Run the full integration test."""
-    try:
-        success = test_complete_workflow()
-        
-        if success:
-            print("\n" + "="*50)
-            print("🎉 REFACTORED A+ PARSER INTEGRATION COMPLETE")
-            print("="*50)
-            print("\nKey improvements validated:")
-            print("✓ Token-based parsing eliminates brittle regex patterns")
-            print("✓ Structured TradeSetup model with consistent IDs")
-            print("✓ Flexible labeling with keyword classification")
-            print("✓ Audit logging for missing expected profiles")
-            print("✓ Database persistence with proper relationships")
-            print("✓ Clean conversion between dataclass and ORM models")
+    # Create Flask app context
+    app = create_app()
+    
+    with app.app_context():
+        try:
+            success = test_complete_workflow()
             
-            # Run cleanup
-            cleanup_test_data()
-        else:
-            print("\n❌ Integration test failed")
-            
-    except Exception as e:
-        print(f"\n💥 Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
+            if success:
+                print("\n" + "="*50)
+                print("REFACTORED A+ PARSER INTEGRATION COMPLETE")
+                print("="*50)
+                print("\nKey improvements validated:")
+                print("✓ Token-based parsing eliminates brittle regex patterns")
+                print("✓ Structured TradeSetup model with consistent IDs")
+                print("✓ Flexible labeling with keyword classification")
+                print("✓ Audit logging for missing expected profiles")
+                print("✓ Database persistence with proper relationships")
+                print("✓ Clean conversion between dataclass and ORM models")
+                
+                # Run cleanup
+                cleanup_test_data()
+            else:
+                print("\nIntegration test failed")
+                
+        except Exception as e:
+            print(f"\nUnexpected error: {e}")
+            import traceback
+            traceback.print_exc()
 
 if __name__ == "__main__":
     main()
