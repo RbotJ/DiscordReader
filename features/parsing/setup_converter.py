@@ -73,22 +73,22 @@ def create_levels_for_setup(setup_model: TradeSetupModel) -> List[ParsedLevel]:
         setup_model: TradeSetupModel instance
         
     Returns:
-        List of ParsedLevel instances for targets and entry
+        List of ParsedLevel instances for trigger and targets
     """
     levels = []
     
-    # Create entry level
-    entry_level = ParsedLevel()
-    entry_level.setup_id = setup_model.id
-    entry_level.level_type = 'entry'
-    entry_level.direction = setup_model.direction
-    entry_level.trigger_price = setup_model.trigger_level
-    entry_level.strategy = setup_model.label
-    entry_level.confidence = 0.8
-    entry_level.description = f"Entry trigger for {setup_model.label or 'setup'}"
-    entry_level.active = True
-    entry_level.triggered = False
-    levels.append(entry_level)
+    # Create SINGLE trigger level from trigger_level
+    trigger_level = ParsedLevel()
+    trigger_level.setup_id = setup_model.id
+    trigger_level.level_type = 'trigger'
+    trigger_level.direction = setup_model.direction
+    trigger_level.trigger_price = setup_model.trigger_level
+    trigger_level.strategy = setup_model.label
+    trigger_level.confidence = 0.9
+    trigger_level.description = f"{setup_model.direction.title()} trigger at {setup_model.trigger_level}"
+    trigger_level.active = True
+    trigger_level.triggered = False
+    levels.append(trigger_level)
     
     # Create target levels - handle target_prices as array
     target_prices = setup_model.target_prices if hasattr(setup_model, 'target_prices') and setup_model.target_prices else []

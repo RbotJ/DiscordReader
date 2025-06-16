@@ -70,14 +70,82 @@ def classify_setup(line: str) -> Tuple[Optional[str], List[str]]:
     return (matched_labels[0] if matched_labels else None, matched_labels)
 
 
-def extract_setup_line(line: str, ticker: str, trading_day: date, index: int) -> Optional[TradeSetup]:
+def parse_setup_prices(line: str) -> Tuple[Optional[float], List[float]]:
+    """Parse trigger and target prices from setup line using structured patterns."""
+    
+    # Pattern variations for different A+ formats
+    patterns = [
+        # Standard: "Above 596.90 🔼 599.80, 602.00, 605.50"
+        r'(?:Above|Below|Near)\s+(\d{2,5}\.\d{2})[^0-9]*?(?:🔼|🔻|❌|🔄)\s*(\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)',
+        
+        # Alternative: "596.90 | 599.80, 602.00, 605.50"
+        r'(\d{2,5}\.\d{2})\s*\|\s*(\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)',
+        
+        # Parentheses: "Above 596.90 (599.80, 602.00, 605.50)"
+        r'(?:Above|Below|Near)\s+(\d{2,5}\.\d{2})[^(]*\((\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)\)'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, line)
+        if match:
+            trigger = float(match.group(1))
+            target_string = match.group(2)
+            targets = [float(p.strip()) for p in target_string.split(',')]
+            
+            # Validate price structure
+            if validate_price_structure(line, trigger, targets):
+                return trigger, targets
+    
+    # Fallback to old method if structured parsing fails
     numbers = re.findall(r'\d{2,5}\.\d{2}', line)
-    if len(numbers) < 2:
-        logger.warning(f"Not enough prices in line: {line}")
-        return None
+    if len(numbers) >= 2:
+        trigger = float(numbers[0])
+        targets = [float(p) for p in numbers[1:]]
+        if validate_price_structure(line, trigger, targets):
+            return trigger, targets
+    
+    return None, []
 
-    trigger = float(numbers[0])
-    targets = [float(p) for p in numbers[1:]]
+
+def validate_price_structure(line: str, trigger: float, targets: List[float]) -> bool:
+    """Validate that price structure makes logical sense."""
+    
+    # Check minimum target count
+    if len(targets) < 1:
+        logger.warning(f"No targets found in line: {line}")
+        return False
+    
+    # Check maximum target count (A+ typically has 3-4 targets)
+    if len(targets) > 5:
+        logger.warning(f"Too many targets ({len(targets)}) in line: {line}")
+        return False
+    
+    # Check for duplicate trigger in targets
+    if trigger in targets:
+        logger.error(f"Trigger price {trigger} found in targets {targets} - line: {line}")
+        return False
+    
+    # Direction-based validation
+    if 'Above' in line or '🔼' in line:
+        # Bullish: targets should be higher than trigger
+        if not all(t > trigger for t in targets):
+            logger.warning(f"Bullish setup but targets not all above trigger: {trigger} vs {targets}")
+            return False
+    elif 'Below' in line or '🔻' in line:
+        # Bearish: targets should be lower than trigger
+        if not all(t < trigger for t in targets):
+            logger.warning(f"Bearish setup but targets not all below trigger: {trigger} vs {targets}")
+            return False
+    
+    return True
+
+
+def extract_setup_line(line: str, ticker: str, trading_day: date, index: int) -> Optional[TradeSetup]:
+    trigger, targets = parse_setup_prices(line)
+    
+    if trigger is None or not targets:
+        logger.warning(f"Could not parse valid prices from line: {line}")
+        return None
 
     emoji = next((icon for icon in DIRECTION_HINTS if icon in line), None)
     direction = DIRECTION_HINTS[emoji] if emoji in DIRECTION_HINTS else 'long'
