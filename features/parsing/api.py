@@ -50,6 +50,9 @@ def get_setups():
         # Query parameters
         trading_day_str = request.args.get('trading_day')
         ticker = request.args.get('ticker')
+        label = request.args.get('label')  # New filter for setup labels
+        direction = request.args.get('direction')  # New filter for direction (long/short)
+        index = request.args.get('index', type=int)  # New filter for setup index
         active_only = request.args.get('active_only', 'true').lower() == 'true'
         
         # Parse trading day
@@ -67,18 +70,44 @@ def get_setups():
         else:
             setups = store.get_active_setups_for_day(date.today())
         
-        # Filter by ticker if specified
+        # Apply filters
         if ticker:
             setups = [setup for setup in setups if setup.ticker.upper() == ticker.upper()]
         
-        # Filter by active status
+        if label:
+            setups = [setup for setup in setups if setup.label and setup.label.lower() == label.lower()]
+        
+        if direction:
+            setups = [setup for setup in setups if setup.direction and setup.direction.lower() == direction.lower()]
+        
+        if index is not None:
+            setups = [setup for setup in setups if setup.index == index]
+        
         if active_only:
             setups = [setup for setup in setups if setup.active]
         
-        # Convert to dict format
+        # Convert to dict format with updated field mappings
         setup_list = []
         for setup in setups:
-            setup_dict = setup.to_dict()
+            setup_dict = {
+                'id': setup.id,
+                'message_id': setup.message_id,
+                'ticker': setup.ticker,
+                'trading_day': setup.trading_day.isoformat(),
+                'index': setup.index,
+                'trigger_level': float(setup.trigger_level) if setup.trigger_level else None,
+                'target_prices': setup.target_prices,  # New field: list of target prices
+                'direction': setup.direction,  # Updated field mapping
+                'label': setup.label,  # New field: was setup_type
+                'keywords': setup.keywords,  # New field: list of keywords
+                'emoji_hint': setup.emoji_hint,  # New field: emoji hint
+                'raw_line': setup.raw_line,
+                'active': setup.active,
+                'confidence_score': setup.confidence_score,
+                'created_at': setup.created_at.isoformat() if hasattr(setup, 'created_at') else None,
+                'updated_at': setup.updated_at.isoformat() if hasattr(setup, 'updated_at') else None
+            }
+            
             # Get levels for this setup
             levels = store.get_levels_by_setup(setup.id)
             setup_dict['levels'] = [level.to_dict() for level in levels]
@@ -91,6 +120,9 @@ def get_setups():
             'filters': {
                 'trading_day': trading_day.isoformat() if trading_day else None,
                 'ticker': ticker,
+                'label': label,  # New filter
+                'direction': direction,  # New filter
+                'index': index,  # New filter
                 'active_only': active_only
             }
         })
@@ -113,8 +145,26 @@ def get_setup(setup_id):
         # Get levels for this setup
         levels = store.get_levels_by_setup(setup_id)
         
-        setup_dict = setup.to_dict()
-        setup_dict['levels'] = [level.to_dict() for level in levels]
+        # Use updated field mappings
+        setup_dict = {
+            'id': setup.id,
+            'message_id': setup.message_id,
+            'ticker': setup.ticker,
+            'trading_day': setup.trading_day.isoformat(),
+            'index': setup.index,
+            'trigger_level': float(setup.trigger_level) if setup.trigger_level else None,
+            'target_prices': setup.target_prices,  # New field: list of target prices
+            'direction': setup.direction,  # Updated field mapping
+            'label': setup.label,  # New field: was setup_type
+            'keywords': setup.keywords,  # New field: list of keywords
+            'emoji_hint': setup.emoji_hint,  # New field: emoji hint
+            'raw_line': setup.raw_line,
+            'active': setup.active,
+            'confidence_score': setup.confidence_score,
+            'created_at': setup.created_at.isoformat() if hasattr(setup, 'created_at') else None,
+            'updated_at': setup.updated_at.isoformat() if hasattr(setup, 'updated_at') else None,
+            'levels': [level.to_dict() for level in levels]
+        }
         
         return jsonify({
             'success': True,
@@ -182,12 +232,39 @@ def get_setups_by_trading_day():
         if not selected_day and available_days:
             selected_day = available_days[0]
         
+        # Convert setups to dict format with new field mappings
+        setup_list = []
+        for setup in setups:
+            setup_dict = {
+                'id': setup.id,
+                'message_id': setup.message_id,
+                'ticker': setup.ticker,
+                'trading_day': setup.trading_day.isoformat(),
+                'index': setup.index,
+                'trigger_level': float(setup.trigger_level) if setup.trigger_level else None,
+                'target_prices': setup.target_prices,  # New field: list of target prices
+                'direction': setup.direction,  # Updated field mapping
+                'label': setup.label,  # New field: was setup_type
+                'keywords': setup.keywords,  # New field: list of keywords
+                'emoji_hint': setup.emoji_hint,  # New field: emoji hint
+                'raw_line': setup.raw_line,
+                'active': setup.active,
+                'confidence_score': setup.confidence_score,
+                'created_at': setup.created_at.isoformat() if hasattr(setup, 'created_at') else None,
+                'updated_at': setup.updated_at.isoformat() if hasattr(setup, 'updated_at') else None
+            }
+            
+            # Get levels for this setup
+            levels = store.get_levels_by_setup(setup.id)
+            setup_dict['levels'] = [level.to_dict() for level in levels]
+            setup_list.append(setup_dict)
+        
         return jsonify({
             'success': True,
-            'setups': [setup.to_dict() for setup in setups],
+            'setups': setup_list,
             'available_days': [day.isoformat() for day in available_days],
             'selected_day': selected_day.isoformat() if selected_day else None,
-            'count': len(setups)
+            'count': len(setup_list)
         })
         
     except Exception as e:

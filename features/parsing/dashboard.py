@@ -109,8 +109,40 @@ def setups_json():
         elif not trading_day:
             trading_day = date.today()
         
-        # Get setups for the selected day
-        setups = service.get_active_setups(trading_day, ticker)
+        # Get setups for the selected day using store directly to ensure new field mappings
+        store = get_parsing_store()
+        setups_query = store.get_active_setups_for_day(trading_day)
+        
+        # Filter by ticker if specified
+        if ticker:
+            setups_query = [setup for setup in setups_query if setup.ticker.upper() == ticker.upper()]
+        
+        # Convert setups to dict format with new field mappings
+        setups = []
+        for setup in setups_query:
+            setup_dict = {
+                'id': setup.id,
+                'message_id': setup.message_id,
+                'ticker': setup.ticker,
+                'trading_day': setup.trading_day.isoformat(),
+                'index': setup.index,
+                'trigger_level': float(setup.trigger_level) if setup.trigger_level else None,
+                'target_prices': setup.target_prices,  # New field: list of target prices
+                'direction': setup.direction,  # Updated field mapping
+                'label': setup.label,  # New field: was setup_type/profile_name
+                'keywords': setup.keywords,  # New field: list of keywords
+                'emoji_hint': setup.emoji_hint,  # New field: emoji hint
+                'raw_line': setup.raw_line,
+                'active': setup.active,
+                'confidence_score': setup.confidence_score,
+                'created_at': setup.created_at.isoformat() if hasattr(setup, 'created_at') else None,
+                'updated_at': setup.updated_at.isoformat() if hasattr(setup, 'updated_at') else None
+            }
+            
+            # Get levels for this setup
+            levels = store.get_levels_by_setup(setup.id)
+            setup_dict['levels'] = [level.to_dict() for level in levels]
+            setups.append(setup_dict)
         
         return jsonify({
             'success': True,
