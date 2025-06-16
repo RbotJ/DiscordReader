@@ -1,54 +1,149 @@
 """
-A+ Scalp Setups Parser
-
-Specialized parser for A+ scalp trading setup messages.
-Extracts structured trading data from formatted Discord messages.
+Refactored A+ Scalp Setups Parser
+- Replaces fragile full-line regex with structured token parsing
+- Creates a simplified, resilient internal model per trade setup
+- Enforces one labeled setup per ticker/day
+- Logs audit info for missing or extra setups
 """
+
 import logging
 import re
-from datetime import datetime, date
-from typing import List, Dict, Any, Optional, Tuple, NamedTuple
-from decimal import Decimal
+from datetime import date
+from typing import List, Dict, Optional, Tuple, Any
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# ----- Data Model -----
 
-class APlusSetupDTO(NamedTuple):
-    """Data transfer object for A+ parsed setup."""
+@dataclass
+class TradeSetup:
+    id: str
     ticker: str
-    setup_type: str
-    profile_name: str  # RejectionNear, AggressiveBreakdown, etc.
-    direction: str  # bullish, bearish
-    strategy: str  # aggressive, conservative, rejection, bounce
-    trigger_level: float  # Primary entry price
+    trading_day: date
+    index: int
+    trigger_level: float
     target_prices: List[float]
-    entry_condition: str  # Structured trigger logic
+    direction: str                      # 'long' or 'short'
+    label: Optional[str]                # Human-readable label like "AggressiveBreakout"
+    keywords: List[str]                 # e.g., ["breakout", "aggressive"]
+    emoji_hint: Optional[str]          # e.g., '🔼'
     raw_line: str
+
+
+# ----- Utility Functions -----
+
+PRICE_LIST_RE = re.compile(r'(\d{2,5}\.\d{2})(?:\s*,\s*\d{2,5}\.\d{2})*')
+
+KEYWORDS_BY_LABEL = {
+    'Rejection': ['rejection', 'reject'],
+    'AggressiveBreakout': ['aggressive', 'breakout'],
+    'ConservativeBreakout': ['conservative', 'breakout'],
+    'AggressiveBreakdown': ['aggressive', 'breakdown'],
+    'ConservativeBreakdown': ['conservative', 'breakdown'],
+    'BounceZone': ['bounce', 'zone'],
+    'Bias': ['bias']
+}
+
+DIRECTION_HINTS = {
+    '🔻': 'short',
+    '🔼': 'long',
+    '❌': 'short',# usually implies rejection down
+    '🔄': 'long'  # usually implies bounce up
+}
+
+
+def parse_price_list(text: str) -> List[float]:
+    try:
+        return [float(p.strip()) for p in text.split(',') if p.strip()]
+    except ValueError:
+        logger.warning(f"Failed to parse price list from: {text}")
+        return []
+
+
+def classify_setup(line: str) -> Tuple[Optional[str], List[str]]:
+    tokens = line.lower()
+    matched_labels = []
+    for label, keywords in KEYWORDS_BY_LABEL.items():
+        if all(k in tokens for k in keywords):
+            matched_labels.append(label)
+    return (matched_labels[0] if matched_labels else None, matched_labels)
+
+
+def extract_setup_line(line: str, ticker: str, trading_day: date, index: int) -> Optional[TradeSetup]:
+    numbers = re.findall(r'\d{2,5}\.\d{2}', line)
+    if len(numbers) < 2:
+        logger.warning(f"Not enough prices in line: {line}")
+        return None
+
+    trigger = float(numbers[0])
+    targets = [float(p) for p in numbers[1:]]
+
+    emoji = next((icon for icon in DIRECTION_HINTS if icon in line), None)
+    direction = DIRECTION_HINTS[emoji] if emoji in DIRECTION_HINTS else 'long'
+
+    label, keywords = classify_setup(line)
+    setup_id = f"{trading_day.strftime('%Y%m%d')}_{ticker}_Setup_{index+1}"
+
+    return TradeSetup(
+        id=setup_id,
+        ticker=ticker,
+        trading_day=trading_day,
+        index=index + 1,
+        trigger_level=trigger,
+        target_prices=targets,
+        direction=direction or 'long',
+        label=label,
+        keywords=keywords or [],
+        emoji_hint=emoji,
+        raw_line=line
+    )
+
+
+# ----- Main Entry Point -----
+
+def parse_ticker_section(ticker: str, content: str, trading_day: date) -> List[TradeSetup]:
+    lines = [line.strip() for line in content.splitlines() if line.strip() and not line.startswith('⚠️')]
+    setups = []
+
+    for i, line in enumerate(lines):
+        setup = extract_setup_line(line, ticker, trading_day, i)
+        if setup:
+            setups.append(setup)
+        else:
+            logger.debug(f"Skipped line {i}: {line}")
+
+    logger.info(f"Parsed {len(setups)} setups for {ticker} on {trading_day}")
+    return setups
+
+
+# Optional: define expected profile audit
+EXPECTED_PROFILES = [
+    'Rejection', 'AggressiveBreakdown', 'ConservativeBreakdown',
+    'AggressiveBreakout', 'ConservativeBreakout', 'BounceZone', 'Bias'
+]
+
+def audit_profile_coverage(setups: List[TradeSetup], ticker: str, trading_day: date):
+    found = {s.label for s in setups if s.label}
+    missing = set(EXPECTED_PROFILES) - found
+    if missing:
+        logger.warning(f"Missing expected setups for {ticker} on {trading_day}: {sorted(missing)}")
+    if len(setups) > len(EXPECTED_PROFILES):
+        logger.warning(f"Extra setups detected: {len(setups)} > {len(EXPECTED_PROFILES)}")
 
 
 class APlusMessageParser:
     """
-    Parser specifically designed for A+ scalp trading setup messages.
-    Handles the structured format with emoji indicators and price arrays.
+    Refactored parser using structured token parsing instead of fragile regex patterns.
     """
     
     def __init__(self):
-        """Initialize A+ parser with specific patterns."""
+        """Initialize A+ parser with header validation patterns."""
         # Message validation patterns - flexible to match actual format
         self.header_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)', re.IGNORECASE)
         
         # Ticker section pattern (matches plain TICKER format, not **TICKER**)
         self.ticker_pattern = re.compile(r'^([A-Z]{2,5})\s*$', re.MULTILINE)
-        
-        # Setup line patterns matching actual A+ message format
-        self.setup_patterns = {
-            'aggressive_breakdown': re.compile(r'🔻\s*Aggressive\s+Breakdown\s+Below\s+([0-9.]+)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
-            'conservative_breakdown': re.compile(r'🔻\s*Conservative\s+Breakdown\s+Below\s+([0-9.]+)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE),
-            'aggressive_breakout': re.compile(r'🔼\s*Aggressive\s+Breakout\s+Above\s+([0-9.]+)\s+🔼\s+([\d.,\s]+)', re.IGNORECASE),
-            'conservative_breakout': re.compile(r'🔼\s*Conservative\s+Breakout\s+Above\s+([0-9.]+)\s+🔼\s+([\d.,\s]+)', re.IGNORECASE),
-            'bounce_zone': re.compile(r'🔄\s*Bounce\s+(?:Zone:?\s*|From\s+)([0-9.]+)(?:[-–]([0-9.]+))?\s+🔼\s+(?:Target:?\s*)?([^⚠️\n]+)', re.IGNORECASE),
-            'rejection_near': re.compile(r'❌\s*Rejection\s+(?:Short\s+)?Near\s+([0-9.]+)\s+🔻\s+([\d.,\s]+)', re.IGNORECASE)
-        }
         
         # Bias pattern
         self.bias_pattern = re.compile(r'⚠️\s*Bias\s*[—-]\s*(.+?)(?=\n\n|\n[A-Z]{2,5}\n|$)', re.IGNORECASE | re.DOTALL)
@@ -150,129 +245,29 @@ class APlusMessageParser:
                 continue
         return prices
 
-    def parse_ticker_section(self, ticker: str, section_content: str) -> Tuple[List[APlusSetupDTO], Optional[str]]:
+    def parse_ticker_section(self, ticker: str, section_content: str, trading_day: date) -> Tuple[List[TradeSetup], Optional[str]]:
         """
-        Parse all setups for a single ticker.
+        Parse all setups for a single ticker using the refactored approach.
         
         Args:
             ticker: Stock ticker symbol
             section_content: Content for this ticker section
+            trading_day: Trading day date
             
         Returns:
             Tuple of (list of setups, bias note)
         """
-        setups = []
-        bias_note = None
-        
         # Extract bias first
+        bias_note = None
         bias_match = self.bias_pattern.search(section_content)
         if bias_match:
             bias_note = bias_match.group(1).strip()
         
-        # Parse each line individually to create separate setups
-        lines = section_content.strip().split('\n')
+        # Use the new refactored parsing logic
+        setups = parse_ticker_section(ticker, section_content, trading_day)
         
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('⚠️'):  # Skip empty lines and bias lines
-                continue
-            
-            # Try to match this line against each setup pattern
-            setup_created = False
-            for setup_key, pattern in self.setup_patterns.items():
-                match = pattern.search(line)
-                
-                if match:
-                    try:
-                        if setup_key == 'bounce_zone':
-                            # Handle bounce zone with range
-                            entry_low = float(match.group(1))
-                            entry_high = float(match.group(2)) if match.group(2) else entry_low
-                            targets = self.extract_price_list(match.group(3))
-                            
-                            setup = APlusSetupDTO(
-                                ticker=ticker,
-                                setup_type='bounce',
-                                profile_name='BounceZone',
-                                direction='bullish',
-                                strategy='zone',
-                                trigger_level=(entry_low + entry_high) / 2,
-                                target_prices=targets,
-                                entry_condition=f"Price drops to {entry_low}-{entry_high} zone and bounces",
-                                raw_line=line
-                            )
-                            setups.append(setup)
-                            setup_created = True
-                            
-                        else:
-                            # Handle standard setups (breakdown, breakout, rejection)
-                            trigger_price = float(match.group(1))
-                            targets = self.extract_price_list(match.group(2))
-                            
-                            # Determine direction and strategy
-                            if 'breakdown' in setup_key or 'rejection' in setup_key:
-                                direction = 'bearish'
-                            else:
-                                direction = 'bullish'
-                                
-                            if 'aggressive' in setup_key:
-                                strategy = 'aggressive'
-                            elif 'conservative' in setup_key:
-                                strategy = 'conservative'
-                            elif 'rejection' in setup_key:
-                                strategy = 'rejection'
-                            else:
-                                strategy = 'standard'
-                            
-                            # Map setup types and profile names
-                            if 'breakdown' in setup_key:
-                                setup_type = 'breakdown'
-                                if 'aggressive' in setup_key:
-                                    profile_name = 'AggressiveBreakdown'
-                                    entry_condition = f"5-min candle close below {trigger_price} with volume confirmation"
-                                else:
-                                    profile_name = 'ConservativeBreakdown'
-                                    entry_condition = f"Price creeps below {trigger_price} with sustained bearish momentum"
-                            elif 'breakout' in setup_key:
-                                setup_type = 'breakout'
-                                if 'aggressive' in setup_key:
-                                    profile_name = 'AggressiveBreakout'
-                                    entry_condition = f"5-min candle close above {trigger_price} with volume confirmation"
-                                else:
-                                    profile_name = 'ConservativeBreakout'
-                                    entry_condition = f"Price creeps above {trigger_price} with sustained bullish momentum"
-                            elif 'rejection' in setup_key:
-                                setup_type = 'rejection'
-                                profile_name = 'RejectionNear'
-                                entry_condition = f"Price pokes to {trigger_price} then reverses sharply away"
-                            else:
-                                setup_type = 'other'
-                                profile_name = 'Unknown'
-                                entry_condition = f"Monitor price action near {trigger_price}"
-                            
-                            setup = APlusSetupDTO(
-                                ticker=ticker,
-                                setup_type=setup_type,
-                                profile_name=profile_name,
-                                direction=direction,
-                                strategy=strategy,
-                                trigger_level=trigger_price,
-                                target_prices=targets,
-                                entry_condition=entry_condition,
-                                raw_line=line
-                            )
-                            setups.append(setup)
-                            setup_created = True
-                        
-                        break  # Stop checking other patterns for this line
-                        
-                    except (ValueError, IndexError) as e:
-                        logger.warning(f"Error parsing line '{line}' for {ticker}: {e}")
-                        continue
-            
-            # If no pattern matched, log the unrecognized line
-            if not setup_created and line.strip():
-                logger.debug(f"Unrecognized setup line for {ticker}: '{line}'")
+        # Run audit for this ticker
+        audit_profile_coverage(setups, ticker, trading_day)
         
         return setups, bias_note
 
