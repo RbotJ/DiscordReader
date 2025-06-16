@@ -26,15 +26,7 @@ class ParsedLevelDTO(NamedTuple):
     description: Optional[str]
 
 
-class ParsedSetupDTO(NamedTuple):
-    """Data transfer object for a parsed trading setup."""
-    ticker: str
-    setup_type: Optional[str]  # breakout, breakdown, rejection, bounce
-    bias_note: Optional[str]
-    direction: Optional[str]  # bullish, bearish, neutral
-    confidence_score: Optional[float]
-    raw_content: str
-    parsed_metadata: Optional[Dict[str, Any]]
+
 
 
 class MessageParser:
@@ -267,7 +259,7 @@ class MessageParser:
         content_lower = content.lower()
         return any(keyword in content_lower for keyword in self.setup_keywords)
     
-    def _parse_ticker_setup(self, ticker: str, content: str, raw_message: Dict) -> Tuple[Optional[ParsedSetupDTO], List[ParsedLevelDTO]]:
+    def _parse_ticker_setup(self, ticker: str, content: str, raw_message: Dict) -> Tuple[Optional[Dict], List[ParsedLevelDTO]]:
         """
         Parse setup information for a specific ticker.
         
