@@ -145,8 +145,9 @@
                                             <th>Ticker</th>
                                             <th>Trading Day</th>
                                             <th>Weekday</th>
-                                            <th>Setup Type</th>
-                                            <th>Profile</th>
+                                            <th>Label</th>
+                                            <th>Index</th>
+                                            <th>Direction</th>
                                             <th>Message ID</th>
                                         </tr>
                                     </thead>
@@ -156,8 +157,17 @@
                                             <td><strong>{{ setup.ticker }}</strong></td>
                                             <td>{{ setup.trading_day }}</td>
                                             <td><span class="badge bg-warning">{{ setup.weekday }}</span></td>
-                                            <td>{{ setup.setup_type or 'N/A' }}</td>
-                                            <td>{{ setup.profile_name or 'N/A' }}</td>
+                                            <td>{{ setup.label or 'N/A' }}</td>
+                                            <td>{{ setup.index if setup.index is not none else 'N/A' }}</td>
+                                            <td>
+                                                {% if setup.direction %}
+                                                    <span class="badge bg-{% if setup.direction == 'long' %}success{% elif setup.direction == 'short' %}danger{% else %}secondary{% endif %}">
+                                                        {{ 'Long' if setup.direction == 'long' else 'Short' if setup.direction == 'short' else setup.direction|title }}
+                                                    </span>
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                             <td><code>{{ setup.message_id[:12] }}...</code></td>
                                         </tr>
                                         {% endfor %}
@@ -188,8 +198,9 @@
                                 <thead>
                                     <tr>
                                         <th>Ticker</th>
-                                        <th>Type</th>
+                                        <th>Label</th>
                                         <th>Direction</th>
+                                        <th>Index</th>
                                         <th>Trading Day</th>
                                         <th>Confidence</th>
                                         <th>Status</th>
@@ -199,16 +210,17 @@
                                     {% for setup in recent_setups %}
                                     <tr>
                                         <td><strong>{{ setup.ticker }}</strong></td>
-                                        <td>{{ setup.setup_type or 'N/A' }}</td>
+                                        <td>{{ setup.label or 'N/A' }}</td>
                                         <td>
                                             {% if setup.direction %}
-                                                <span class="badge bg-{% if setup.direction == 'bullish' %}success{% elif setup.direction == 'bearish' %}danger{% else %}secondary{% endif %}">
-                                                    {{ setup.direction|title }}
+                                                <span class="badge bg-{% if setup.direction == 'long' %}success{% elif setup.direction == 'short' %}danger{% else %}secondary{% endif %}">
+                                                    {{ 'Long' if setup.direction == 'long' else 'Short' if setup.direction == 'short' else setup.direction|title }}
                                                 </span>
                                             {% else %}
                                                 N/A
                                             {% endif %}
                                         </td>
+                                        <td>{{ setup.index if setup.index is not none else 'N/A' }}</td>
                                         <td>{{ setup.trading_day }}</td>
                                         <td>
                                             {% if setup.confidence_score %}
@@ -343,10 +355,12 @@
 
         // Render individual setup entry
         function renderSetupEntry(setup) {
-            const directionClass = setup.direction === 'bullish' ? 'text-success' : 
-                                 setup.direction === 'bearish' ? 'text-danger' : 'text-secondary';
-            const directionIcon = setup.direction === 'bullish' ? 'fa-arrow-up' : 
-                                 setup.direction === 'bearish' ? 'fa-arrow-down' : 'fa-minus';
+            const directionClass = setup.direction === 'long' ? 'text-success' : 
+                                 setup.direction === 'short' ? 'text-danger' : 'text-secondary';
+            const directionIcon = setup.direction === 'long' ? 'fa-arrow-up' : 
+                                 setup.direction === 'short' ? 'fa-arrow-down' : 'fa-minus';
+            const directionText = setup.direction === 'long' ? 'Long' : 
+                                 setup.direction === 'short' ? 'Short' : (setup.direction || 'N/A');
             
             const levels = setup.levels || [];
             const levelBadges = levels.map(level => 
@@ -361,12 +375,28 @@
                                 <h6 class="mb-0 me-3"><strong>${setup.ticker}</strong></h6>
                                 <span class="${directionClass}">
                                     <i class="fas ${directionIcon} me-1"></i>
-                                    ${setup.direction || 'N/A'}
+                                    ${directionText}
                                 </span>
-                                ${setup.setup_type ? `<span class="badge bg-info ms-2">${setup.setup_type}</span>` : ''}
+                                ${setup.label ? `<span class="badge bg-info ms-2">${setup.label}</span>` : ''}
+                                ${setup.index !== null && setup.index !== undefined ? `<span class="badge bg-secondary ms-1">#${setup.index}</span>` : ''}
+                                ${setup.emoji_hint ? `<span class="ms-2">${setup.emoji_hint}</span>` : ''}
                             </div>
                             
                             ${levelBadges ? `<div class="mb-2">${levelBadges}</div>` : ''}
+                            
+                            ${setup.target_prices && setup.target_prices.length > 0 ? `
+                                <div class="mb-2">
+                                    <small class="text-muted me-2">Targets:</small>
+                                    ${setup.target_prices.map(price => `<span class="badge bg-success me-1">$${price}</span>`).join('')}
+                                </div>
+                            ` : ''}
+                            
+                            ${setup.keywords && setup.keywords.length > 0 ? `
+                                <div class="mb-2">
+                                    <small class="text-muted me-2">Keywords:</small>
+                                    ${setup.keywords.map(keyword => `<span class="badge bg-light text-dark me-1">${keyword}</span>`).join('')}
+                                </div>
+                            ` : ''}
                             
                             ${setup.bias_note ? `<p class="text-muted small mb-1">${setup.bias_note}</p>` : ''}
                             
