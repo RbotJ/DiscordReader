@@ -190,13 +190,15 @@ class APlusMessageParser:
             # Enhanced patterns to catch more header variations:
             date_patterns = [
                 # "A+ Scalp Trade Setups — Sunday June 15"
-                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—\-–]\s*(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\.?\s*[—\-–]+\s*(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
                 # "A+ Scalp Trade Setups — June 15" 
-                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—\-–]\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
-                # "A+ Scalp Trade Setups — Jun 15"
-                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—\-–]\s*([A-Za-z]{3,9})\s+(\d{1,2})', re.IGNORECASE),
-                # Flexible dash/em-dash handling
-                re.compile(r'A\+.*?Setups\s*[—\-–]\s*(?:\w+\s+)?([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\.?\s*[—\-–]+\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                # "A+ Scalp Trade Setups -- Mon Jun 9" (double dash)
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\.?\s*--+\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                # "A+ Scalp Trade Setups. — Wed Jun 11" (period and day abbreviation)
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\.?\s*[—\-–]+\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                # Flexible fallback pattern
+                re.compile(r'A\+.*?Setups\.?\s*[—\-–-]+\s*(?:\w+\s+)?([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
             ]
             
             date_match = None
