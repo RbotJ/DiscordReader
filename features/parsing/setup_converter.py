@@ -32,34 +32,33 @@ def convert_parsed_setup_to_model(
         TradeSetupModel ready for database persistence
     """
     # Create the database model instance
-    setup_model = TradeSetupModel(
-        id=parsed_setup.id,
-        message_id=message_id,
-        ticker=parsed_setup.ticker,
-        trading_day=parsed_setup.trading_day,
-        index=parsed_setup.index,
-        trigger_level=parsed_setup.trigger_level,
-        target_prices=parsed_setup.target_prices,
-        direction=parsed_setup.direction,
-        label=parsed_setup.label,
-        keywords=parsed_setup.keywords,
-        emoji_hint=parsed_setup.emoji_hint,
-        raw_line=parsed_setup.raw_line,
-        # Legacy fields for backward compatibility
-        setup_type=parsed_setup.label,  # Use label as setup_type
-        profile_name=parsed_setup.label,  # Same as label
-        bias_note=bias_note,
-        # Status and confidence
-        active=True,
-        confidence_score=0.8,  # A+ setups are high confidence
-        # Metadata
-        parsed_metadata={
-            'parser_version': 'refactored_v1',
-            'keyword_matches': parsed_setup.keywords,
-            'emoji_detected': parsed_setup.emoji_hint,
-            'target_count': len(parsed_setup.target_prices)
-        }
-    )
+    setup_model = TradeSetupModel()
+    setup_model.id = parsed_setup.id
+    setup_model.message_id = message_id
+    setup_model.ticker = parsed_setup.ticker
+    setup_model.trading_day = parsed_setup.trading_day
+    setup_model.index = parsed_setup.index
+    setup_model.trigger_level = parsed_setup.trigger_level
+    setup_model.target_prices = parsed_setup.target_prices
+    setup_model.direction = parsed_setup.direction
+    setup_model.label = parsed_setup.label
+    setup_model.keywords = parsed_setup.keywords
+    setup_model.emoji_hint = parsed_setup.emoji_hint
+    setup_model.raw_line = parsed_setup.raw_line
+    # Legacy fields for backward compatibility
+    setup_model.setup_type = parsed_setup.label  # Use label as setup_type
+    setup_model.profile_name = parsed_setup.label  # Same as label
+    setup_model.bias_note = bias_note
+    # Status and confidence
+    setup_model.active = True
+    setup_model.confidence_score = 0.8  # A+ setups are high confidence
+    # Metadata
+    setup_model.parsed_metadata = {
+        'parser_version': 'refactored_v1',
+        'keyword_matches': parsed_setup.keywords,
+        'emoji_detected': parsed_setup.emoji_hint,
+        'target_count': len(parsed_setup.target_prices)
+    }
     
     return setup_model
 
@@ -77,34 +76,34 @@ def create_levels_for_setup(setup_model: TradeSetupModel) -> List[ParsedLevel]:
     levels = []
     
     # Create entry level
-    entry_level = ParsedLevel(
-        setup_id=setup_model.id,
-        level_type='entry',
-        direction=setup_model.direction,
-        trigger_price=setup_model.trigger_level,
-        strategy=setup_model.label,
-        confidence=0.8,
-        description=f"Entry trigger for {setup_model.label or 'setup'}",
-        active=True,
-        triggered=False
-    )
+    entry_level = ParsedLevel()
+    entry_level.setup_id = setup_model.id
+    entry_level.level_type = 'entry'
+    entry_level.direction = setup_model.direction
+    entry_level.trigger_price = setup_model.trigger_level
+    entry_level.strategy = setup_model.label
+    entry_level.confidence = 0.8
+    entry_level.description = f"Entry trigger for {setup_model.label or 'setup'}"
+    entry_level.active = True
+    entry_level.triggered = False
     levels.append(entry_level)
     
-    # Create target levels
-    for i, target_price in enumerate(setup_model.target_prices):
-        target_level = ParsedLevel(
-            setup_id=setup_model.id,
-            level_type='target',
-            direction=setup_model.direction,
-            trigger_price=target_price,
-            sequence_order=i + 1,
-            strategy=setup_model.label,
-            confidence=0.8,
-            description=f"Target {i+1} for {setup_model.label or 'setup'}",
-            active=True,
-            triggered=False
-        )
-        levels.append(target_level)
+    # Create target levels - handle target_prices as array
+    target_prices = setup_model.target_prices if hasattr(setup_model, 'target_prices') and setup_model.target_prices else []
+    if isinstance(target_prices, list):
+        for i, target_price in enumerate(target_prices):
+            target_level = ParsedLevel()
+            target_level.setup_id = setup_model.id
+            target_level.level_type = 'target'
+            target_level.direction = setup_model.direction
+            target_level.trigger_price = target_price
+            target_level.sequence_order = i + 1
+            target_level.strategy = setup_model.label
+            target_level.confidence = 0.8
+            target_level.description = f"Target {i+1} for {setup_model.label or 'setup'}"
+            target_level.active = True
+            target_level.triggered = False
+            levels.append(target_level)
     
     return levels
 

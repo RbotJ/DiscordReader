@@ -75,7 +75,7 @@ class TradeSetup(db.Model):
             'ticker': self.ticker,
             'trading_day': self.trading_day.isoformat() if self.trading_day is not None else None,
             'index': self.index,
-            'trigger_level': float(self.trigger_level) if self.trigger_level is not None else None,
+            'trigger_level': float(self.trigger_level) if hasattr(self, '_trigger_level') and self.trigger_level is not None else None,
             'target_prices': self.target_prices,
             'direction': self.direction,
             'label': self.label,
