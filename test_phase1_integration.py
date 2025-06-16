@@ -49,7 +49,14 @@ def test_phase1_data_flow():
     
     # Parse message using refactored parser
     try:
-        parsed_setups = parse_aplus_message(content, date.today())
+        parser = get_aplus_parser()
+        result = parser.parse_message(content, message_id)
+        
+        if not result.get('success', False):
+            print(f"   ✗ Parsing failed: {result.get('error', 'Unknown error')}")
+            return False
+            
+        parsed_setups = result.get('setups', [])
         print(f"   ✓ Parser extracted {len(parsed_setups)} setups")
         
         for setup in parsed_setups:
