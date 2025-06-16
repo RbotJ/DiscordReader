@@ -26,7 +26,15 @@ class ParsedLevelDTO(NamedTuple):
     description: Optional[str]
 
 
-
+class ParsedSetupDTO(NamedTuple):
+    """Data transfer object for a parsed trading setup."""
+    ticker: str
+    setup_type: Optional[str]  # breakout, breakdown, rejection, bounce
+    bias_note: Optional[str]
+    direction: Optional[str]  # bullish, bearish, neutral
+    confidence_score: Optional[float]
+    raw_content: str
+    parsed_metadata: Optional[Dict[str, Any]]
 
 
 class MessageParser:
@@ -172,15 +180,15 @@ class MessageParser:
                     all_levels = []
                     
                     for trade_setup in result['setups']:
-                        # Return setup data as dict (legacy interface)
-                        setup_dto = {
-                            'ticker': trade_setup.ticker,
-                            'setup_type': trade_setup.label,  # Use label as setup_type
-                            'bias_note': result.get('ticker_bias_notes', {}).get(trade_setup.ticker),
-                            'direction': trade_setup.direction,
-                            'confidence_score': 0.8,  # A+ setups are high confidence
-                            'raw_content': trade_setup.raw_line,
-                            'parsed_metadata': {
+                        # Convert TradeSetup to ParsedSetupDTO
+                        setup_dto = ParsedSetupDTO(
+                            ticker=trade_setup.ticker,
+                            setup_type=trade_setup.label,  # Use label as setup_type
+                            bias_note=result.get('ticker_bias_notes', {}).get(trade_setup.ticker),
+                            direction=trade_setup.direction,
+                            confidence_score=0.8,  # A+ setups are high confidence
+                            raw_content=trade_setup.raw_line,
+                            parsed_metadata={
                                 'setup_id': trade_setup.id,
                                 'label': trade_setup.label,
                                 'keywords': trade_setup.keywords,
@@ -189,7 +197,7 @@ class MessageParser:
                                 'target_count': len(trade_setup.target_prices),
                                 'parser_type': 'aplus_refactored'
                             }
-                        }
+                        )
                         setups.append(setup_dto)
                         
                         # Convert target prices to ParsedLevelDTO instances
@@ -259,7 +267,7 @@ class MessageParser:
         content_lower = content.lower()
         return any(keyword in content_lower for keyword in self.setup_keywords)
     
-    def _parse_ticker_setup(self, ticker: str, content: str, raw_message: Dict) -> Tuple[Optional[Dict], List[ParsedLevelDTO]]:
+    def _parse_ticker_setup(self, ticker: str, content: str, raw_message: Dict) -> Tuple[Optional[ParsedSetupDTO], List[ParsedLevelDTO]]:
         """
         Parse setup information for a specific ticker.
         
@@ -299,15 +307,15 @@ class MessageParser:
             
             # Only create setup if we have meaningful content
             if setup_type or direction or levels or any(kw in content.lower() for kw in ['entry', 'target', 'stop']):
-                setup_dto = {
-                    'ticker': ticker,
-                    'setup_type': setup_type,
-                    'bias_note': bias_note,
-                    'direction': direction,
-                    'confidence_score': confidence_score,
-                    'raw_content': content,
-                    'parsed_metadata': parsed_metadata
-                }
+                setup_dto = ParsedSetupDTO(
+                    ticker=ticker,
+                    setup_type=setup_type,
+                    bias_note=bias_note,
+                    direction=direction,
+                    confidence_score=confidence_score,
+                    raw_content=content,
+                    parsed_metadata=parsed_metadata
+                )
                 return setup_dto, levels
             
             return None, []
