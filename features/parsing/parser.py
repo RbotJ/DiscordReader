@@ -1,40 +1,18 @@
 """
-Consolidated Message Parser
+Modern Message Parser
 
 Single source of truth for parsing Discord messages into trade setups.
-Extracts ticker symbols, setup types, price levels, and trading bias from natural language text.
+Uses the refactored A+ parser with TradeSetup dataclass and structured field mappings.
+Legacy DTOs have been archived.
 """
 import logging
-import re
 from datetime import datetime, date
-from typing import List, Dict, Any, Optional, Tuple, NamedTuple
-from decimal import Decimal
+from typing import List, Dict, Any, Optional
 from pytz import timezone, UTC
 
 from .aplus_parser import get_aplus_parser
 
 logger = logging.getLogger(__name__)
-
-
-class ParsedLevelDTO(NamedTuple):
-    """Data transfer object for a parsed price level."""
-    level_type: str  # entry, target, stop, bounce, rejection, breakout, breakdown
-    direction: Optional[str]  # up, down, long, short
-    trigger_price: float
-    strategy: Optional[str]  # aggressive, conservative, normal
-    confidence: Optional[float]  # 0.0 to 1.0
-    description: Optional[str]
-
-
-class ParsedSetupDTO(NamedTuple):
-    """Data transfer object for a parsed trading setup."""
-    ticker: str
-    setup_type: Optional[str]  # breakout, breakdown, rejection, bounce
-    bias_note: Optional[str]
-    direction: Optional[str]  # bullish, bearish, neutral
-    confidence_score: Optional[float]
-    raw_content: str
-    parsed_metadata: Optional[Dict[str, Any]]
 
 
 class MessageParser:
