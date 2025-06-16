@@ -245,7 +245,8 @@ class ParsingListener:
             event_data = {
                 'setup_id': setup.id,
                 'ticker': setup.ticker,
-                'setup_type': setup.setup_type,
+                'label': setup.label,  # Updated field mapping
+                'keywords': setup.keywords,  # Updated field mapping
                 'direction': setup.direction,
                 'confidence_score': setup.confidence_score,
                 'trading_day': setup.trading_day.isoformat(),
@@ -263,7 +264,7 @@ class ParsingListener:
                 ],
                 'metadata': {
                     'parsed_at': datetime.utcnow().isoformat(),
-                    'parser_version': '1.0',
+                    'parser_version': '2.0',  # Updated version for new field mappings
                     'confidence_threshold': 0.5
                 }
             }
