@@ -13,7 +13,8 @@ from sqlalchemy import text
 
 from common.db import db
 from .models import TradeSetup, ParsedLevel
-from .parser import ParsedSetupDTO, ParsedLevelDTO
+from .aplus_parser import TradeSetup as ParsedTradeSetup
+from .setup_converter import convert_parsed_setup_to_model, create_levels_for_setup
 
 logger = logging.getLogger(__name__)
 
@@ -31,20 +32,18 @@ class ParsingStore:
     def store_parsed_message(
         self, 
         message_id: str,
-        setups: List[ParsedSetupDTO], 
-        levels_by_setup: Dict[str, List[ParsedLevelDTO]], 
+        parsed_setups: List[ParsedTradeSetup], 
         trading_day: Optional[date] = None,
-        aplus_setups: Optional[List] = None
+        ticker_bias_notes: Optional[Dict[str, str]] = None
     ) -> Tuple[List[TradeSetup], List[ParsedLevel]]:
         """
-        Store parsed setups and levels from a message.
+        Store parsed setups and levels from a message using the refactored TradeSetup dataclass.
         
         Args:
             message_id: Discord message ID
-            setups: List of parsed setup DTOs
-            levels_by_setup: Dict mapping setup ticker to its levels
+            parsed_setups: List of TradeSetup dataclasses from the refactored parser
             trading_day: Trading day (defaults to today)
-            aplus_setups: List of enhanced A+ setup DTOs with profile names
+            ticker_bias_notes: Optional dict of bias notes per ticker
             
         Returns:
             Tuple of (created_setups, created_levels)
@@ -52,141 +51,56 @@ class ParsingStore:
         if trading_day is None:
             trading_day = date.today()
         
+        ticker_bias_notes = ticker_bias_notes or {}
         created_setups = []
         created_levels = []
         
         try:
-            # Process A+ setups with enhanced schema fields
-            if aplus_setups:
-                logger.info(f"Processing {len(aplus_setups)} A+ setups for message {message_id}")
-                for i, setup_dto in enumerate(aplus_setups):
-                    logger.info(f"Processing setup {i+1}/{len(aplus_setups)}: {setup_dto.ticker} {setup_dto.profile_name}")
-                    logger.debug(f"Message {message_id}: Extracted trading_day = {trading_day}")
-                    
-                    # Check for existing setup to prevent duplicates
-                    existing = self.session.query(TradeSetup).filter_by(
-                        message_id=message_id,
-                        ticker=setup_dto.ticker.upper(),
-                        trading_day=trading_day,
-                        profile_name=setup_dto.profile_name,
-                        trigger_level=setup_dto.trigger_level
-                    ).first()
-                    
-                    if existing:
-                        logger.info(f"Skipping duplicate setup for {setup_dto.ticker} {setup_dto.profile_name} on {trading_day}")
-                        continue
-                    
-                    try:
-                        # Create new enhanced setup with profile name and trigger level
-                        new_setup = TradeSetup()
-                        new_setup.message_id = message_id
-                        new_setup.ticker = setup_dto.ticker
-                        new_setup.trading_day = trading_day
-                        new_setup.setup_type = setup_dto.setup_type
-                        new_setup.profile_name = setup_dto.profile_name
-                        new_setup.direction = setup_dto.direction
-                        new_setup.trigger_level = setup_dto.trigger_level
-                        new_setup.entry_condition = setup_dto.entry_condition
-                        new_setup.raw_content = setup_dto.raw_line
-                        new_setup.parsed_metadata = {
-                            'source': 'aplus_parser',
-                            'setup_strategy': setup_dto.strategy,
-                            'target_count': len(setup_dto.target_prices)
-                        }
-                        new_setup.active = True
-                        
-                        db.session.add(new_setup)
-                        db.session.flush()  # Get the ID
-                        created_setups.append(new_setup)
-                        
-                        # Create target levels for each price
-                        for i, target_price in enumerate(setup_dto.target_prices):
-                            try:
-                                from datetime import datetime
-                                level = ParsedLevel(
-                                    setup_id=new_setup.id,
-                                    level_type='target',
-                                    direction=setup_dto.direction,
-                                    trigger_price=target_price,
-                                    sequence_order=i + 1,
-                                    strategy=setup_dto.strategy,
-                                    description=f"Target {i + 1} for {setup_dto.ticker}",
-                                    active=True,
-                                    triggered=False,
-                                    created_at=datetime.utcnow(),
-                                    updated_at=datetime.utcnow()
-                                )
-                                
-                                db.session.add(level)
-                                created_levels.append(level)
-                                logger.debug(f"Created level {i+1} with price {target_price} for setup {new_setup.id}")
-                            except Exception as e:
-                                logger.error(f"Error creating level {i+1} for setup {new_setup.id}: {e}")
-                                # Don't rollback here - just skip this level
-                                continue
-                    except Exception as e:
-                        logger.error(f"Error creating setup for {setup_dto.ticker}: {e}")
-                        # Don't rollback here - just skip this setup
-                        continue
+            logger.info(f"Processing {len(parsed_setups)} parsed setups for message {message_id}")
             
-            # Process standard setups if provided
-            elif setups:
-                for setup_dto in setups:
-                    logger.debug(f"Message {message_id}: Extracted trading_day = {trading_day}")
-                    
-                    # Check for existing setup to prevent duplicates
-                    existing = self.session.query(TradeSetup).filter_by(
-                        message_id=message_id,
-                        ticker=setup_dto.ticker.upper(),
-                        trading_day=trading_day,
-                        setup_type=setup_dto.setup_type
+            for parsed_setup in parsed_setups:
+                logger.info(f"Processing setup: {parsed_setup.ticker} {parsed_setup.label}")
+                
+                # Check for existing setup to prevent duplicates
+                existing = self.session.query(TradeSetup).filter_by(id=parsed_setup.id).first()
+                
+                if existing:
+                    logger.info(f"Setup {parsed_setup.id} already exists, updating...")
+                    # Update existing setup
+                    existing.trigger_level = parsed_setup.trigger_level
+                    existing.target_prices = parsed_setup.target_prices
+                    existing.direction = parsed_setup.direction
+                    existing.label = parsed_setup.label
+                    existing.keywords = parsed_setup.keywords
+                    existing.emoji_hint = parsed_setup.emoji_hint
+                    existing.raw_line = parsed_setup.raw_line
+                    existing.bias_note = ticker_bias_notes.get(parsed_setup.ticker)
+                    existing.updated_at = datetime.utcnow()
+                    setup_model = existing
+                else:
+                    # Convert to database model using setup converter
+                    bias_note = ticker_bias_notes.get(parsed_setup.ticker)
+                    setup_model = convert_parsed_setup_to_model(parsed_setup, message_id, bias_note)
+                    self.session.add(setup_model)
+                
+                self.session.flush()  # Get the ID
+                created_setups.append(setup_model)
+                
+                # Create levels using converter
+                levels = create_levels_for_setup(setup_model)
+                for level in levels:
+                    # Check if level already exists
+                    existing_level = self.session.query(ParsedLevel).filter_by(
+                        setup_id=level.setup_id,
+                        level_type=level.level_type,
+                        trigger_price=level.trigger_price
                     ).first()
                     
-                    if existing:
-                        logger.info(f"Skipping duplicate setup for {setup_dto.ticker} {setup_dto.setup_type} on {trading_day}")
-                        continue
-                    
-                    # Create new standard setup
-                    new_setup = TradeSetup()
-                    new_setup.message_id = message_id
-                    new_setup.ticker = setup_dto.ticker
-                    new_setup.trading_day = trading_day
-                    new_setup.setup_type = setup_dto.setup_type
-                    new_setup.bias_note = setup_dto.bias_note
-                    new_setup.direction = setup_dto.direction
-                    new_setup.confidence_score = setup_dto.confidence_score
-                    new_setup.raw_content = setup_dto.raw_content
-                    new_setup.parsed_metadata = setup_dto.parsed_metadata
-                    new_setup.active = True
+                    if not existing_level:
+                        self.session.add(level)
+                        created_levels.append(level)
                 
-                self.session.add(new_setup)
-                self.session.flush()  # Get the ID
-                
-                created_setups.append(new_setup)
-                logger.info(f"Created setup {new_setup.id} for {setup_dto.ticker}")
-                
-                # Create levels for this setup
-                setup_levels = levels_by_setup.get(setup_dto.ticker, [])
-                for level_dto in setup_levels:
-                    new_level = ParsedLevel(
-                        setup_id=new_setup.id,
-                        level_type=level_dto.level_type,
-                        direction=level_dto.direction,
-                        trigger_price=level_dto.trigger_price,
-                        strategy=level_dto.strategy,
-                        confidence=level_dto.confidence,
-                        description=level_dto.description,
-                        level_metadata={},  # Can be expanded later
-                        active=True,
-                        triggered=False,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
-                    )
-                    
-                    self.session.add(new_level)
-                    created_levels.append(new_level)
-                
-                logger.info(f"Created {len(setup_levels)} levels for setup {new_setup.id}")
+                logger.debug(f"Created setup {setup_model.id} with {len(levels)} levels")
             
             # Commit all changes
             self.session.commit()
