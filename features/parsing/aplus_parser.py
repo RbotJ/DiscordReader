@@ -148,11 +148,20 @@ class APlusMessageParser:
         # Bias pattern
         self.bias_pattern = re.compile(r'⚠️\s*Bias\s*[—-]\s*(.+?)(?=\n\n|\n[A-Z]{2,5}\n|$)', re.IGNORECASE | re.DOTALL)
         
-        # Month mapping for date parsing
+        # Enhanced month mapping with abbreviation support
         self.month_map = {
-            'january': 1, 'february': 2, 'march': 3, 'april': 4,
-            'may': 5, 'june': 6, 'july': 7, 'august': 8,
-            'september': 9, 'october': 10, 'november': 11, 'december': 12
+            'jan': 1, 'january': 1,
+            'feb': 2, 'february': 2, 
+            'mar': 3, 'march': 3,
+            'apr': 4, 'april': 4,
+            'may': 5,
+            'jun': 6, 'june': 6,
+            'jul': 7, 'july': 7,
+            'aug': 8, 'august': 8,
+            'sep': 9, 'september': 9,
+            'oct': 10, 'october': 10,
+            'nov': 11, 'november': 11,
+            'dec': 12, 'december': 12
         }
 
     def validate_message(self, content: str) -> bool:
@@ -178,12 +187,16 @@ class APlusMessageParser:
             Trading date or None if not found
         """
         try:
-            # Look for date patterns after the header:
-            # Format 1: "A+ Scalp Trade Setups — Jun 2"
-            # Format 2: "A+ Scalp Trade Setups — Thursday May 29"
+            # Enhanced patterns to catch more header variations:
             date_patterns = [
-                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—-]\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
-                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—-]\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
+                # "A+ Scalp Trade Setups — Sunday June 15"
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—\-–]\s*(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\s+([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                # "A+ Scalp Trade Setups — June 15" 
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—\-–]\s*([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE),
+                # "A+ Scalp Trade Setups — Jun 15"
+                re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)\s*[—\-–]\s*([A-Za-z]{3,9})\s+(\d{1,2})', re.IGNORECASE),
+                # Flexible dash/em-dash handling
+                re.compile(r'A\+.*?Setups\s*[—\-–]\s*(?:\w+\s+)?([A-Za-z]+)\s+(\d{1,2})', re.IGNORECASE)
             ]
             
             date_match = None
@@ -216,12 +229,39 @@ class APlusMessageParser:
             current_year = date.today().year
             trading_date = date(current_year, month_num, day)
             
-            logger.info(f"Extracted trading date: {trading_date} from '{month_name} {day}'")
-            return trading_date
+            # Validate the extracted date
+            if self.validate_trading_date(trading_date, content):
+                logger.info(f"Extracted trading date: {trading_date} from '{month_name} {day}'")
+                return trading_date
+            else:
+                logger.warning(f"Extracted trading date {trading_date} failed validation")
+                return None
             
         except (ValueError, IndexError) as e:
             logger.warning(f"Error parsing trading date: {e}")
             return None
+
+    def validate_trading_date(self, extracted_date: Optional[date], content: str) -> bool:
+        """
+        Validate that extracted trading date makes sense.
+        
+        Args:
+            extracted_date: The extracted date to validate
+            content: Original message content for context
+            
+        Returns:
+            True if date is valid and reasonable
+        """
+        if not extracted_date:
+            return False
+        
+        # Check if date is reasonable (within 1 year)
+        today = date.today()
+        if abs((extracted_date - today).days) > 365:
+            logger.warning(f"Extracted trading date {extracted_date} seems unrealistic")
+            return False
+        
+        return True
 
     def extract_price_list(self, price_string: str) -> List[float]:
         """
@@ -323,8 +363,11 @@ class APlusMessageParser:
         all_setups = []
         ticker_bias_notes = {}
         
-        # Ensure we have a valid trading date
-        current_trading_date = trading_date or date.today()
+        # Preserve None to indicate parsing failure, don't mask with fallback
+        current_trading_date = trading_date
+        if not current_trading_date:
+            logger.error(f"Failed to extract trading date from message {message_id}, using today as fallback")
+            current_trading_date = date.today()
         
         for ticker, section_content in ticker_sections.items():
             setups, bias_note = self.parse_ticker_section(ticker, section_content, current_trading_date)

@@ -39,10 +39,18 @@ class MessageParser:
             Dict containing parsing results with TradeSetup objects
         """
         try:
+            # Check if trading_day already provided in kwargs (from A+ parser)
+            provided_trading_day = kwargs.get('trading_day')
+            
             # Use A+ parser for all messages
             if self.aplus_parser.validate_message(content):
                 logger.info(f"Parsing message {message_id or 'unknown'} with A+ parser")
                 result = self.aplus_parser.parse_message(content, message_id or 'unknown', **kwargs)
+                
+                # Don't override trading_day if A+ parser extracted it successfully
+                if result.get('trading_date') and not provided_trading_day:
+                    result['trading_day'] = result['trading_date']
+                
                 return result
             else:
                 # Non-A+ messages are not parsed

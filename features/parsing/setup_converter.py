@@ -54,10 +54,12 @@ def convert_parsed_setup_to_model(
     setup_model.confidence_score = 0.8  # A+ setups are high confidence
     # Metadata
     setup_model.parsed_metadata = {
-        'parser_version': 'refactored_v1',
+        'parser_version': 'refactored_v2',
         'keyword_matches': parsed_setup.keywords,
         'emoji_detected': parsed_setup.emoji_hint,
-        'target_count': len(parsed_setup.target_prices)
+        'target_count': len(parsed_setup.target_prices),
+        'trading_date_source': 'extracted' if parsed_setup.trading_day else 'fallback',
+        'extraction_confidence': 'high' if parsed_setup.trading_day else 'low'
     }
     
     return setup_model
