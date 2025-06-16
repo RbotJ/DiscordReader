@@ -74,12 +74,19 @@ class TradeSetup(db.Model):
             'message_id': self.message_id,
             'ticker': self.ticker,
             'trading_day': self.trading_day.isoformat() if self.trading_day is not None else None,
-            'setup_type': self.setup_type,
-            'bias_note': self.bias_note,
+            'index': self.index,
+            'trigger_level': float(self.trigger_level) if self.trigger_level is not None else None,
+            'target_prices': self.target_prices,
             'direction': self.direction,
+            'label': self.label,
+            'keywords': self.keywords,
+            'emoji_hint': self.emoji_hint,
+            'raw_line': self.raw_line,
+            'setup_type': self.setup_type,
+            'profile_name': self.profile_name,
+            'bias_note': self.bias_note,
             'active': self.active,
             'confidence_score': self.confidence_score,
-            'raw_content': self.raw_content,
             'parsed_metadata': self.parsed_metadata,
             'created_at': self.created_at.isoformat() if self.created_at is not None else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at is not None else None,
@@ -111,8 +118,8 @@ class ParsedLevel(db.Model):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     
-    # Foreign key to trade setup
-    setup_id = Column(Integer, ForeignKey("trade_setups.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Foreign key to trade setup (updated for string-based ID)
+    setup_id = Column(String(50), ForeignKey("trade_setups.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Enhanced level information
     level_type = Column(String(30), nullable=False)  # trigger, target, stop_loss, bias_pivot
@@ -153,7 +160,7 @@ class ParsedLevel(db.Model):
             'setup_id': self.setup_id,
             'level_type': self.level_type,
             'direction': self.direction,
-            'trigger_price': float(self.trigger_price) if self.trigger_price else None,
+            'trigger_price': float(self.trigger_price) if self.trigger_price is not None else None,
             'strategy': self.strategy,
             'confidence': self.confidence,
             'description': self.description,
