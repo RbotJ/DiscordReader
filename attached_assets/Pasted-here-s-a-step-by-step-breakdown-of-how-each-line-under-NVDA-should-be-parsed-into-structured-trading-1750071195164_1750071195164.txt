@@ -1,0 +1,132 @@
+here's a step-by-step breakdown of how each line under NVDA should be parsed into structured trading setups and levels:
+
+🎯 Input Ticker Section: NVDA
+plaintext
+Copy
+Edit
+❌ Rejection Short Near 144.00 🔻 141.40, 139.20, 137.60
+🔻 Aggressive Breakdown Below 141.33 🔻 139.90, 138.40, 136.20
+🔻 Conservative Breakdown Below 138.20 🔻 136.60, 135.00, 132.80
+🔼 Aggressive Breakout Above 144.02 🔼 146.20, 148.00, 150.00
+🔼 Conservative Breakout Above 146.20 🔼 148.00, 150.50, 153.00
+🔄 Bounce Zone 138.50–139.00 🔼 142.00, 143.80, 145.60
+⚠️ Bias — bearish into open — Break below 141.33 likely flushes to downside — only bullish above 146.20
+🔍 Parsed Setup Outputs (from APlusMessageParser)
+1. ❌ Rejection Short Near 144.00 🔻 141.40, 139.20, 137.60
+setup_type: rejection
+
+profile_name: RejectionNear
+
+direction: bearish
+
+strategy: rejection
+
+trigger_level: 144.00
+
+target_prices: [141.40, 139.20, 137.60]
+
+entry_condition: "Price pokes to 144.00 then reverses sharply away"
+
+2. 🔻 Aggressive Breakdown Below 141.33 🔻 139.90, 138.40, 136.20
+setup_type: breakdown
+
+profile_name: AggressiveBreakdown
+
+direction: bearish
+
+strategy: aggressive
+
+trigger_level: 141.33
+
+target_prices: [139.90, 138.40, 136.20]
+
+entry_condition: "5-min candle close below 141.33 with volume confirmation"
+
+3. 🔻 Conservative Breakdown Below 138.20 🔻 136.60, 135.00, 132.80
+setup_type: breakdown
+
+profile_name: ConservativeBreakdown
+
+direction: bearish
+
+strategy: conservative
+
+trigger_level: 138.20
+
+target_prices: [136.60, 135.00, 132.80]
+
+entry_condition: "Price creeps below 138.20 with sustained bearish momentum"
+
+4. 🔼 Aggressive Breakout Above 144.02 🔼 146.20, 148.00, 150.00
+setup_type: breakout
+
+profile_name: AggressiveBreakout
+
+direction: bullish
+
+strategy: aggressive
+
+trigger_level: 144.02
+
+target_prices: [146.20, 148.00, 150.00]
+
+entry_condition: "5-min candle close above 144.02 with volume confirmation"
+
+5. 🔼 Conservative Breakout Above 146.20 🔼 148.00, 150.50, 153.00
+setup_type: breakout
+
+profile_name: ConservativeBreakout
+
+direction: bullish
+
+strategy: conservative
+
+trigger_level: 146.20
+
+target_prices: [148.00, 150.50, 153.00]
+
+entry_condition: "Price creeps above 146.20 with sustained bullish momentum"
+
+6. 🔄 Bounce Zone 138.50–139.00 🔼 142.00, 143.80, 145.60
+setup_type: bounce
+
+profile_name: BounceZone
+
+direction: bullish
+
+strategy: zone
+
+trigger_level: average of range → (138.50 + 139.00) / 2 = 138.75
+
+target_prices: [142.00, 143.80, 145.60]
+
+entry_condition: "Price drops to 138.50–139.00 zone and bounces"
+
+⚠️ Bias — bearish into open — Break below 141.33 likely flushes to downside — only bullish above 146.20
+This is extracted as a bias note.
+
+It’s attached to all setups in this section via bias_note field in each ParsedSetupDTO.
+
+📦 Summary Output (Data Model)
+Each setup becomes one ParsedSetupDTO with:
+
+python
+Copy
+Edit
+ParsedSetupDTO(
+  ticker='NVDA',
+  setup_type='breakout',  # or breakdown, bounce, rejection
+  bias_note='bearish into open — Break below 141.33 likely flushes to downside — only bullish above 146.20',
+  direction='bullish',
+  confidence_score=0.8,
+  raw_content='🔼 Aggressive Breakout Above 144.02 🔼 146.20, 148.00, 150.00',
+  parsed_metadata={
+    'profile_name': 'AggressiveBreakout',
+    'trigger_level': 144.02,
+    'entry_condition': '5-min candle close above 144.02 with volume confirmation',
+    'strategy': 'aggressive',
+    'target_count': 3,
+    'parser_type': 'aplus_specialized'
+  }
+)
+Each target_price and trigger_level also becomes one ParsedLevelDTO.

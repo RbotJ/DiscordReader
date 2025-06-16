@@ -1,0 +1,89 @@
+🎯 Goal
+Refactor the A+ scalp setup parser to:
+
+Eliminate brittle full-line regex patterns
+
+Create a consistent data structure for all parsed setups
+
+Allow flexible labeling, while capturing required price levels
+
+Support optional audit rules (e.g., expected setup types like “Rejection”)
+
+Future-proof against small format changes in Discord messages
+
+✅ Key Improvements in the New Parser
+Area	Improvement
+Parser Logic	Structured line parsing via token analysis, not regex
+Data Model	Introduces TradeSetup with required trigger/targets + optional labels
+Uniqueness	Setup ID per (ticker, trading_day, index) for consistency
+Audit-Friendly	Logs missing or extra setups based on expected profile types
+Direction Logic	Infers long/short using emoji or keywords
+Labeling	Flexible labels (e.g., “AggressiveBreakout”) used for sorting, not logic
+Monitoring Ready	Always provides trigger_level, target_prices, and direction
+
+🛠️ Developer Task Checklist
+1. Update Models (DB + DTOs)
+Task	Notes
+✅ Replace ParsedSetupDTO	Use new TradeSetup dataclass or mirror it with a new model
+✅ Update SQLAlchemy model	Add fields: id, trigger_level, target_prices (JSON/array), label, index, direction, keywords, emoji_hint, raw_line
+✅ Ensure composite uniqueness	Use (ticker, trading_day, index) as a unique key
+
+2. Update SQLAlchemy Table (Migration)
+Field Name	Type	Description
+id	string (PK)	e.g., "20250616_NVDA_Setup_1"
+ticker	string	Stock ticker (e.g. NVDA)
+trading_day	date	Parsed from message header
+index	integer	1-based order of setup in section
+trigger_level	float	Entry price
+target_prices	JSON/Array	Movement range
+direction	enum/string	'long' or 'short'
+label	string/null	Optional: Rejection, Breakout, etc.
+keywords	JSON/Array	Token matches from the line
+emoji_hint	string/null	First emoji from the line
+raw_line	text	Original input line
+
+3. Replace APlus Parser Logic
+Replace the original parse_ticker_section() in aplus_parser.py with the new version from the Canvas.
+
+Remove full-line regex parsing logic.
+
+Keep bias-note extraction in its own method (if needed).
+
+4. Update Integration in parser.py
+Where APlusSetupDTO was returned, now collect TradeSetup instances.
+
+Convert each TradeSetup to the new DB model or ParsedSetupDTO equivalent.
+
+Update parsing pipeline (parse_message_to_setups) to reflect the new model shape.
+
+5. Update Blueprint & API Layer
+If /setups or /parse_message returns parsed setups:
+
+Update response schema to reflect new fields
+
+Optionally allow filtering by label or direction
+
+6. Test & Log
+✅ Validate parsing output on real past messages
+
+✅ Confirm logs warn if fewer than 7 expected profiles are found
+
+✅ Confirm multiple setups with no label still parse cleanly
+
+🧪 Bonus: Unit Test Coverage
+Test at least one example for each setup line type:
+
+Rejection
+
+Aggressive Breakdown
+
+Conservative Breakdown
+
+Aggressive Breakout
+
+Conservative Breakout
+
+Bounce Zone
+
+Bias (optional, header or final line)
+
