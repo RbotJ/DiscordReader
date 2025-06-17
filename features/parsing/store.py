@@ -475,7 +475,7 @@ class ParsingStore:
                 
                 for setup_id in ids_to_remove:
                     # First remove associated levels
-                    self.session.execute(text("DELETE FROM parsed_levels WHERE setup_id = :setup_id"), 
+                    self.session.execute(text("DELETE FROM parsing_levels WHERE setup_id = :setup_id"), 
                                        {'setup_id': setup_id})
                     # Then remove the setup
                     self.session.execute(text("DELETE FROM trade_setups WHERE id = :setup_id"), 

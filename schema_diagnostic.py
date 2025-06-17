@@ -22,7 +22,7 @@ def run_schema_diagnostic():
 
         # Check if critical columns exist
         inspector = inspect(db.session.bind)
-        columns = [col['name'] for col in inspector.get_columns('parsed_levels')]
+        columns = [col['name'] for col in inspector.get_columns('parsing_levels')]
         expected = ['id', 'setup_id', 'price', 'level_type', 'active', 'triggered', 'confidence_score']
 
         missing = [col for col in expected if col not in columns]

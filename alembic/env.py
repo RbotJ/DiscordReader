@@ -20,7 +20,6 @@ except ImportError:
 
 # Import vertical slice models
 try:
-    from features.discord_bot.models import *
     from common.events.models import *
     from features.ingestion.models import *
     from features.parsing.models import *
