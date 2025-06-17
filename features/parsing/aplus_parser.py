@@ -286,7 +286,7 @@ class APlusMessageParser:
 
     def validate_message(self, content: str) -> bool:
         """
-        Validate if this is an A+ scalp setups message.
+        Validate if this is an A+ scalp setups message with enhanced logging.
         
         Args:
             content: Raw message content
@@ -294,7 +294,25 @@ class APlusMessageParser:
         Returns:
             True if message contains A+ trade setups header
         """
-        return bool(self.header_pattern.search(content))
+        if not content or not isinstance(content, str):
+            logger.debug(f"Message validation failed: empty or invalid content type")
+            return False
+            
+        # Enhanced header pattern matching with detailed logging
+        header_match = self.header_pattern.search(content)
+        if header_match:
+            logger.debug(f"A+ header found: '{header_match.group()}'")
+            return True
+        else:
+            # Log first line for debugging when validation fails
+            first_line = content.split('\n')[0] if content else ""
+            logger.debug(f"A+ header NOT found in first line: '{first_line[:100]}'")
+            
+            # Check for common variations that might not match
+            if "A+" in content and "setup" in content.lower():
+                logger.warning(f"Possible A+ message with non-standard header format: '{first_line[:100]}'")
+            
+            return False
 
     def extract_trading_date(self, content: str) -> Optional[date]:
         """
