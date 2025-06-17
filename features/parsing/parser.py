@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 from pytz import timezone, UTC
+from dateutil.parser import isoparse
 
 from .aplus_parser import get_aplus_parser
 

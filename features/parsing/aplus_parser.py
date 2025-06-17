@@ -8,7 +8,7 @@ Refactored A+ Scalp Setups Parser
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 
@@ -232,6 +232,45 @@ class APlusMessageParser:
             'dec': 12, 'december': 12
         }
 
+    def extract_trading_day(self, content: str, message_timestamp: datetime) -> date:
+        """
+        Extract trading day from message content using hybrid token approach.
+        Falls back to message timestamp if no date is found.
+
+        Args:
+            content: full message string
+            message_timestamp: datetime the message was posted (in UTC or EST)
+
+        Returns:
+            Trading day as datetime.date
+        """
+        lines = content.splitlines()
+        tokens = []
+
+        # Scan the top ~5 lines for month/day pattern
+        for line in lines[:5]:
+            tokens += line.strip().replace(',', '').split()
+
+        for i, token in enumerate(tokens):
+            month_token = token.lower()
+            if month_token in self.month_map and i + 1 < len(tokens):
+                try:
+                    day = int(tokens[i + 1])
+                    year = message_timestamp.year
+                    extracted_date = date(year, self.month_map[month_token], day)
+                    
+                    logger.debug(f"Using header date {extracted_date} from line: '{lines[0] if lines else content[:50]}'")
+                    logger.info(f"Extracted trading day: {extracted_date} (method: header)")
+                    
+                    return extracted_date
+                except ValueError:
+                    continue  # e.g., "Jun five" or misformatted day
+
+        # Fallback: use message timestamp's date
+        fallback_date = message_timestamp.date()
+        logger.info(f"Falling back to timestamp: {fallback_date} (method: fallback)")
+        return fallback_date
+
     def validate_message(self, content: str) -> bool:
         """
         Validate if this is an A+ scalp setups message.
@@ -246,6 +285,7 @@ class APlusMessageParser:
 
     def extract_trading_date(self, content: str) -> Optional[date]:
         """
+        # DEPRECATED: Use extract_trading_day() with message_timestamp instead
         Extract trading date from message header.
         
         Args:
@@ -381,13 +421,15 @@ class APlusMessageParser:
         
         return setups, bias_note
 
-    def parse_message(self, content: str, message_id: Optional[str] = None) -> Dict[str, Any]:
+    def parse_message(self, content: str, message_id: Optional[str] = None, message_timestamp: Optional[datetime] = None, **kwargs) -> Dict[str, Any]:
         """
         Parse complete A+ scalp setups message.
         
         Args:
             content: Raw message content
             message_id: Discord message ID
+            message_timestamp: When the message was posted (for date inference)
+            **kwargs: Additional context
             
         Returns:
             Dictionary with parsed data
@@ -400,8 +442,17 @@ class APlusMessageParser:
                 'trading_date': None
             }
         
-        # Extract trading date
-        trading_date = self.extract_trading_date(content)
+        # Extract trading date using new hybrid approach if timestamp provided
+        if message_timestamp:
+            trading_date = self.extract_trading_day(content, message_timestamp)
+            extraction_method = "hybrid"
+        else:
+            # Fallback to old method if no timestamp (backward compatibility)
+            trading_date = self.extract_trading_date(content)
+            extraction_method = "legacy"
+            if not trading_date:
+                trading_date = date.today()
+                extraction_method = "fallback"
         
         # Split content into ticker sections
         ticker_sections = {}
@@ -433,14 +484,8 @@ class APlusMessageParser:
         all_setups = []
         ticker_bias_notes = {}
         
-        # Preserve None to indicate parsing failure, don't mask with fallback
-        current_trading_date = trading_date
-        if not current_trading_date:
-            logger.error(f"Failed to extract trading date from message {message_id}, using today as fallback")
-            current_trading_date = date.today()
-        
         for ticker, section_content in ticker_sections.items():
-            setups, bias_note = self.parse_ticker_section(ticker, section_content, current_trading_date)
+            setups, bias_note = self.parse_ticker_section(ticker, section_content, trading_date)
             all_setups.extend(setups)
             if bias_note:
                 ticker_bias_notes[ticker] = bias_note
@@ -452,7 +497,12 @@ class APlusMessageParser:
             'ticker_bias_notes': ticker_bias_notes,
             'total_setups': len(all_setups),
             'tickers_found': list(ticker_sections.keys()),
-            'message_id': message_id
+            'message_id': message_id,
+            'extraction_metadata': {
+                'extraction_method': extraction_method,
+                'timestamp_provided': message_timestamp is not None,
+                'extraction_confidence': 'high' if extraction_method == 'hybrid' else 'medium'
+            }
         }
 
 

@@ -1,0 +1,88 @@
+Perfect — your suggestions make the hybrid approach both simpler and more reliable. Here's an updated plan and drop-in function that follows your exact preferences.
+
+✅ Your Requirements Recap
+Requirement	Strategy
+Only extract {Month} {DayNum}	✅ Ignore day-of-week completely
+Use current message’s timestamp to infer year	✅ message_timestamp.year becomes authoritative
+Fallback if no date in header	✅ Use timestamp.date() from the message metadata
+
+🧠 Strategy Summary
+We’ll:
+
+Scan the top few lines for a {Month} {Number} pair (no regex dashes, no “Monday”)
+
+Convert month name to number using a month_map
+
+Infer year from raw_message["timestamp"] (already in UTC or localized)
+
+Return date(year, month, day)
+
+If no date is found → fallback to message timestamp
+
+✅ Drop-in Function: extract_trading_day()
+python
+Copy
+Edit
+from datetime import datetime, date
+import re
+
+MONTH_MAP = {
+    'january': 1, 'february': 2, 'march': 3, 'april': 4,
+    'may': 5, 'june': 6, 'july': 7, 'august': 8,
+    'september': 9, 'october': 10, 'november': 11, 'december': 12
+}
+
+def extract_trading_day(content: str, message_timestamp: datetime) -> date:
+    """
+    Extract trading day from message content using a hybrid token approach.
+    Falls back to message timestamp if no date is found.
+
+    Args:
+        content: full message string
+        message_timestamp: datetime the message was posted (in UTC or EST)
+
+    Returns:
+        Trading day as datetime.date
+    """
+    lines = content.splitlines()
+    tokens = []
+
+    # Scan the top ~5 lines for month/day pattern
+    for line in lines[:5]:
+        tokens += line.strip().replace(',', '').split()
+
+    for i, token in enumerate(tokens):
+        month_token = token.lower()
+        if month_token in MONTH_MAP and i + 1 < len(tokens):
+            try:
+                day = int(tokens[i + 1])
+                year = message_timestamp.year
+                return date(year, MONTH_MAP[month_token], day)
+            except ValueError:
+                continue  # e.g., "Jun five" or misformatted day
+
+    # Fallback: use message timestamp’s date
+    fallback_date = message_timestamp.date()
+    return fallback_date
+✅ How to Use It
+In parser.py or aplus_parser.py
+Replace your date extraction block with:
+
+python
+Copy
+Edit
+trading_day = extract_trading_day(content, raw_message["timestamp"])
+Make sure raw_message["timestamp"] is already a datetime object (or parse it if it's a string).
+
+🔎 Logging (Optional)
+You can add:
+
+python
+Copy
+Edit
+logger.info(f"Extracted trading day: {trading_day} from message {message_id}")
+🧪 Example Inputs It Handles
+Header Content Example	Published Timestamp	Result
+“A+ Scalp Setups — Jun 10”	2025-06-12T08:00Z	2025-06-10
+“A+ Scalp Trade Setups — June 15”	2025-06-16T08:00Z	2025-06-15
+“A+ Scalp Trade Setups” (no date)	2025-06-12T08:00Z	2025-06-12 (fallback)
