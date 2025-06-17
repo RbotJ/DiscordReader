@@ -14,10 +14,10 @@ from .listener import get_parsing_listener
 
 logger = logging.getLogger(__name__)
 
-# Create blueprint for parsing routes
-parsing_bp = Blueprint('parsing', __name__, url_prefix='/api/parsing')
+# Create blueprint for parsing API routes
+parsing_api_bp = Blueprint('parsing_api', __name__, url_prefix='/api/parsing')
 
-@parsing_bp.route('/parse', methods=['POST'])
+@parsing_api_bp.route('/parse', methods=['POST'])
 def parse_message():
     """Parse a trading message and extract setups"""
     try:
@@ -43,7 +43,7 @@ def parse_message():
         logger.error(f"Error parsing message: {e}")
         return jsonify({'error': 'Failed to parse message'}), 500
 
-@parsing_bp.route('/setups', methods=['GET'])
+@parsing_api_bp.route('/setups', methods=['GET'])
 def get_setups():
     """Get parsed setups with optional filtering"""
     try:
@@ -131,7 +131,7 @@ def get_setups():
         logger.error(f"Error getting setups: {e}")
         return jsonify({'error': 'Failed to get setups'}), 500
 
-@parsing_bp.route('/setups/<int:setup_id>', methods=['GET'])
+@parsing_api_bp.route('/setups/<int:setup_id>', methods=['GET'])
 def get_setup(setup_id):
     """Get a specific setup by ID"""
     try:
@@ -175,7 +175,7 @@ def get_setup(setup_id):
         logger.error(f"Error getting setup {setup_id}: {e}")
         return jsonify({'error': 'Failed to get setup'}), 500
 
-@parsing_bp.route('/setups/<int:setup_id>/deactivate', methods=['POST'])
+@parsing_api_bp.route('/setups/<int:setup_id>/deactivate', methods=['POST'])
 def deactivate_setup(setup_id):
     """Deactivate a setup"""
     try:
@@ -191,7 +191,7 @@ def deactivate_setup(setup_id):
         logger.error(f"Error deactivating setup {setup_id}: {e}")
         return jsonify({'error': 'Failed to deactivate setup'}), 500
 
-@parsing_bp.route('/levels/<int:level_id>/trigger', methods=['POST'])
+@parsing_api_bp.route('/levels/<int:level_id>/trigger', methods=['POST'])
 def trigger_level(level_id):
     """Trigger a level"""
     try:
@@ -207,7 +207,7 @@ def trigger_level(level_id):
         logger.error(f"Error triggering level {level_id}: {e}")
         return jsonify({'error': 'Failed to trigger level'}), 500
 
-@parsing_bp.route('/setups/by-day', methods=['GET'])
+@parsing_api_bp.route('/setups/by-day', methods=['GET'])
 def get_setups_by_trading_day():
     """Get setups filtered by trading day with dropdown options"""
     try:
@@ -355,7 +355,7 @@ def trigger_backlog():
             'error': f'Backlog parsing failed: {str(e)}'
         }), 500
 
-@parsing_bp.route('/stats', methods=['GET'])
+@parsing_api_bp.route('/stats', methods=['GET'])
 def get_stats():
     """Get parsing service statistics"""
     try:

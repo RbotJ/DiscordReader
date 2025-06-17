@@ -1,0 +1,101 @@
+Blueprint Naming Conflict
+
+parsing_bp is being defined in both dashboard.py and api.py, causing registration collisions or unexpected overrides.
+
+Missing /api/parsing/statistics Endpoint
+
+Frontend or JS is likely requesting /api/parsing/statistics, but it’s not registered or implemented.
+
+Your only working endpoint is /dashboard/parsing/stats.
+
+Template Data Binding Mismatch
+
+The overview.html template is expecting {{ metrics.total_levels }}, but the controller returns:
+
+python
+Copy
+Edit
+{ 'parsing_stats': { 'total_levels': 423 } }
+✅ ACTION PLAN
+🔹 1. Fix Blueprint Naming and Route Registration
+Goal: Avoid name collision and separate api_bp from dashboard_bp.
+
+Suggested Changes:
+python
+Copy
+Edit
+# features/parsing/api.py
+parsing_api_bp = Blueprint("parsing_api", __name__, url_prefix="/api/parsing")
+
+# features/parsing/dashboard.py
+parsing_dashboard_bp = Blueprint("parsing_dashboard", __name__, url_prefix="/dashboard/parsing")
+Then in app.py or register_all_blueprints():
+
+python
+Copy
+Edit
+from features.parsing.api import parsing_api_bp
+from features.parsing.dashboard import parsing_dashboard_bp
+
+app.register_blueprint(parsing_api_bp)
+app.register_blueprint(parsing_dashboard_bp)
+✅ Now:
+
+/api/parsing/statistics → for frontend AJAX or JS
+
+/dashboard/parsing/stats → for Flask-rendered views
+
+🔹 2. Create or Move Statistics Endpoint to API
+If frontend uses JS or Axios to poll /api/parsing/statistics, ensure this endpoint exists:
+
+python
+Copy
+Edit
+# features/parsing/api.py
+
+@parsing_api_bp.route("/statistics", methods=["GET"])
+def get_statistics():
+    stats = ParsingStore().get_parsing_statistics()
+    return jsonify(stats)
+✅ Now JS calls like fetch('/api/parsing/statistics') will work.
+
+🔹 3. Flatten Metric Data for Template
+Choose one of two fixes:
+
+Option A: Fix in Template
+Update overview.html:
+
+jinja
+Copy
+Edit
+{{ metrics.parsing_stats.active_setups }}
+Option B: Fix in Controller (recommended for simplicity)
+python
+Copy
+Edit
+# features/parsing/dashboard.py
+
+stats = ParsingStore().get_parsing_statistics()
+metrics = stats.get("parsing_stats", stats)
+return render_template("parsing/overview.html", metrics=metrics)
+🧪 Validation Checklist
+After applying the above fixes:
+
+✅ /api/parsing/statistics returns JSON with total_setups, total_levels, etc.
+
+✅ Dashboard loads without JS console errors.
+
+✅ Service Status indicators show non-zero:
+
+Active Setups
+
+Total Levels
+
+Weekend Setups
+
+Today’s Setups
+
+✅ No Flask blueprint warnings in logs
+
+✅ All indicators reflect real DB state (verify with manual SQL if needed)
+
