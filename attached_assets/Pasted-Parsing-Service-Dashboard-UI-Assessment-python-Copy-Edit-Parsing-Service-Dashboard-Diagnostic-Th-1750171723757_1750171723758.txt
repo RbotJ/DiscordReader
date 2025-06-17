@@ -1,0 +1,67 @@
+Parsing Service Dashboard UI Assessment
+python
+Copy
+Edit
+# Parsing Service Dashboard Diagnostic
+# This prompt checks each UI element's data source, verifies correctness, and identifies disconnects.
+
+from flask import Flask
+from features.parsing.service import ParsingService
+from common.database import session
+from models import DiscordMessage, TradeSetup, ParsingLevel
+from datetime import date
+from sqlalchemy import func
+
+app = Flask(__name__)
+app.app_context().push()
+
+print("=== UI Diagnostic for Parsing Service Dashboard ===")
+
+# 1. Messages Processed
+processed_messages = session.query(DiscordMessage).filter_by(is_processed=True).count()
+print(f"Messages Processed: {processed_messages}")
+
+# 2. Active Setups
+active_setups = session.query(TradeSetup).filter_by(active=True).count()
+print(f"Active Setups: {active_setups}")
+
+# 3. Total Levels
+total_levels = session.query(ParsingLevel).count()
+print(f"Total Levels: {total_levels}")
+
+# 4. Weekend Setups
+weekend_setups = session.query(TradeSetup).filter(func.extract('dow', TradeSetup.trading_day).in_([0, 6])).count()
+print(f"Weekend Setups (Sat/Sun): {weekend_setups}")
+
+# 5. Today's Date Setups
+today = date.today()
+todays_setups = session.query(TradeSetup).filter_by(trading_day=today).count()
+print(f"Today's Date Setups: {todays_setups}")
+
+# 6. High Volume Messages
+high_volume_msg_ids = session.query(TradeSetup.message_id).group_by(TradeSetup.message_id).having(func.count() > 20).all()
+print(f"High Volume Messages: {len(high_volume_msg_ids)}")
+
+# 7. Distinct Trading Days
+distinct_days = session.query(func.count(func.distinct(TradeSetup.trading_day))).scalar()
+print(f"Distinct Trading Days (Verified): {distinct_days}")
+
+# 8. Cross-check Audit Metrics
+audit_service = ParsingService()
+audit_metrics = audit_service.get_parsing_statistics()
+print("\n[Parsed Dashboard Stats from Service]")
+for key, value in audit_metrics.items():
+    print(f"{key}: {value}")
+
+print("\n✅ UI Diagnostic Complete. Use this data to confirm dashboard metrics match the underlying data.")
+📝 What This Will Tell You:
+If “Messages Processed = 0” is incorrect, this confirms a mismatch between UI and discord_messages.is_processed.
+
+If “Active Setups” shows 0 but there are setups in the DB, the active=True flag may not be set.
+
+If “Weekend Setups” is incorrect, parsing day logic may be flawed or the audit query needs refining.
+
+If “Today’s Date Setups = 0” but messages exist, timezone handling or trading_day logic may need review.
+
+Cross-checking ParsingService output ensures the dashboard is reading from the correct live metrics.
+
