@@ -206,8 +206,8 @@ class ParsingStore:
             List of unparsed message dictionaries
         """
         try:
-            # Build query conditions - fix data type mismatch between dm.id (int) and ts.message_id (varchar)
-            conditions = ["dm.id::text NOT IN (SELECT DISTINCT message_id FROM trade_setups WHERE message_id IS NOT NULL)"]
+            # Build query conditions - use actual Discord message_id field for matching
+            conditions = ["dm.message_id NOT IN (SELECT DISTINCT message_id FROM trade_setups WHERE message_id IS NOT NULL)"]
             params = {'limit': limit}
             
             if channel_id:
@@ -221,7 +221,7 @@ class ParsingStore:
             where_clause = " AND ".join(conditions)
             
             query = f"""
-            SELECT dm.id as message_id, dm.channel_id, dm.content, dm.author_id, dm.timestamp
+            SELECT dm.message_id, dm.channel_id, dm.content, dm.author_id, dm.timestamp
             FROM discord_messages dm
             WHERE {where_clause}
             ORDER BY dm.timestamp DESC
