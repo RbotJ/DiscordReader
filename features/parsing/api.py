@@ -278,7 +278,7 @@ def get_setups_by_trading_day():
             'count': 0
         }), 500
 
-@parsing_bp.route('/backlog/trigger', methods=['POST'])
+@parsing_api_bp.route('/backlog/trigger', methods=['POST'])
 def trigger_backlog():
     """Trigger manual backlog parsing for unparsed messages"""
     try:
@@ -355,9 +355,22 @@ def trigger_backlog():
             'error': f'Backlog parsing failed: {str(e)}'
         }), 500
 
+@parsing_api_bp.route('/statistics', methods=['GET'])
+def get_statistics():
+    """Get parsing service statistics for frontend consumption"""
+    try:
+        store = get_parsing_store()
+        stats = store.get_parsing_statistics()
+        
+        # Return flattened structure for frontend compatibility
+        return jsonify(stats.get('parsing_stats', stats))
+    except Exception as e:
+        logger.error(f"Error getting statistics: {e}")
+        return jsonify({'error': 'Failed to get statistics'}), 500
+
 @parsing_api_bp.route('/stats', methods=['GET'])
 def get_stats():
-    """Get parsing service statistics"""
+    """Get parsing service statistics (legacy endpoint)"""
     try:
         store = get_parsing_store()
         listener = get_parsing_listener()
@@ -376,7 +389,7 @@ def get_stats():
         logger.error(f"Error getting stats: {e}")
         return jsonify({'error': 'Failed to get statistics'}), 500
 
-@parsing_bp.route('/health', methods=['GET'])
+@parsing_api_bp.route('/health', methods=['GET'])
 def health():
     """Health check for parsing service"""
     try:
@@ -401,5 +414,5 @@ def health():
         }), 500
 
 def register_routes(app):
-    """Register parsing routes with the Flask app"""
-    app.register_blueprint(parsing_bp)
+    """Register parsing API routes with the Flask app"""
+    app.register_blueprint(parsing_api_bp)

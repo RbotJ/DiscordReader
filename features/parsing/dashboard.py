@@ -16,10 +16,10 @@ from .events import trigger_backlog_parsing
 logger = logging.getLogger(__name__)
 
 # Create blueprint for parsing dashboard
-parsing_bp = Blueprint('parsing_dashboard', __name__,
-                      template_folder='templates',
-                      static_folder='static/parsing',
-                      url_prefix='/dashboard/parsing')
+parsing_dashboard_bp = Blueprint('parsing_dashboard', __name__,
+                                template_folder='templates',
+                                static_folder='static/parsing',
+                                url_prefix='/dashboard/parsing')
 
 def get_parsing_service_safe():
     """Get parsing service instance with proper error handling."""
@@ -29,25 +29,32 @@ def get_parsing_service_safe():
         logger.warning(f"Could not get parsing service: {e}")
         return None
 
-@parsing_bp.route('/')
+@parsing_dashboard_bp.route('/')
 def overview():
     """Parsing service dashboard overview page."""
     try:
         service = get_parsing_service_safe()
         if service:
-            metrics = service.get_service_stats()
+            full_metrics = service.get_service_stats()
             
             # Get audit data for anomaly monitoring
             from .store import get_parsing_store
             store = get_parsing_store()
             audit_data = store.get_audit_anomalies()
             
-            logger.info(f"Parsing metrics: {metrics}")
-            logger.info(f"Metrics type: {type(metrics)}")
+            # Flatten metrics for template compatibility
+            # Template expects metrics.active_setups, but service returns metrics.parsing_stats.active_setups
+            flattened_metrics = full_metrics.get('parsing_stats', {})
+            flattened_metrics.update({
+                'service_status': full_metrics.get('service_status', 'unknown'),
+                'messages_processed': full_metrics.get('listener_stats', {}).get('messages_processed', 0)
+            })
+            
+            logger.info(f"Flattened metrics for template: {flattened_metrics}")
             logger.info(f"Audit anomalies found: {audit_data.get('weekend_setup_count', 0)} weekend setups")
             
             return render_template('parsing/overview.html',
-                                 metrics=metrics,
+                                 metrics=flattened_metrics,
                                  audit_data=audit_data,
                                  current_time=utc_now())
         else:
