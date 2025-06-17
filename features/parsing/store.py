@@ -56,16 +56,16 @@ class ParsingStore:
         created_levels = []
         
         try:
-            logger.info(f"Processing {len(parsed_setups)} parsed setups for message {message_id}")
+            logger.info(f"[store] Attempting to store {len(parsed_setups)} setups for message {message_id}")
             
             for parsed_setup in parsed_setups:
-                logger.info(f"Processing setup: {parsed_setup.ticker} {parsed_setup.label}")
+                logger.info(f"[store] Processing setup: {parsed_setup.ticker} {parsed_setup.label}")
                 
                 # Check for existing setup to prevent duplicates
                 existing = self.session.query(TradeSetup).filter_by(id=parsed_setup.id).first()
                 
                 if existing:
-                    logger.info(f"Setup {parsed_setup.id} already exists, updating...")
+                    logger.info(f"[store] Setup {parsed_setup.id} already exists, updating...")
                     # Update existing setup
                     existing.trigger_level = parsed_setup.trigger_level
                     existing.target_prices = parsed_setup.target_prices
@@ -79,27 +79,51 @@ class ParsingStore:
                     setup_model = existing
                 else:
                     # Convert to database model using setup converter
-                    bias_note = ticker_bias_notes.get(parsed_setup.ticker)
-                    setup_model = convert_parsed_setup_to_model(parsed_setup, message_id, bias_note)
-                    self.session.add(setup_model)
+                    try:
+                        bias_note = ticker_bias_notes.get(parsed_setup.ticker)
+                        logger.info(f"[store] Converting setup {parsed_setup.id} to database model")
+                        setup_model = convert_parsed_setup_to_model(parsed_setup, message_id, bias_note)
+                        logger.info(f"[store] Successfully converted setup {parsed_setup.id}")
+                        self.session.add(setup_model)
+                        logger.info(f"[store] Added setup {parsed_setup.id} to session")
+                    except Exception as e:
+                        logger.error(f"[store] Failed to convert setup {parsed_setup.id}: {e}")
+                        raise
                 
-                self.session.flush()  # Get the ID
+                try:
+                    self.session.flush()  # Get the ID
+                    logger.info(f"[store] Flushed setup {parsed_setup.id} to database")
+                except Exception as e:
+                    logger.error(f"[store] Failed to flush setup {parsed_setup.id}: {e}")
+                    raise
+                    
                 created_setups.append(setup_model)
                 
                 # Create levels using converter
-                levels = create_levels_for_setup(setup_model)
-                for level in levels:
-                    # Check if level already exists
-                    existing_level = self.session.query(ParsedLevel).filter_by(
-                        setup_id=level.setup_id,
-                        level_type=level.level_type,
-                        trigger_price=level.trigger_price
-                    ).first()
+                try:
+                    logger.info(f"[store] Creating levels for setup {parsed_setup.id}")
+                    levels = create_levels_for_setup(setup_model)
+                    logger.info(f"[store] Created {len(levels)} levels for setup {parsed_setup.id}")
                     
-                    if not existing_level:
-                        self.session.add(level)
-                        created_levels.append(level)
+                    for level in levels:
+                        # Check if level already exists
+                        existing_level = self.session.query(ParsedLevel).filter_by(
+                            setup_id=level.setup_id,
+                            level_type=level.level_type,
+                            trigger_price=level.trigger_price
+                        ).first()
+                        
+                        if not existing_level:
+                            self.session.add(level)
+                            logger.debug(f"[store] Added level {level.level_type} for setup {parsed_setup.id}")
+                        else:
+                            logger.debug(f"[store] Level {level.level_type} already exists for setup {parsed_setup.id}")
+                            
+                except Exception as e:
+                    logger.error(f"[store] Failed to create levels for setup {parsed_setup.id}: {e}")
+                    raise
                 
+                created_levels.extend(levels)
                 logger.debug(f"Created setup {setup_model.id} with {len(levels)} levels")
             
             # Commit all changes
