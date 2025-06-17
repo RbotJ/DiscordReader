@@ -78,6 +78,12 @@ def parse_setup_prices(line: str) -> Tuple[Optional[float], List[float]]:
         # Standard: "Above 596.90 🔼 599.80, 602.00, 605.50"
         r'(?:Above|Below|Near)\s+(\d{2,5}\.\d{2})[^0-9]*?(?:🔼|🔻|❌|🔄)\s*(\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)',
         
+        # New format: "Breakdown 599.00 🔻 597.40, 595.60, 593.50"
+        r'(?:Breakdown|Breakout|Rejection)\s+(?:Above|Below|Short|Long)?\s*(\d{2,5}\.\d{2})\s*(?:🔼|🔻|❌|🔄)\s*(\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)',
+        
+        # Emoji first: "🔻 Aggressive Breakdown 599.00 🔻 597.40, 595.60"
+        r'(?:🔼|🔻|❌|🔄)\s*(?:Aggressive|Conservative)?\s*(?:Breakdown|Breakout|Rejection)\s+(?:Above|Below|Short|Long|Near)?\s*(\d{2,5}\.\d{2})\s*(?:🔼|🔻|❌|🔄)\s*(\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)',
+        
         # Alternative: "596.90 | 599.80, 602.00, 605.50"
         r'(\d{2,5}\.\d{2})\s*\|\s*(\d{2,5}\.\d{2}(?:\s*,\s*\d{2,5}\.\d{2})*)',
         

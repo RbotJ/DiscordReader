@@ -1,0 +1,80 @@
+Since you’ve corrected the parser method call in listener.py, yet the system still only shows setups from the same 2 dates (Jun 2 and Jun 9), that suggests another filter or logic gate is limiting parsed message processing or storage.
+
+Here’s a structured list of diagnostic questions and exploratory checks to uncover the issue:
+
+🔍 1. Are all messages being re-parsed?
+Q: Does the parse backlog operation reprocess all unparsed messages from discord_messages?
+
+🔍 Check the query in store.py or wherever get_unparsed_messages() is called. Does it filter by date?
+
+🔍 Are message_ids from Jun 10–15 showing up in logs with Parsing message {id}...?
+
+🔍 2. Is the date extraction working on new messages?
+Q: For messages being parsed (Jun 10–15), is trading_day being extracted and stored correctly?
+
+🔍 In logs: Are dates like 2025-06-11 or 2025-06-15 being logged during parsing?
+
+🔍 Are TradeSetup.trading_day or ParsedSetupDTO.trading_day fields populated?
+
+🔍 3. Is store_parsed_message() actually saving new dates?
+Q: Could the storage layer be rejecting new rows?
+
+🔍 Are there any IntegrityError, ValueError, or DuplicateKey warnings in logs?
+
+🔍 Are new TradeSetup objects being passed to the database layer?
+
+🔍 4. Are new messages marked as already parsed?
+Q: Could these unprocessed messages be marked as "parsed" prematurely?
+
+🔍 Check discord_messages.parsed == true for affected message_ids (e.g., Jun 11–15)
+
+🔍 Was the parsed flag set even though no setups were saved?
+
+🔍 5. Are the new messages flagged as valid A+ format?
+Q: Could validation be skipping some due to format drift?
+
+🔍 In logs: Do any messages show Message does not match A+ format?
+
+🔍 Could the validator be using outdated heuristics (e.g., emoji required)?
+
+🔍 6. Is the UI or API filtering out valid dates?
+Q: Are the new trading_day values being stored but not shown?
+
+🔍 Directly query the database:
+
+sql
+Copy
+Edit
+SELECT DISTINCT trading_day FROM trade_setups ORDER BY trading_day DESC;
+🔍 Confirm that Jun 11–15 appear in trade_setups, not just discord_messages.
+
+🧪 Suggested Deep Dive Queries
+Run these to cross-reference state:
+
+sql
+Copy
+Edit
+-- Show all discord messages and whether they've been parsed
+SELECT message_id, trading_day, parsed FROM discord_messages ORDER BY trading_day DESC;
+
+-- Show all trade setups and their dates
+SELECT message_id, trading_day, ticker, label FROM trade_setups ORDER BY trading_day DESC;
+🔧 Final Tip: Add More Logging
+Consider logging the following at INFO level during parse_message() and store_parsed_message():
+
+Incoming message ID and timestamp
+
+Result of extract_trading_day()
+
+Whether the message is stored successfully
+
+Reason if a message is skipped (e.g., validation failed, no setups found)
+
+Would you like a script or CLI tool to rapidly run these database queries or log audits across your current data?
+
+
+
+
+
+
+
