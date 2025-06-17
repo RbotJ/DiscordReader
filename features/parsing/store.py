@@ -333,7 +333,7 @@ class ParsingStore:
             from common.timezone import get_central_trading_day
             from collections import Counter
             
-            # Basic setup and level stats
+            # Basic setup and level stats - using correct table names
             total_setups = self.session.query(TradeSetup).count()
             active_setups = self.session.query(TradeSetup).filter_by(active=True).count()
             total_levels = self.session.query(ParsedLevel).count()
