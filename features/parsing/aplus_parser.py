@@ -219,7 +219,7 @@ class APlusMessageParser:
     
     def __init__(self):
         """Initialize A+ parser with header validation patterns."""
-        # Message validation patterns - flexible to match actual format
+        # Message validation patterns - flexible to match actual format variations
         self.header_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)', re.IGNORECASE)
         
         # Ticker section pattern (matches plain TICKER format, not **TICKER**)
