@@ -4,6 +4,12 @@ Refactored A+ Scalp Setups Parser
 - Creates a simplified, resilient internal model per trade setup
 - Enforces one labeled setup per ticker/day
 - Logs audit info for missing or extra setups
+
+Format Variations Supported:
+- Standard: "Above 596.90 🔼 599.80, 602.00, 605.50"
+- New format: "🔻 Aggressive Breakdown 599.00 🔻 597.40, 595.60, 593.50"
+- Rejection with direction: "❌ Rejection Short 600.10 🔻 598.00, 596.40, 594.20"
+- Parentheses format: "Above 596.90 (599.80, 602.00, 605.50)"
 """
 
 import logging
