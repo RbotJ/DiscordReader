@@ -542,10 +542,11 @@ class ParsingStore:
                 'weekend_setups': weekend_setups,
                 'weekend_setup_count': len(weekend_setups),
                 'today_setup_count': today_setups,
-                'suspicious_messages': [
+                'duplicate_messages': [
                     {'message_id': msg[0], 'setup_count': msg[1]} 
                     for msg in duplicate_messages
                 ],
+                'audit_timestamp': datetime.utcnow(),
                 'anomaly_summary': {
                     'has_weekend_trading': len(weekend_setups) > 0,
                     'has_suspicious_volume': len(duplicate_messages) > 0,
@@ -558,14 +559,10 @@ class ParsingStore:
             return {
                 'error': str(e),
                 'weekend_setups': [],
-                'weekend_setup_count': 0
-            }
-            return {
-                'weekend_setups': [],
-                'weekend_count': 0,
-                'today_setups_count': 0,
+                'weekend_setup_count': 0,
+                'today_setup_count': 0,
                 'duplicate_messages': [],
-                'audit_timestamp': get_central_trading_day().isoformat()
+                'audit_timestamp': datetime.utcnow()
             }
 
     def get_available_trading_days(self, limit=30):
