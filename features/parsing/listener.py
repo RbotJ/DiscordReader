@@ -111,7 +111,13 @@ class ParsingListener:
                     # Fall through to generic parsing
             
             # Parse the message using enhanced parser
-            parse_result = self.parser.parse_message_to_setups(message_info)
+            parse_result = self.parser.parse_message(
+                content=message_info.get('content', ''),
+                message_id=message_info.get('message_id'),
+                timestamp=message_info.get('timestamp'),
+                author_id=message_info.get('author_id'),
+                channel_id=message_info.get('channel_id')
+            )
             
             if not parse_result.get('success') or not parse_result.get('setups'):
                 logger.debug(f"No setups found in message {message_id}")
@@ -303,7 +309,13 @@ class ParsingListener:
         """
         try:
             # Parse the message using enhanced parser
-            parse_result = self.parser.parse_message_to_setups(message_data)
+            parse_result = self.parser.parse_message(
+                content=message_data.get('content', ''),
+                message_id=message_data.get('message_id'),
+                timestamp=message_data.get('timestamp'),
+                author_id=message_data.get('author_id'),
+                channel_id=message_data.get('channel_id')
+            )
             
             if not parse_result.get('success') or not parse_result.get('setups'):
                 return {
@@ -314,8 +326,15 @@ class ParsingListener:
                 }
             
             setups = parse_result['setups']
-            all_levels = parse_result['levels']
-            trading_date = parse_result.get('trading_day')
+            # Convert TradeSetup objects to levels using setup_converter
+            from .setup_converter import create_levels_for_setup, convert_parsed_setup_to_model
+            all_levels = []
+            for setup in setups:
+                setup_model = convert_parsed_setup_to_model(setup, message_data.get('message_id'))
+                levels = create_levels_for_setup(setup_model)
+                all_levels.extend(levels)
+            
+            trading_date = parse_result.get('trading_date') or parse_result.get('trading_day')
             
             # If parser didn't extract trading date, try A+ parser or fallback
             if not trading_date:

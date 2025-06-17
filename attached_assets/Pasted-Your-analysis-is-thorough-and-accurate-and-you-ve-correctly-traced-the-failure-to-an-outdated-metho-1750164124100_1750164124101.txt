@@ -1,0 +1,40 @@
+Your analysis is thorough and accurate, and you’ve correctly traced the failure to an outdated method call in the listener. Here's a concise assessment and recommended next steps to move forward safely and effectively — without making changes yet:
+
+✅ Summary of Current State
+Area	Status	Notes
+Parser Engine	✅ MessageParser is implemented with parse_message() (correct method)	
+Backlog Interface	✅ Clicking "Parse Backlog" triggers the expected flow	
+Message Retrieval	✅ Backlog retrieves all raw unparsed Discord messages	
+Parser Invocation	❌ listener.py calls self.parser.parse_message_to_setups() — this method no longer exists	
+Message Parsing	❌ 19 of 21 messages fail due to AttributeError, not message content	
+Successful Dates	✅ The two successful messages came through another functioning path, hence why only Jun 2 and Jun 9 appear	
+Hybrid Date Extraction	✅ Appears functional, but not visible yet due to message processing failures	
+
+🚧 Current Blocker
+self.parser.parse_message_to_setups() is being called in features/parsing/listener.py
+But MessageParser now only defines parse_message()
+
+This mismatch leads to a hard failure (likely AttributeError) during backlog processing — completely bypassing the parsing logic for the majority of messages.
+
+🔍 Next Diagnostic Checks (Before Making Fixes)
+Confirm the Log Details
+Look at logs from listener.py while clicking Parse Backlog.
+You should see AttributeError: 'MessageParser' object has no attribute 'parse_message_to_setups' — if this shows up for each skipped message, the root cause is confirmed.
+
+Confirm Integration Path
+Make sure the operator button routes into listener.handle_parse_backlog() or equivalent — and that this function is the one calling self.parser.parse_message_to_setups().
+
+Verify Recovery Behavior
+Check if there's any fallback behavior in case of failure (e.g., try-catch that swallows errors).
+If so, that could be why you’re not seeing stack traces but are seeing "silent" skips.
+
+Check Parser Instantiation
+Confirm that the injected parser instance in the listener is indeed the MessageParser (new class), not a legacy fallback.
+
+✅ Next Steps Summary (After Verification)
+Step	Task
+1️⃣	Update listener.py to call self.parser.parse_message() instead of parse_message_to_setups()
+2️⃣	Ensure the call includes message_id, content, and timestamp if required
+3️⃣	Re-run backlog parser — confirm that previously skipped messages are now parsed and stored
+4️⃣	Audit logs for: "Parsing message {message_id} with A+ parser" — this confirms new logic is used
+5️⃣	Check that additional dates (e.g., June 6, 10, 11, 12, 13, 15) now appear in dashboard
