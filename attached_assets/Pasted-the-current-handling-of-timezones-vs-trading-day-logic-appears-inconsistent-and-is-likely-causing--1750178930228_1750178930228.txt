@@ -1,0 +1,109 @@
+the current handling of timezones vs trading day logic appears inconsistent and is likely causing:
+
+📆 False negatives in weekend setup audits (e.g., Jun 15 = Sunday not flagged).
+
+🕐 Incorrect trading day assignment if parser uses UTC timestamps without converting to America/Chicago.
+
+❌ Confusing discrepancies between raw message headers (which are in CST) and fallback logic (UTC-based).
+
+✅ Best Practices (Restated + Expanded)
+1. Storage Standard
+Field	Format	Timezone	Source
+discord_messages.timestamp	datetime	UTC	Discord
+trade_setups.trading_day	date	CST (America/Chicago)	Parsed header or fallback
+parsing_levels.created_at	datetime	UTC	System-generated
+audits.last_run_at	datetime	CST or display-converted	UI display only
+
+2. Trading Day Parsing Rules
+If A+ header contains explicit date (e.g., "Monday June 16") → treat as CST.
+
+If no header date → use fallback: message.timestamp converted to CST, then .date().
+
+python
+Copy
+Edit
+from pytz import timezone
+from datetime import datetime
+
+def fallback_trading_day(timestamp_utc):
+    central = timezone('America/Chicago')
+    return timestamp_utc.astimezone(central).date()
+3. Weekend Setup Detection
+Your audit logic likely checks:
+
+python
+Copy
+Edit
+setup.trading_day.weekday() >= 5  # 5 = Saturday, 6 = Sunday
+🛑 If setup.trading_day is based on UTC (or wrong fallback), this check breaks.
+
+✅ Fix: ensure setup.trading_day is always in CST regardless of source.
+
+4. Display Consistency
+UI should always convert UTC → CST before rendering:
+
+python
+Copy
+Edit
+from pytz import timezone
+
+central = timezone("America/Chicago")
+timestamp_cst = timestamp_utc.astimezone(central)
+E.g., for Jinja:
+
+jinja2
+Copy
+Edit
+{{ setup.created_at.astimezone("America/Chicago") | date("MMM dd, yyyy hh:mm A") }}
+🧪 Diagnostic Checklist to Verify Your System
+Run this to find and fix timezone issues:
+
+🔍 1. Confirm Fallback Logic Uses CST
+Check:
+
+extract_trading_day(content, timestamp) in aplus_parser.py
+
+fallback_trading_day() should convert timestamp to America/Chicago before .date()
+
+🔍 2. Validate trading_day Field
+Query:
+
+sql
+Copy
+Edit
+SELECT trading_day, COUNT(*)
+FROM trade_setups
+GROUP BY trading_day
+ORDER BY trading_day;
+→ Spot any weekend dates or missing weekdays.
+
+🔍 3. Inspect Known Weekend Messages
+Run:
+
+sql
+Copy
+Edit
+SELECT message_id, timestamp, content
+FROM discord_messages
+WHERE EXTRACT(DOW FROM timestamp AT TIME ZONE 'America/Chicago') IN (0, 6);
+→ Confirms if messages sent on weekends are being parsed to weekend trading_day values.
+
+🔍 4. Confirm Audit Logic
+In audit.py or store.py:
+
+python
+Copy
+Edit
+if setup.trading_day.weekday() in [5, 6]:  # Saturday or Sunday
+    weekend_issues.append(setup)
+Check: setup.trading_day should always be CST-based date.
+
+✅ Summary of Required Fixes
+Issue	Fix
+trading_day is incorrect on fallback	Convert timestamp to CST before .date()
+Weekend detection shows 0	Re-confirm setup.trading_day is CST-based
+Parser misreads raw header date	Force raw date header to be interpreted in CST
+UI showing times in inconsistent tz	Convert all timestamps to CST before display
+Last audit timestamp is off	Store in UTC, display in CST only
+
+Let me know if you'd like a Flask-specific audit log formatter, a refactor plan, or unit test templates to verify timezone correctness going forward.

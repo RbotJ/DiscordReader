@@ -278,9 +278,10 @@ class APlusMessageParser:
                 except ValueError:
                     continue  # e.g., "Jun five" or misformatted day
 
-        # Fallback: use message timestamp's date
-        fallback_date = message_timestamp.date()
-        logger.info(f"Falling back to timestamp: {fallback_date} (method: fallback)")
+        # Fallback: use message timestamp converted to Central Time
+        from common.timezone import get_central_trading_day
+        fallback_date = get_central_trading_day(message_timestamp)
+        logger.info(f"Falling back to Central Time timestamp: {fallback_date} (method: fallback)")
         return fallback_date
 
     def validate_message(self, content: str) -> bool:

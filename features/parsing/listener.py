@@ -218,8 +218,10 @@ class ParsingListener:
             return None
     
     def _extract_trading_day(self, message_info: Dict[str, Any]) -> date:
-        """Extract trading day from message info."""
+        """Extract trading day from message info using Central Time."""
         try:
+            from common.timezone import get_central_trading_day
+            
             # Try to parse timestamp from message
             timestamp_str = message_info.get('timestamp')
             if timestamp_str:
@@ -227,16 +229,17 @@ class ParsingListener:
                 if isinstance(timestamp_str, str):
                     try:
                         timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                        return timestamp.date()
+                        return get_central_trading_day(timestamp)
                     except (ValueError, TypeError):
                         pass
             
-            # Default to today
-            return date.today()
+            # Default to today in Central Time
+            return get_central_trading_day()
             
         except Exception as e:
             logger.warning(f"Error extracting trading day: {e}")
-            return date.today()
+            from common.timezone import get_central_trading_day
+            return get_central_trading_day()
     
     def _emit_setup_parsed_event(self, setup: TradeSetup, levels: List[ParsedLevel], correlation_id: str = None):
         """
