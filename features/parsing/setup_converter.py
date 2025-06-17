@@ -31,38 +31,38 @@ def convert_parsed_setup_to_model(
     Returns:
         TradeSetupModel ready for database persistence
     """
-    # Create the database model instance
-    setup_model = TradeSetupModel()
-    setup_model.id = parsed_setup.id
-    setup_model.message_id = message_id
-    setup_model.ticker = parsed_setup.ticker
-    setup_model.trading_day = parsed_setup.trading_day
-    setup_model.index = parsed_setup.index
-    setup_model.trigger_level = parsed_setup.trigger_level
-    setup_model.target_prices = parsed_setup.target_prices
-    setup_model.direction = parsed_setup.direction
-    setup_model.label = parsed_setup.label
-    setup_model.keywords = parsed_setup.keywords
-    setup_model.emoji_hint = parsed_setup.emoji_hint
-    setup_model.raw_line = parsed_setup.raw_line
-    # Legacy fields for backward compatibility
-    setup_model.setup_type = parsed_setup.label  # Use label as setup_type
-    setup_model.profile_name = parsed_setup.label  # Same as label
-    setup_model.bias_note = bias_note
-    # Status and confidence
-    setup_model.active = True
-    setup_model.confidence_score = 0.8  # A+ setups are high confidence
-    # Metadata
-    setup_model.parsed_metadata = {
-        'parser_version': 'refactored_v2',
-        'keyword_matches': parsed_setup.keywords,
-        'emoji_detected': parsed_setup.emoji_hint,
-        'target_count': len(parsed_setup.target_prices),
-        'trading_date_source': 'extracted' if parsed_setup.trading_day else 'fallback',
-        'extraction_confidence': 'high' if parsed_setup.trading_day else 'low'
-    }
-    
-    return setup_model
+    try:
+        logger.info(f"[setup_converter] Converting setup {parsed_setup.id} for message {message_id}")
+        
+        # Create the database model instance
+        setup_model = TradeSetupModel()
+        setup_model.id = parsed_setup.id
+        setup_model.message_id = str(message_id)  # Ensure string type
+        setup_model.ticker = parsed_setup.ticker
+        setup_model.trading_day = parsed_setup.trading_day
+        setup_model.index = parsed_setup.index
+        setup_model.trigger_level = float(parsed_setup.trigger_level)  # Ensure float type
+        setup_model.target_prices = [float(p) for p in parsed_setup.target_prices]  # Ensure float list
+        setup_model.direction = parsed_setup.direction
+        setup_model.label = parsed_setup.label
+        setup_model.keywords = parsed_setup.keywords or []  # Ensure list type
+        setup_model.emoji_hint = parsed_setup.emoji_hint
+        setup_model.raw_line = parsed_setup.raw_line
+        # Legacy fields for backward compatibility
+        setup_model.setup_type = parsed_setup.label  # Use label as setup_type
+        setup_model.profile_name = parsed_setup.label  # Same as label
+        setup_model.bias_note = bias_note
+        # Status and confidence
+        setup_model.active = True
+        setup_model.confidence_score = 0.8  # A+ setups are high confidence
+        
+        logger.info(f"[setup_converter] Successfully converted setup {parsed_setup.id}")
+        return setup_model
+        
+    except Exception as e:
+        logger.error(f"[setup_converter] Conversion failed for setup {parsed_setup.id}: {e}")
+        logger.error(f"[setup_converter] Setup data: ticker={parsed_setup.ticker}, label={parsed_setup.label}, trigger={parsed_setup.trigger_level}")
+        raise
 
 
 def create_levels_for_setup(setup_model: TradeSetupModel) -> List[ParsedLevel]:
