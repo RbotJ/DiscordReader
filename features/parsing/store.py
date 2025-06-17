@@ -126,7 +126,11 @@ class ParsingStore:
                 created_levels.extend(levels)
                 logger.debug(f"Created setup {setup_model.id} with {len(levels)} levels")
             
+            # Update Discord message status to processed
+            self._update_message_processed_status(message_id, True)
+            
             # Commit all changes
+            logger.debug(f"[store] Committing {len(created_setups)} setups and {len(created_levels)} levels to database")
             self.session.commit()
             logger.info(f"Successfully stored {len(created_setups)} setups and {len(created_levels)} levels")
             
@@ -144,6 +148,29 @@ class ParsingStore:
             self.session.rollback()
             logger.error(f"Unexpected error storing parsed message: {e}")
             raise
+    
+    def _update_message_processed_status(self, message_id: str, is_processed: bool) -> None:
+        """
+        Update the is_processed status for a Discord message.
+        
+        Args:
+            message_id: Discord message ID
+            is_processed: Whether the message has been successfully processed
+        """
+        try:
+            # Import here to avoid circular imports
+            from features.ingestion.models import DiscordMessage
+            
+            message = self.session.query(DiscordMessage).filter_by(message_id=message_id).first()
+            if message:
+                message.is_processed = is_processed
+                logger.debug(f"[store] Updated message {message_id} is_processed = {is_processed}")
+            else:
+                logger.warning(f"[store] Message {message_id} not found in discord_messages table")
+                
+        except Exception as e:
+            logger.error(f"[store] Failed to update message processed status for {message_id}: {e}")
+            # Don't raise here - this is a status update, not critical for parsing success
     
     def get_setup_by_message_and_ticker(self, message_id: str, ticker: str) -> Optional[TradeSetup]:
         """Get setup by message ID and ticker."""
