@@ -47,7 +47,7 @@ def overview():
             flattened_metrics = full_metrics.get('parsing_stats', {})
             flattened_metrics.update({
                 'service_status': full_metrics.get('service_status', 'unknown'),
-                'messages_processed': full_metrics.get('listener_stats', {}).get('messages_processed', 0)
+                'messages_processed': flattened_metrics.get('unique_parsed_messages', 0)
             })
             
             logger.info(f"Flattened metrics for template: {flattened_metrics}")
