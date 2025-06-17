@@ -196,75 +196,75 @@ def trigger_backlog():
         # Process each message directly with detailed logging
         successful_inserts = 0
         parsing_failures = 0
+        
+        for message in unparsed_messages:
+            message_id = message.get('message_id')
+            content = message.get('content', '')
             
-            for message in unparsed_messages:
-                message_id = message.get('message_id')
-                content = message.get('content', '')
+            logger.info(f"[ParseBacklog] Processing message {message_id} with content length: {len(content)}")
+            
+            try:
+                # Check if this is an A+ message and route to specialized service
+                from .aplus_parser import get_aplus_parser
+                aplus_parser = get_aplus_parser()
                 
-                logger.info(f"[ParseBacklog] Processing message {message_id} with content length: {len(content)}")
+                # Log content preview for debugging
+                content_preview = content[:200] + "..." if len(content) > 200 else content
+                logger.info(f"[ParseBacklog] Message {message_id} content preview: {content_preview}")
                 
-                try:
-                    # Check if this is an A+ message and route to specialized service
-                    from .aplus_parser import get_aplus_parser
-                    aplus_parser = get_aplus_parser()
+                if aplus_parser.validate_message(content):
+                    logger.info(f"[ParseBacklog] Routing A+ message {message_id} to specialized service")
+                    # Use specialized A+ service to preserve individual setups
+                    result = parsing_service.parse_aplus_message(content, message_id)
+                else:
+                    # Process the message through generic parsing service
+                    message_data = {
+                        'message_id': message_id,
+                        'content': content,
+                        'channel_id': message.get('channel_id'),
+                        'timestamp': message.get('timestamp'),
+                        'author_id': message.get('author_id')
+                    }
+                    result = parsing_service.parse_message(message_data)
+                
+                if result and result.get('success'):
+                    successful_inserts += 1
+                    setups_created = result.get('setups_created', 0)
+                    logger.info(f"[ParseBacklog] Message {message_id} → {setups_created} setups created")
+                    processed_count += 1
+                elif result:
+                    # Parse attempt was made but no setups found
+                    parsing_failures += 1
+                    logger.warning(f"[ParseBacklog] Message {message_id} → no valid setups found (content not recognized)")
+                    processed_count += 1
+                else:
+                    # Parse service returned None/False
+                    parsing_failures += 1
+                    logger.error(f"[ParseBacklog] Message {message_id} → parsing service returned null")
                     
-                    # Log content preview for debugging
-                    content_preview = content[:200] + "..." if len(content) > 200 else content
-                    logger.info(f"[ParseBacklog] Message {message_id} content preview: {content_preview}")
-                    
-                    if aplus_parser.validate_message(content):
-                        logger.info(f"[ParseBacklog] Routing A+ message {message_id} to specialized service")
-                        # Use specialized A+ service to preserve individual setups
-                        result = parsing_service.parse_aplus_message(content, message_id)
-                    else:
-                        # Process the message through generic parsing service
-                        message_data = {
-                            'message_id': message_id,
-                            'content': content,
-                            'channel_id': message.get('channel_id'),
-                            'timestamp': message.get('timestamp'),
-                            'author_id': message.get('author_id')
-                        }
-                        result = parsing_service.parse_message(message_data)
-                    
-                    if result and result.get('success'):
-                        successful_inserts += 1
-                        setups_created = result.get('setups_created', 0)
-                        logger.info(f"[ParseBacklog] Message {message_id} → {setups_created} setups created")
-                        processed_count += 1
-                    elif result:
-                        # Parse attempt was made but no setups found
-                        parsing_failures += 1
-                        logger.warning(f"[ParseBacklog] Message {message_id} → no valid setups found (content not recognized)")
-                        processed_count += 1
-                    else:
-                        # Parse service returned None/False
-                        parsing_failures += 1
-                        logger.error(f"[ParseBacklog] Message {message_id} → parsing service returned null")
-                        
-                except Exception as e:
-                    error_count += 1
-                    logger.error(f"[ParseBacklog] Message {message_id} failed completely: {e}")
-                    
-            logger.info(f"Backlog processing complete:")
-            logger.info(f"  - Total messages found: {len(unparsed_messages)}")
-            logger.info(f"  - Successfully parsed & stored: {successful_inserts}")
-            logger.info(f"  - Parsing failures (content not recognized): {parsing_failures}")
-            logger.info(f"  - Storage/system failures: {error_count}")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Backlog parsing completed',
-                'results': {
-                    'messages_found': len(unparsed_messages),
-                    'messages_processed': processed_count,
-                    'created': successful_inserts,
-                    'parsing_failed': parsing_failures,
-                    'errors': error_count,
-                    'requested_by': requested_by
-                }
-            })
-            
+            except Exception as e:
+                error_count += 1
+                logger.error(f"[ParseBacklog] Message {message_id} failed completely: {e}")
+        
+        logger.info(f"Backlog processing complete:")
+        logger.info(f"  - Total messages found: {len(unparsed_messages)}")
+        logger.info(f"  - Successfully parsed & stored: {successful_inserts}")
+        logger.info(f"  - Parsing failures (content not recognized): {parsing_failures}")
+        logger.info(f"  - Storage/system failures: {error_count}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Backlog parsing completed',
+            'results': {
+                'messages_found': len(unparsed_messages),
+                'messages_processed': processed_count,
+                'created': successful_inserts,
+                'parsing_failed': parsing_failures,
+                'errors': error_count,
+                'requested_by': requested_by
+            }
+        })
+        
     except Exception as e:
         logger.error(f"Error in manual backlog parsing: {e}", exc_info=True)
         return jsonify({
