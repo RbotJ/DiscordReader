@@ -1,0 +1,93 @@
+✅ Situation Summary
+✅ Area	✔️ Now Working
+Setup Parsing	Working (184 setups across 11+ days)
+Level Creation	Working (756 levels created in parsing_levels)
+Dashboard Metrics	Now referencing correct parsing_levels table
+Flask Context for DB	Fixed — storage now succeeds
+
+❌ Area	🧨 Still Broken or Needs Cleanup
+Legacy Table (parsed_levels)	Still exists — causes confusion
+Migration History	Likely diverged from current model
+Model Conflicts	Multiple ParsedLevel models may exist
+Audit/Tests	Not yet validating data consistency
+Agent Autonomy	Replit agent made schema-affecting changes without isolation or version control
+
+🔧 Updated Remediation Plan
+1. Stabilize the Schema
+ ✅ Lock in parsing_levels as the official table going forward.
+
+ ❌ Deprecate parsed_levels:
+
+Archive or drop table after backup.
+
+Remove all code referencing parsed_levels.
+
+ 🧩 Confirm the Alembic migration history is up-to-date with the live database schema.
+
+2. Standardize Model Definitions
+ Ensure only one ParsedLevel or ParsingLevel model exists in your codebase:
+
+Located in common/models.py or features/setups/models.py
+
+Table name must match (__tablename__ = 'parsing_levels')
+
+ Confirm fields:
+
+python
+Copy
+Edit
+id: UUID
+setup_id: ForeignKey to trade_setups
+level_type: Enum('trigger', 'target')
+direction: Enum('long', 'short')
+trigger_price: Float
+sequence_order: Int
+active: Boolean
+triggered: Boolean
+confidence: Float
+created_at / updated_at: Timestamp
+3. Refactor Setup Converter
+ Confirm setup_converter.py now correctly creates 1 trigger + 1–3 target levels per setup.
+
+ Validate fallback and logging on level creation.
+
+ Ensure it returns diagnostics (e.g., “3 levels created for setup X”).
+
+4. Audit + Testing Layer
+ Add an audit endpoint or CLI script to:
+
+Count setups with no levels.
+
+Count levels without valid setup_id.
+
+Identify duplicate levels per setup.
+
+ Add integration tests:
+
+test_parser_creates_levels_for_all_setups()
+
+test_dashboard_counts_levels_correctly()
+
+5. Dashboard Enhancements
+ Add a visual indicator of which table is being used for levels (to avoid future mismatch).
+
+ Consider logging parsing stats daily:
+
+parse_audit_log table (message_id, setups_created, levels_created, error, timestamp)
+
+ (Optional) Add "Sync Schema" button or diagnostics in dashboard.
+
+6. Restrict Replit Agent Autonomy
+ Update .replit project rules or agent logic to prompt user before schema changes.
+
+ Require PR-style commit staging or checkpoint before applying migrations or code edits.
+
+🔁 Verification Checklist
+Check	Method
+parsed_levels is unused	Run: SELECT * FROM parsed_levels LIMIT 1; – should be empty
+parsing_levels integrity	Count ≈ 4× setups, all setup_id foreign keys valid
+No duplicate level entries	SELECT setup_id, level_type, COUNT(*) FROM parsing_levels GROUP BY setup_id, level_type HAVING COUNT(*) > 1
+Dashboard metrics match DB	Count matches for: total setups, total levels, active, today's date
+Codebase is consistent	grep -r parsed_levels ./ returns no active references
+Alembic in sync	Run alembic revision --autogenerate – confirm no diffs
+Migration backed up	Ensure parsing_levels table schema is backed up or versioned
