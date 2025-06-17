@@ -40,13 +40,34 @@ class MessageParser:
             Dict containing parsing results with TradeSetup objects
         """
         try:
+            # Extract and convert timestamp if provided
+            message_timestamp = None
+            timestamp_raw = kwargs.get('timestamp')
+            
+            if timestamp_raw:
+                try:
+                    if isinstance(timestamp_raw, str):
+                        # Handle Discord timestamp format (ISO 8601)
+                        message_timestamp = isoparse(timestamp_raw.replace('Z', '+00:00'))
+                    elif isinstance(timestamp_raw, datetime):
+                        message_timestamp = timestamp_raw
+                    
+                    logger.debug(f"Parsed message timestamp: {message_timestamp}")
+                except Exception as e:
+                    logger.warning(f"Failed to parse timestamp '{timestamp_raw}': {e}")
+            
             # Check if trading_day already provided in kwargs (from A+ parser)
             provided_trading_day = kwargs.get('trading_day')
             
             # Use A+ parser for all messages
             if self.aplus_parser.validate_message(content):
                 logger.info(f"Parsing message {message_id or 'unknown'} with A+ parser")
-                result = self.aplus_parser.parse_message(content, message_id or 'unknown', **kwargs)
+                result = self.aplus_parser.parse_message(
+                    content, 
+                    message_id or 'unknown', 
+                    message_timestamp=message_timestamp,
+                    **kwargs
+                )
                 
                 # Don't override trading_day if A+ parser extracted it successfully
                 if result.get('trading_date') and not provided_trading_day:

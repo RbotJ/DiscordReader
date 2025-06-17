@@ -249,7 +249,7 @@ class APlusMessageParser:
 
         # Scan the top ~5 lines for month/day pattern
         for line in lines[:5]:
-            tokens += line.strip().replace(',', '').split()
+            tokens += line.strip().replace(',', '').replace('.', '').split()
 
         for i, token in enumerate(tokens):
             month_token = token.lower()
