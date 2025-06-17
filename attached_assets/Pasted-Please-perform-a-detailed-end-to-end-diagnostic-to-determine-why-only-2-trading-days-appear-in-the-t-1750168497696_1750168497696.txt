@@ -1,0 +1,101 @@
+Please perform a detailed end-to-end diagnostic to determine why only 2 trading days appear in the trade_setups table. Follow the checklist below, and provide specific logs or SQL results at each step.
+
+🔍 1. Verify Message Coverage
+✅ Query discord_messages to confirm how many messages exist, and what their is_processed statuses are:
+
+sql
+Copy
+Edit
+SELECT COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE is_processed = true) AS processed,
+       COUNT(*) FILTER (WHERE is_processed = false) AS unprocessed
+FROM discord_messages;
+✅ Show distinct DATE(timestamp) values across all messages:
+
+sql
+Copy
+Edit
+SELECT DISTINCT DATE(timestamp) AS message_date
+FROM discord_messages
+ORDER BY message_date DESC;
+🔍 2. Cross-check Parsed Output
+✅ Query trade_setups for distinct trading dates and message counts:
+
+sql
+Copy
+Edit
+SELECT trading_day,
+       COUNT(*) AS setups_count,
+       COUNT(DISTINCT message_id) AS messages
+FROM trade_setups
+GROUP BY trading_day
+ORDER BY trading_day DESC;
+✅ Confirm that message_id values in trade_setups match valid discord_messages:
+
+sql
+Copy
+Edit
+SELECT ts.message_id
+FROM trade_setups ts
+LEFT JOIN discord_messages dm ON ts.message_id = dm.message_id
+WHERE dm.message_id IS NULL;
+🔍 3. Verify Parsing Success per Message
+✅ Run this to cross-check discord_messages that were marked as processed but created no setups:
+
+sql
+Copy
+Edit
+SELECT dm.message_id,
+       dm.timestamp,
+       dm.is_processed,
+       COUNT(ts.id) AS setups_created
+FROM discord_messages dm
+LEFT JOIN trade_setups ts ON dm.message_id = ts.message_id
+GROUP BY dm.message_id
+ORDER BY dm.timestamp DESC;
+✅ Manually fetch and print the content of at least 2 messages that failed to generate setups but should have:
+
+sql
+Copy
+Edit
+SELECT message_id, LEFT(content, 500) AS content_preview
+FROM discord_messages
+WHERE message_id NOT IN (SELECT DISTINCT message_id FROM trade_setups)
+ORDER BY timestamp DESC
+LIMIT 5;
+🔍 4. Parser Logs and Validation
+✅ Output logs or debug statements from MessageParser.parse_message() and aplus_parser.parse_message():
+
+Did validation succeed?
+
+Were any setups returned?
+
+Was storage attempted?
+
+🧪 5. Regression Test on Known-Good Message
+✅ Test parser directly on one of the known-failing messages, simulating backlog call:
+
+python
+Copy
+Edit
+# From within Python REPL or script
+from features.parsing.aplus_parser import get_aplus_parser
+parser = get_aplus_parser()
+
+msg = '''A+ Scalp Trade Setups — Fri Jun 13 SPY ❌ Rejection Short 600.10 🔻 598.00, 596.40, 594.20 🔻 Aggressive Breakdown 597.85 🔻 596.40, 594.20, 592.60'''
+
+result = parser.parse_message(content=msg, message_id='test_local', timestamp='2025-06-13T13:00:00Z')
+print(result)
+🛑 Final Assessment Report
+After completing the above steps, provide:
+
+Summary of how many total messages were ingested
+
+How many were parsed
+
+Which messages failed validation or storage
+
+Whether Flask context is now working throughout
+
+Any log excerpts showing unexpected behavior
+
