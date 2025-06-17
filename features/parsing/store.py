@@ -159,9 +159,9 @@ class ParsingStore:
         """
         try:
             # Import here to avoid circular imports
-            from features.ingestion.models import DiscordMessage
+            from features.ingestion.models import DiscordMessageModel
             
-            message = self.session.query(DiscordMessage).filter_by(message_id=message_id).first()
+            message = self.session.query(DiscordMessageModel).filter_by(message_id=message_id).first()
             if message:
                 message.is_processed = is_processed
                 logger.debug(f"[store] Updated message {message_id} is_processed = {is_processed}")
