@@ -171,33 +171,31 @@ def trigger_backlog():
         
         logger.info(f"Manual backlog parsing requested by {requested_by}")
         
-        # Ensure Flask application context for database operations
-        with current_app.app_context():
-            # Get parsing store and service directly
-            parsing_store = get_parsing_store()
-            parsing_service = get_parsing_service()
-            
-            if not parsing_service:
-                return jsonify({
-                    'success': False,
-                    'error': 'Parsing service not available'
-                }), 503
-            
-            # Get unparsed messages
-            unparsed_messages = parsing_store.get_unparsed_messages(
-                channel_id=channel_id,
-                since_timestamp=since_timestamp,
-                limit=limit
-            )
-            
-            processed_count = 0
-            error_count = 0
-            
-            logger.info(f"Found {len(unparsed_messages)} unparsed messages for backlog processing")
-            
-            # Process each message directly with detailed logging
-            successful_inserts = 0
-            parsing_failures = 0
+        # Get parsing store and service directly
+        parsing_store = get_parsing_store()
+        parsing_service = get_parsing_service()
+        
+        if not parsing_service:
+            return jsonify({
+                'success': False,
+                'error': 'Parsing service not available'
+            }), 503
+        
+        # Get unparsed messages
+        unparsed_messages = parsing_store.get_unparsed_messages(
+            channel_id=channel_id,
+            since_timestamp=since_timestamp,
+            limit=limit
+        )
+        
+        processed_count = 0
+        error_count = 0
+        
+        logger.info(f"Found {len(unparsed_messages)} unparsed messages for backlog processing")
+        
+        # Process each message directly with detailed logging
+        successful_inserts = 0
+        parsing_failures = 0
             
             for message in unparsed_messages:
                 message_id = message.get('message_id')
