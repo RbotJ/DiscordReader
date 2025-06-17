@@ -64,7 +64,7 @@ def overview():
         logger.error(f"Error loading parsing dashboard: {e}")
         return render_template('parsing/error.html', error=str(e)), 500
 
-@parsing_bp.route('/metrics.json')
+@parsing_dashboard_bp.route('/metrics.json')
 def metrics():
     """Get parsing service metrics as JSON for AJAX updates."""
     try:
@@ -82,7 +82,7 @@ def metrics():
 
 
 
-@parsing_bp.route('/setups.json')
+@parsing_dashboard_bp.route('/setups.json')
 def setups_json():
     """Get parsed setups as JSON with available trading days"""
     try:
@@ -164,7 +164,7 @@ def setups_json():
         logger.error(f"Error getting setups JSON: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@parsing_bp.route('/backlog/trigger', methods=['POST'])
+@parsing_dashboard_bp.route('/backlog/trigger', methods=['POST'])
 def trigger_backlog():
     """Trigger manual backlog parsing for unparsed messages"""
     from flask import current_app
@@ -279,7 +279,7 @@ def trigger_backlog():
             'error': f'Backlog parsing failed: {str(e)}'
         }), 500
 
-@parsing_bp.route('/backlog/status')
+@parsing_dashboard_bp.route('/backlog/status')
 def backlog_status():
     """Get status of unparsed messages available for backlog processing"""
     try:
@@ -307,7 +307,7 @@ def backlog_status():
         logger.error(f"Error getting backlog status: {e}")
         return jsonify({'error': str(e)}), 500
 
-@parsing_bp.route('/health')
+@parsing_dashboard_bp.route('/health')
 def health():
     """Parsing service health check"""
     try:
@@ -334,7 +334,7 @@ def health():
             'timestamp': utc_now().isoformat()
         }), 500
 
-@parsing_bp.route('/setups/clear', methods=['POST'])
+@parsing_dashboard_bp.route('/setups/clear', methods=['POST'])
 def clear_trade_setups():
     """Clear all trade setups and their associated parsed levels"""
     try:
@@ -369,4 +369,4 @@ def clear_trade_setups():
 
 def register_dashboard_routes(app):
     """Register parsing dashboard routes"""
-    app.register_blueprint(parsing_bp)
+    app.register_blueprint(parsing_dashboard_bp)

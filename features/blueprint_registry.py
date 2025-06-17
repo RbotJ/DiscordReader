@@ -14,11 +14,11 @@ BLUEPRINT_REGISTRY = [
     ("options", "features.options.api_routes", "bp"),
     ("account", "features.account.api_routes", "bp"),
     ("alpaca", "features.alpaca.api", "alpaca_bp"),
-    ("parsing_api", "features.parsing.api", "parsing_bp"),
+    ("parsing_api", "features.parsing.api", "parsing_api_bp"),
     ("setups", "features.setups.api", "setups_bp"),
     
     # Dashboard Blueprints
-    ("parsing_dashboard", "features.parsing.dashboard", "parsing_bp"),
+    ("parsing_dashboard", "features.parsing.dashboard", "parsing_dashboard_bp"),
     ("discord_dashboard", "features.discord_bot.dashboard", "discord_bp"),
     ("channels_dashboard", "features.discord_channels.dashboard", "channels_bp"),
     ("ingestion_dashboard", "features.ingestion.dashboard", "ingest_bp"),
