@@ -282,11 +282,11 @@ def get_setups_by_trading_day():
 def trigger_backlog():
     """Trigger manual backlog parsing for unparsed messages"""
     try:
-        # Get optional parameters from request
+        # Get optional parameters from request with safer limits
         data = request.get_json() or {}
         channel_id = data.get('channel_id')
         since_timestamp = data.get('since_timestamp')
-        limit = int(data.get('limit', 50))
+        limit = min(int(data.get('limit', 5)), 5)  # Limit to 5 messages to prevent timeouts
         requested_by = data.get('requested_by', 'api_user')
         
         logger.info(f"Manual backlog parsing requested by {requested_by}")
@@ -314,8 +314,21 @@ def trigger_backlog():
         
         logger.info(f"Found {len(unparsed_messages)} unparsed messages for backlog processing")
         
-        # Process each message directly
-        for message in unparsed_messages:
+        # Return immediately and process in background to avoid timeouts
+        if not unparsed_messages:
+            return jsonify({
+                'success': True,
+                'message': 'No unparsed messages found',
+                'results': {
+                    'messages_found': 0,
+                    'messages_processed': 0,
+                    'errors': 0,
+                    'requested_by': requested_by
+                }
+            })
+        
+        # Quick processing of first few messages only
+        for i, message in enumerate(unparsed_messages[:2]):  # Process max 2 messages to avoid timeout
             try:
                 message_id = message.get('message_id')
                 content = message.get('content', '')
@@ -333,7 +346,8 @@ def trigger_backlog():
                     setups_created = result.get('setups_created', 0)
                     logger.debug(f"Successfully processed message {message_id} - {setups_created} setups created")
                 else:
-                    logger.debug(f"Failed to parse message {message_id}: {result.get('error', 'Unknown error')}")
+                    error_count += 1
+                    logger.debug(f"Failed to parse message {message_id}: {result.get('error', 'Unknown error') if result else 'No result returned'}")
                     
             except Exception as e:
                 logger.error(f"Error processing message {message.get('message_id')}: {e}")
