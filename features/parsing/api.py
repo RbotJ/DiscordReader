@@ -317,21 +317,23 @@ def trigger_backlog():
         # Process each message directly
         for message in unparsed_messages:
             try:
-                # Process the message through parsing service
-                message_data = {
-                    'message_id': message.get('message_id'),
-                    'content': message.get('content', ''),
-                    'channel_id': message.get('channel_id'),
-                    'timestamp': message.get('timestamp'),
-                    'author_id': message.get('author_id')
-                }
-                result = parsing_service.parse_message(message_data)
+                message_id = message.get('message_id')
+                content = message.get('content', '')
                 
-                if result and result.get('setup_created'):
+                # Check if content should be parsed
+                if not parsing_service.should_parse_message(content):
+                    logger.debug(f"Message {message_id} skipped - not an A+ message")
+                    continue
+                
+                # Parse the A+ message directly
+                result = parsing_service.parse_aplus_message(content, message_id)
+                
+                if result and result.get('success'):
                     processed_count += 1
-                    logger.debug(f"Successfully processed message {message.get('message_id')}")
+                    setups_created = result.get('setups_created', 0)
+                    logger.debug(f"Successfully processed message {message_id} - {setups_created} setups created")
                 else:
-                    logger.debug(f"No setup found in message {message.get('message_id')}")
+                    logger.debug(f"Failed to parse message {message_id}: {result.get('error', 'Unknown error')}")
                     
             except Exception as e:
                 logger.error(f"Error processing message {message.get('message_id')}: {e}")
