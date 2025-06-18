@@ -96,13 +96,24 @@ def force_reparse_message(message_id, content, timestamp, channel_id, parser, se
                 'setups_created': 0
             }
         
-        # Store setups using the service
-        storage_result = service.store_parsed_setups(
-            setups=setups,
-            message_id=message_id,
-            trading_date=trading_date,
-            metadata=parse_result.get('extraction_metadata', {})
-        )
+        # Store setups using the store's correct method
+        try:
+            created_setups, created_levels = store.store_parsed_message(
+                message_id=message_id,
+                parsed_setups=setups,  # TradeSetup dataclass instances
+                trading_day=trading_date,
+                ticker_bias_notes=parse_result.get('ticker_bias_notes', {})
+            )
+            storage_result = {
+                'success': True,
+                'setups_stored': len(created_setups),
+                'levels_created': len(created_levels)
+            }
+        except Exception as store_error:
+            storage_result = {
+                'success': False,
+                'error': str(store_error)
+            }
         
         if storage_result['success']:
             setups_created = storage_result.get('setups_stored', len(setups))
