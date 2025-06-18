@@ -18,6 +18,8 @@ from datetime import date, datetime
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 
+from .failure_tracker import record_parsing_failure, FailureReason
+
 logger = logging.getLogger(__name__)
 
 # ----- Data Model -----
@@ -108,13 +110,24 @@ def parse_setup_prices(line: str) -> Tuple[Optional[float], List[float]]:
             if validate_price_structure(line, trigger, targets):
                 return trigger, targets
     
-    # Fallback to old method if structured parsing fails
+    # Enhanced fallback parsing for partial line failures
     numbers = re.findall(r'\d{2,5}\.\d{2}', line)
     if len(numbers) >= 2:
         trigger = float(numbers[0])
         targets = [float(p) for p in numbers[1:]]
+        
+        # Try standard validation first
         if validate_price_structure(line, trigger, targets):
             return trigger, targets
+        
+        # Relaxed fallback mode for partial failures
+        logger.info(f"Using fallback-pricing-mode for line: {line[:50]}...")
+        
+        # More permissive validation for edge cases
+        if len(targets) >= 1 and trigger != targets[0]:
+            # Log the relaxed parsing decision
+            logger.debug(f"Relaxed parsing: trigger={trigger}, targets={targets[:3]}")  # Limit to first 3 targets
+            return trigger, targets[:4]  # Cap at 4 targets maximum
     
     return None, []
 
@@ -286,22 +299,39 @@ class APlusMessageParser:
 
     def validate_message(self, content: str) -> bool:
         """
-        Validate if this is an A+ scalp setups message with enhanced logging.
+        Validate if this is an A+ scalp setups message with enhanced token-based and guard logic.
         
         Args:
             content: Raw message content
             
         Returns:
-            True if message contains A+ trade setups header
+            True if message contains A+ trade setups header and passes guard checks
         """
         if not content or not isinstance(content, str):
             logger.debug(f"Message validation failed: empty or invalid content type")
             return False
-            
-        # Enhanced header pattern matching with detailed logging
+        
+        # Guard logic: Reject test/development messages
+        if any(w in content.lower() for w in ["test", "draft", "ignore this", "dev only", "testing"]):
+            logger.debug("Message skipped due to test indicators")
+            record_parsing_failure("unknown", FailureReason.TEST_INDICATOR, content, "Contains test indicators")
+            return False
+        
+        # Guard logic: Reject messages that are too short for A+ format
+        if len(content.strip()) < 300:
+            logger.debug(f"Message skipped: content too short ({len(content.strip())} < 300 chars)")
+            record_parsing_failure("unknown", FailureReason.CONTENT_TOO_SHORT, content, f"Content length: {len(content.strip())}")
+            return False
+        
+        # Primary validation: Token-based header check
+        if self._has_aplus_header_tokens(content):
+            logger.debug("A+ header validated via token-based logic")
+            return True
+        
+        # Fallback validation: Regex pattern matching
         header_match = self.header_pattern.search(content)
         if header_match:
-            logger.debug(f"A+ header found: '{header_match.group()}'")
+            logger.debug(f"A+ header found via regex: '{header_match.group()}'")
             return True
         else:
             # Log first line for debugging when validation fails
@@ -312,6 +342,38 @@ class APlusMessageParser:
             if "A+" in content and "setup" in content.lower():
                 logger.warning(f"Possible A+ message with non-standard header format: '{first_line[:100]}'")
             
+            return False
+    
+    def _has_aplus_header_tokens(self, content: str) -> bool:
+        """
+        Token-based A+ header validation using normalized string parsing.
+        More flexible than regex for handling punctuation and spacing variations.
+        
+        Args:
+            content: Raw message content
+            
+        Returns:
+            True if header tokens indicate A+ scalp setups message
+        """
+        try:
+            # Get first line and normalize punctuation
+            first_line = content.splitlines()[0] if content.splitlines() else ""
+            normalized = first_line.lower().replace('—', '-').replace('–', '-').replace('.', '')
+            header_tokens = normalized.split()
+            
+            # Check for required tokens
+            has_aplus = 'a+' in header_tokens
+            has_scalp = 'scalp' in header_tokens
+            has_setup = any('setup' in token for token in header_tokens)
+            
+            # Additional check for "trade" in combined tokens
+            header_text = ' '.join(header_tokens)
+            has_trade_context = 'trade' in header_text or 'setup' in header_text
+            
+            return has_aplus and has_scalp and (has_setup or has_trade_context)
+            
+        except Exception as e:
+            logger.debug(f"Token-based header validation failed: {e}")
             return False
 
     def extract_trading_date(self, content: str) -> Optional[date]:
@@ -511,15 +573,42 @@ class APlusMessageParser:
         if current_ticker and current_content:
             ticker_sections[current_ticker] = '\n'.join(current_content)
         
-        # Parse each ticker section
+        # Parse each ticker section and collect quality metrics
         all_setups = []
         ticker_bias_notes = {}
+        parse_quality_metrics = {
+            'total_lines': len(lines),
+            'ticker_sections': len(ticker_sections),
+            'lines_processed': 0,
+            'lines_skipped': 0,
+            'bias_extracted': False,
+            'parsing_method': 'structured',
+            'fallback_price_parsing': 0
+        }
         
         for ticker, section_content in ticker_sections.items():
+            section_lines = section_content.split('\n')
+            
+            # Track lines processed for this ticker section
+            for line in section_lines:
+                if line.strip():
+                    parse_quality_metrics['lines_processed'] += 1
+            
             setups, bias_note = self.parse_ticker_section(ticker, section_content, trading_date)
             all_setups.extend(setups)
+            
             if bias_note:
                 ticker_bias_notes[ticker] = bias_note
+                parse_quality_metrics['bias_extracted'] = True
+        
+        # Calculate parse health score
+        if parse_quality_metrics['total_lines'] > 0:
+            parse_success_rate = (parse_quality_metrics['lines_processed'] / parse_quality_metrics['total_lines']) * 100
+        else:
+            parse_success_rate = 0
+        
+        parse_quality_metrics['parse_success_rate'] = round(parse_success_rate, 1)
+        parse_quality_metrics['setup_yield'] = len(all_setups) / max(1, parse_quality_metrics['ticker_sections'])
         
         return {
             'success': True,
@@ -533,7 +622,8 @@ class APlusMessageParser:
                 'extraction_method': extraction_method,
                 'timestamp_provided': message_timestamp is not None,
                 'extraction_confidence': 'high' if extraction_method == 'hybrid' else 'medium'
-            }
+            },
+            'parse_quality': parse_quality_metrics
         }
 
 

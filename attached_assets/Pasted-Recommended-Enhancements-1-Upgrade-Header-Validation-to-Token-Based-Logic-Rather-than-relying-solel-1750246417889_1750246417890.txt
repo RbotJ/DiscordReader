@@ -1,0 +1,130 @@
+Recommended Enhancements
+1. Upgrade Header Validation to Token-Based Logic
+Rather than relying solely on regex like:
+
+python
+Copy
+Edit
+self.header_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)', re.IGNORECASE)
+Use a simple normalized token check like:
+
+python
+Copy
+Edit
+def has_aplus_header(content: str) -> bool:
+    header_tokens = content.splitlines()[0].lower().replace('—', '-').split()
+    return 'a+' in header_tokens and 'scalp' in header_tokens and 'setup' in ' '.join(header_tokens)
+Then use this check before or in combination with regex.
+
+2. Improve Message Guard Logic
+Enhance the validate_message() method to:
+
+Reject messages with known test indicators: test, draft, ignore
+
+Reject messages shorter than a reasonable threshold (e.g., under 300 characters)
+
+Confirm presence of at least one ticker section
+
+python
+Copy
+Edit
+if any(w in content.lower() for w in ["test", "draft", "ignore this", "dev only"]):
+    logger.debug("Message skipped due to test indicators")
+    return False
+
+if len(content.strip()) < 300:
+    logger.debug("Message skipped: content too short")
+    return False
+3. Unify Date Parsing With Fallback and Logging
+You already use extract_trading_day() with fallback logic. Improve logging here:
+
+When fallback is used, print UTC → CST conversion
+
+When a date is parsed from the header, validate against weekday (Mon–Fri)
+
+python
+Copy
+Edit
+if extracted_date.weekday() >= 5:
+    logger.warning(f"Extracted trading date falls on a weekend: {extracted_date}")
+4. Bias Handling Edge Case Fix
+You currently skip bias lines by checking for prefix ⚠️ in the ticker section. This works but can fail if:
+
+Bias is not isolated properly from the ticker setup lines
+
+Newline formatting varies (extra \n between bias and tickers)
+
+Fix: Ensure the bias is always extracted before ticker sections are parsed, and strip it from the content passed to parse_ticker_section.
+
+5. Log Setup Count vs. Expected
+Right now audit_profile_coverage() is helpful but could log:
+
+Expected count vs actual count
+
+Missing common profile labels by frequency across messages
+
+This helps detect if setups are being skipped due to:
+
+Misclassified lines
+
+Price structure failures
+
+6. Improve Price Structure Tolerance
+For partial line failures like:
+
+yaml
+Copy
+Edit
+Above 599.00 🔼 Target 1: 601.00
+Try a relaxed parse as a fallback:
+
+Extract all numbers
+
+Use first as trigger, rest as targets
+
+Log as "fallback-pricing-mode"
+
+7. Metrics for Partial vs Full Message Success
+Add to parse result:
+
+python
+Copy
+Edit
+'parse_quality': {
+    'total_lines': 28,
+    'lines_parsed': 22,
+    'ticker_sections': 3,
+    'bias_extracted': True
+}
+This lets your dashboard show a parse health score or flag degraded messages.
+
+🧠 Strategic Recommendations
+✅ Consolidate Parsing Failures
+Create a log table or event bus entry when a message fails to parse. Store:
+
+Message ID
+
+Reason (header missing, price parse failed, etc.)
+
+Timestamp
+
+Parsed ticker count
+This lets you reprocess or review failure reasons without rerunning the whole backlog.
+
+✅ Add Unit Tests for Common Format Variations
+Create 20+ test messages with variations of:
+
+Headers
+
+Emoji styles
+
+Line structure
+
+Edge cases (typos, dashes, spacing)
+Validate:
+
+Header recognition
+
+Ticker parsing
+
+Setup extraction
