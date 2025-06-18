@@ -127,14 +127,14 @@ def test_validation_accuracy():
     
     valid_count = 0
     for i, msg in enumerate(valid_messages):
-        is_valid = parser.is_aplus_message(msg)
+        is_valid = parser.validate_message(msg)
         print(f"   Valid message {i+1}: {is_valid}")
         if is_valid:
             valid_count += 1
     
     invalid_count = 0
     for i, msg in enumerate(invalid_messages):
-        is_valid = parser.is_aplus_message(msg)
+        is_valid = parser.validate_message(msg)
         print(f"   Invalid message {i+1}: {not is_valid}")
         if not is_valid:
             invalid_count += 1

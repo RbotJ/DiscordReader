@@ -42,7 +42,22 @@ def overview():
             store = get_parsing_store()
             audit_data = store.get_audit_anomalies()
             
-            # Note: Duplicate detection audit data disabled temporarily during restoration
+            # Add duplicate detection audit data using isolated detector
+            try:
+                from .duplicate_detector import get_duplicate_detector
+                detector = get_duplicate_detector()
+                
+                with db.session() as session:
+                    duplicate_stats = detector.get_duplicate_statistics(session)
+                    audit_data['duplicate_trading_days'] = duplicate_stats.get('duplicate_trading_days', 0)
+                    audit_data['duplicate_days_list'] = duplicate_stats.get('duplicate_days_list', [])[:5]  # Show first 5
+                    audit_data['duplicate_policy'] = duplicate_stats.get('current_policy', 'skip')
+                    
+            except Exception as e:
+                logger.warning(f"Could not get duplicate statistics: {e}")
+                audit_data['duplicate_trading_days'] = 0
+                audit_data['duplicate_days_list'] = []
+                audit_data['duplicate_policy'] = 'skip'
             
             # Flatten metrics for template compatibility
             # Template expects metrics.active_setups, but service returns metrics.parsing_stats.active_setups
