@@ -319,9 +319,9 @@ class APlusMessageParser:
             record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing A+ identifier")
             return False
             
-        if "setup" not in header:
-            logger.debug("Message rejected: missing 'setup' in header")
-            record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing setup keyword")
+        if "setup" not in header and "setups" not in header:
+            logger.debug("Message rejected: missing 'setup' or 'setups' in header")
+            record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing setup/setups keyword")
             return False
             
         # Guard logic: Skip test/draft messages
@@ -330,9 +330,9 @@ class APlusMessageParser:
             record_parsing_failure("unknown", FailureReason.TEST_INDICATOR, content, "Test/draft content detected")
             return False
             
-        # Guard logic: Fat-finger safeguard - relaxed threshold for better accuracy
-        if len(content) < 50:  # Reduced from 300 to 50 for better validation accuracy
-            logger.debug(f"Message skipped: content too short ({len(content)} < 50 chars)")
+        # Guard logic: Fat-finger safeguard - very permissive threshold for header-only validation
+        if len(content) < 20:  # Minimum viable A+ header length
+            logger.debug(f"Message skipped: content too short ({len(content)} < 20 chars)")
             record_parsing_failure("unknown", FailureReason.CONTENT_TOO_SHORT, content, f"Content length: {len(content)}")
             return False
 
