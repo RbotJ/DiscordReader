@@ -67,7 +67,7 @@ class ParsingService:
         """
         return self.listener.process_message_manually(message_data)
     
-    def parse_aplus_message(self, message_content: str, message_id: str, trading_day: Optional[date] = None) -> Dict[str, Any]:
+    def parse_aplus_message(self, message_content: str, message_id: str, trading_day: Optional[date] = None, message_timestamp: Optional[datetime] = None) -> Dict[str, Any]:
         """
         Parse an A+ scalp setups message with enhanced schema fields.
         
@@ -75,6 +75,7 @@ class ParsingService:
             message_content: Raw message content
             message_id: Discord message ID
             trading_day: Trading day (defaults to extracted date or today)
+            message_timestamp: Message timestamp for duplicate detection
             
         Returns:
             Parsing results with enhanced setup data
@@ -85,8 +86,8 @@ class ParsingService:
                 logger.warning(f"Message {message_id} is not a valid A+ scalp setups message")
                 return {'success': False, 'error': 'Not an A+ scalp setups message'}
             
-            # Parse the message
-            parsed_data = self.aplus_parser.parse_message(message_content, message_id)
+            # Parse the message with timestamp for duplicate detection
+            parsed_data = self.aplus_parser.parse_message(message_content, message_id, message_timestamp)
             
             if not parsed_data.get('success', False):
                 logger.warning(f"Failed to parse A+ message {message_id}: {parsed_data.get('error', 'Unknown error')}")
