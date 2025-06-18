@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 DUPLICATE_POLICY = "replace"  # Options: "skip", "replace", "allow"
 
 
+# Global store instance
+_parsing_store = None
+
+def get_parsing_store() -> 'ParsingStore':
+    """Get the global parsing store instance."""
+    global _parsing_store
+    if _parsing_store is None:
+        _parsing_store = ParsingStore()
+    return _parsing_store
+
+
 class ParsingStore:
     """
     Store class for parsing operations.
@@ -65,12 +76,17 @@ class ParsingStore:
             return None
         
         # Get message details from discord_messages table
-        from features.ingestion.models import DiscordMessage
-        message = self.session.query(DiscordMessage).filter_by(message_id=existing_setup.message_id).first()
-        if not message:
-            return None
-            
-        return (existing_setup.message_id, message.timestamp, len(message.content))
+        try:
+            from features.ingestion.models import DiscordMessageModel
+            message = self.session.query(DiscordMessageModel).filter_by(message_id=existing_setup.message_id).first()
+            if not message:
+                # If message not found in discord_messages, return minimal info
+                return (existing_setup.message_id, existing_setup.created_at, 0)
+                
+            return (existing_setup.message_id, message.timestamp, len(message.content))
+        except ImportError:
+            # Fallback if ingestion models not available
+            return (existing_setup.message_id, existing_setup.created_at, 0)
     
     def should_replace(self, existing_msg_details: Tuple[str, datetime, int], 
                       new_msg_id: str, new_timestamp: datetime, new_content_length: int) -> bool:

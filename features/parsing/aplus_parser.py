@@ -487,7 +487,7 @@ class APlusMessageParser:
 
     def parse_message(self, content: str, message_id: Optional[str] = None, message_timestamp: Optional[datetime] = None, **kwargs) -> Dict[str, Any]:
         """
-        Parse complete A+ scalp setups message.
+        Parse complete A+ scalp setups message with duplicate trading day resolution.
         
         Args:
             content: Raw message content
@@ -517,6 +517,37 @@ class APlusMessageParser:
             if not trading_date:
                 trading_date = date.today()
                 extraction_method = "fallback"
+        
+        # Handle duplicate trading day resolution
+        from .store import get_parsing_store
+        store = get_parsing_store()
+        
+        duplicate_status = "none"
+        if message_id:
+            existing_details = store.find_existing_message_for_day(trading_date)
+            if existing_details:
+                existing_msg_id, existing_timestamp, existing_length = existing_details
+                
+                # Check if current message should replace existing one
+                current_length = len(content)
+                current_timestamp = message_timestamp or datetime.utcnow()
+                
+                if store.should_replace(existing_details, message_id, current_timestamp, current_length):
+                    # Delete existing setups for this trading day
+                    deleted_count = store.delete_setups_for_trading_day(trading_date)
+                    logger.info(f"Replaced {deleted_count} existing setups for trading day {trading_date} with newer message {message_id}")
+                    duplicate_status = "replaced"
+                else:
+                    # Skip parsing this message as existing one is better
+                    logger.info(f"Skipping duplicate message {message_id} for trading day {trading_date} - existing message is newer/longer")
+                    return {
+                        'success': False,
+                        'error': 'Duplicate trading day - existing message is newer/longer',
+                        'setups': [],
+                        'trading_date': trading_date,
+                        'duplicate_status': 'skipped',
+                        'existing_message_id': existing_msg_id
+                    }
         
         # Split content into ticker sections
         ticker_sections = {}
@@ -589,6 +620,7 @@ class APlusMessageParser:
             'total_setups': len(all_setups),
             'tickers_found': list(ticker_sections.keys()),
             'message_id': message_id,
+            'duplicate_status': duplicate_status,
             'extraction_metadata': {
                 'extraction_method': extraction_method,
                 'timestamp_provided': message_timestamp is not None,
