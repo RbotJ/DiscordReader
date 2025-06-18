@@ -1,45 +1,65 @@
-#!/usr/bin/env python3
 """
-Test A+ message validation to debug why messages aren't being recognized
+Test script to verify the new validation logic correctly identifies all A+ message patterns.
 """
 
-import re
-from features.parsing.aplus_parser import get_aplus_parser
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def test_validation():
-    """Test A+ validation with actual message content"""
+from features.parsing.aplus_parser import APlusMessageParser
+
+def test_validation_patterns():
+    """Test the new validation logic with all the header patterns found in the database."""
     
-    # Get the parser
-    parser = get_aplus_parser()
+    parser = APlusMessageParser()
     
-    # Test messages from database
+    # Test patterns from the actual database messages
     test_messages = [
-        "A+ Scalp Trade Setups — Tue Jun 17\n\nSPY\n❌ Rejection Short 602.68 🔻 600.50, 598.30, 595.60",
-        "A+ Scalp Trade Setups - Mon Jun 16\n\nSPY\n❌ Rejection Short 601.35 🔻 599.75, 597.40, 595.60",
-        "A+ Scalp Trade Setups. — Wed Jun 11\n\nSPY\n❌ Rejection Short 606.37",
-        "A+ Scalp Trade Setups — Tue Jun 10\n\nSPY\n🔻 Breakdown Below 599.00 (598.40, 597.80, 597.20)"
+        # Pattern 1: A+ Scalp Trade Setups (14 messages)
+        "A+ Scalp Trade Setups — Tue Jun 17\n\nSPY\n❌ Rejection Short" + "x" * 300,
+        "A+ Scalp Trade Setups - Mon Jun 16\n\nSPY\n❌ Rejection Short" + "x" * 300,
+        "A+ Scalp Trade Setups. — Wed Jun 11\n\nAlso eyes on" + "x" * 300,
+        
+        # Pattern 2: A+ Trade Setups (7 messages)  
+        "A+ Trade Setups — Tue May 27\n\nSPY\n❌ Rejection Short Near" + "x" * 300,
+        "A+ Trade Setups — Wed May 21 (Scalps)\n\nSPY\n🔻 Aggressive Breakdown" + "x" * 300,
+        
+        # Pattern 3: A+ Scalp Setups (1 message)
+        "A+ Scalp Setups — Thur May 22\n\n✅ SPY \n❌ Rejection" + "x" * 300,
+        
+        # Should be rejected - test patterns
+        "A+ Test Setups — Today\n\nSPY\n❌ Rejection Short" + "x" * 300,
+        "A+ Draft Trade Setups — Today\n\nSPY\n❌ Rejection Short" + "x" * 300,
+        
+        # Should be rejected - too short
+        "A+ Scalp Trade Setups — Today\n\nSPY",
+        
+        # Should be rejected - missing A+
+        "Scalp Trade Setups — Today\n\nSPY\n❌ Rejection Short" + "x" * 300,
+        
+        # Should be rejected - missing setup
+        "A+ Scalp Trade — Today\n\nSPY\n❌ Rejection Short" + "x" * 300,
     ]
     
-    print("Testing A+ message validation:")
+    expected_results = [True, True, True, True, True, True, False, False, False, False, False]
+    
+    print("Testing new validation logic:")
     print("=" * 50)
     
-    for i, message in enumerate(test_messages, 1):
-        print(f"\nTest {i}:")
-        print(f"Content preview: {message[:50]}...")
+    all_passed = True
+    for i, (message, expected) in enumerate(zip(test_messages, expected_results)):
+        result = parser.validate_message(message)
+        status = "✓ PASS" if result == expected else "✗ FAIL"
         
-        # Test the validation
-        is_valid = parser.validate_message(message)
-        print(f"Validation result: {is_valid}")
+        header = message.split('\n')[0]
+        print(f"{i+1:2d}. {status} - '{header[:40]}...' -> {result} (expected {expected})")
         
-        # Test the regex directly
-        header_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)', re.IGNORECASE)
-        regex_match = bool(header_pattern.search(message))
-        print(f"Direct regex match: {regex_match}")
-        
-        if not is_valid:
-            print(f"❌ Validation failed for message {i}")
-        else:
-            print(f"✅ Validation passed for message {i}")
+        if result != expected:
+            all_passed = False
+    
+    print("=" * 50)
+    print(f"Overall result: {'✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED'}")
+    return all_passed
 
 if __name__ == "__main__":
-    test_validation()
+    test_validation_patterns()
