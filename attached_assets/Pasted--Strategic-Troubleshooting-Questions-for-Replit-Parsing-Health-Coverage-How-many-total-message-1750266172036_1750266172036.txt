@@ -1,0 +1,99 @@
+✅ Strategic Troubleshooting Questions for Replit
+🔍 Parsing Health & Coverage
+How many total messages are stored in discord_messages?
+
+Run:
+
+sql
+Copy
+Edit
+SELECT COUNT(*) FROM discord_messages;
+How many of those are valid A+ messages (based on content)?
+
+Run:
+
+sql
+Copy
+Edit
+SELECT COUNT(*) FROM discord_messages WHERE content ILIKE '%A+%Setup%';
+How many A+ messages have successfully created entries in trade_setups?
+
+Run:
+
+sql
+Copy
+Edit
+SELECT COUNT(DISTINCT message_id) FROM trade_setups;
+Compare timestamps and message lengths for parsed vs unparsed A+ messages.
+
+Identify if the parser is mistakenly skipping better candidates.
+
+⚠️ Parser Validation Logic
+Which validate_message() condition is most often rejecting messages?
+
+Add logging for:
+
+Token match failure
+
+Message too short
+
+Contains test/placeholder text
+
+Regex mismatch
+
+Does every skipped A+ message produce a failure reason in the failure_tracker.py?
+
+If not, instrument parse_message() and validate_message() to capture every rejection with message_id and reason.
+
+Are any messages mistakenly identified as duplicates due to time zone conversion issues?
+
+Log both UTC and America/Chicago conversions per message during duplicate detection.
+
+📅 Duplicate Handling
+Are any duplicate deletions being incorrectly triggered for messages with different trading_day values?
+
+Verify:
+
+python
+Copy
+Edit
+trade_setup.trading_day == new_candidate_trading_day
+before deletion.
+
+Are any duplicates being silently skipped due to DUPLICATE_POLICY="skip" being hardcoded somewhere?
+
+📈 Dashboard Data Validation
+Is the parsed message count on the dashboard matching the database?
+
+Compare:
+
+Frontend display (parsing_stats.total_setups)
+
+DB query (SELECT COUNT(*) FROM trade_setups;)
+
+Does the duplicate audit section reflect real duplicates from recent messages?
+
+Run:
+
+sql
+Copy
+Edit
+SELECT trading_day, COUNT(DISTINCT message_id)
+FROM trade_setups
+GROUP BY trading_day
+HAVING COUNT(DISTINCT message_id) > 1;
+🧪 Test Case Completeness
+Has the parser been tested with:
+
+A message without a header?
+
+A message with an invalid ticker block?
+
+A message with valid trigger/target pairs but malformed bias?
+
+A message with duplicate ticker sections?
+
+Does the backlog re-processing always re-validate existing setups, or skip previously processed ones?
+
+Confirm that the backlog runner doesn’t skip valid messages by mistake.
+
