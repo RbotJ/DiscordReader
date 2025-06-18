@@ -311,75 +311,41 @@ class APlusMessageParser:
             logger.debug(f"Message validation failed: empty or invalid content type")
             return False
         
-        # Guard logic: Reject test/development messages
-        if any(w in content.lower() for w in ["test", "draft", "ignore this", "dev only", "testing"]):
+        header = content.strip().splitlines()[0].lower() if content.strip() else ""
+
+        # Basic structure checks
+        if "a+" not in header:
+            logger.debug("Message rejected: missing 'A+' in header")
+            record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing A+ identifier")
+            return False
+            
+        if "setup" not in header:
+            logger.debug("Message rejected: missing 'setup' in header")
+            record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing setup keyword")
+            return False
+            
+        # Guard logic: Skip test/draft messages
+        if any(flag in header for flag in ["test", "draft", "ignore", "template"]):
             logger.debug("Message skipped due to test indicators")
-            record_parsing_failure("unknown", FailureReason.TEST_INDICATOR, content, "Contains test indicators")
+            record_parsing_failure("unknown", FailureReason.TEST_INDICATOR, content, "Test/draft content detected")
             return False
-        
-        # Guard logic: Reject messages that are too short for A+ format
-        if len(content.strip()) < 300:
-            logger.debug(f"Message skipped: content too short ({len(content.strip())} < 300 chars)")
-            record_parsing_failure("unknown", FailureReason.CONTENT_TOO_SHORT, content, f"Content length: {len(content.strip())}")
-            return False
-        
-        # Primary validation: Token-based header check
-        if self._has_aplus_header_tokens(content):
-            logger.debug("A+ header validated via token-based logic")
-            return True
-        
-        # Fallback validation: Regex pattern matching
-        header_match = self.header_pattern.search(content)
-        if header_match:
-            logger.debug(f"A+ header found via regex: '{header_match.group()}'")
-            return True
-        else:
-            # Log first line for debugging when validation fails
-            first_line = content.split('\n')[0] if content else ""
-            logger.debug(f"A+ header NOT found in first line: '{first_line[:100]}'")
             
-            # Check for common variations that might not match
-            if "A+" in content and "setup" in content.lower():
-                logger.warning(f"Possible A+ message with non-standard header format: '{first_line[:100]}'")
-                record_parsing_failure("unknown", FailureReason.HEADER_INVALID, content, 
-                                     f"Non-standard header: {first_line[:100]}")
-            else:
-                record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, 
-                                     f"No A+ header found: {first_line[:100]}")
-            
+        # Guard logic: Fat-finger safeguard
+        if len(content) < 300:
+            logger.debug(f"Message skipped: content too short ({len(content)} < 300 chars)")
+            record_parsing_failure("unknown", FailureReason.CONTENT_TOO_SHORT, content, f"Content length: {len(content)}")
             return False
+
+        # Optional tokens for logging/confidence
+        tokens = set(re.findall(r'[a-zA-Z0-9]+', header))
+        has_scalp = "scalp" in tokens
+        has_trade = "trade" in tokens
+
+        logger.debug(f"[Validation] Header tokens={tokens}, has_scalp={has_scalp}, has_trade={has_trade}")
+
+        return True  # ✅ Passed all checks
     
-    def _has_aplus_header_tokens(self, content: str) -> bool:
-        """
-        Token-based A+ header validation using normalized string parsing.
-        More flexible than regex for handling punctuation and spacing variations.
-        
-        Args:
-            content: Raw message content
-            
-        Returns:
-            True if header tokens indicate A+ scalp setups message
-        """
-        try:
-            # Get first line and normalize punctuation
-            first_line = content.splitlines()[0] if content.splitlines() else ""
-            normalized = first_line.lower().replace('—', '-').replace('–', '-').replace('.', '')
-            header_tokens = normalized.split()
-            
-            # Check for required tokens
-            has_aplus = 'a+' in header_tokens
-            has_scalp = 'scalp' in header_tokens
-            has_setup = any('setup' in token for token in header_tokens)
-            
-            # Additional check for "trade" in combined tokens
-            header_text = ' '.join(header_tokens)
-            has_trade_context = 'trade' in header_text or 'setup' in header_text
-            
-            return has_aplus and has_scalp and (has_setup or has_trade_context)
-            
-        except Exception as e:
-            logger.debug(f"Token-based header validation failed: {e}")
-            return False
+
 
     def extract_trading_date(self, content: str) -> Optional[date]:
         """
