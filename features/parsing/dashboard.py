@@ -186,6 +186,7 @@ def trigger_backlog():
         
         # Get parsing store and service directly
         parsing_store = get_parsing_store()
+        from .service import get_parsing_service
         parsing_service = get_parsing_service()
         
         if not parsing_service:
