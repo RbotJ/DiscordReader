@@ -5,7 +5,6 @@ Handles database operations for the parsing vertical slice.
 Provides persistence layer for trade setups and parsed levels.
 """
 import logging
-import os
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
@@ -19,8 +18,8 @@ from .setup_converter import convert_parsed_setup_to_model, create_levels_for_se
 
 logger = logging.getLogger(__name__)
 
-# Duplicate handling policy configuration
-DUPLICATE_POLICY = os.getenv("DUPLICATE_POLICY", "skip")  # Options: skip, replace, allow
+# Duplicate detection policy configuration
+DUPLICATE_POLICY = "replace"  # Options: "skip", "replace", "allow"
 
 
 class ParsingStore:
