@@ -341,6 +341,11 @@ class APlusMessageParser:
             # Check for common variations that might not match
             if "A+" in content and "setup" in content.lower():
                 logger.warning(f"Possible A+ message with non-standard header format: '{first_line[:100]}'")
+                record_parsing_failure("unknown", FailureReason.HEADER_INVALID, content, 
+                                     f"Non-standard header: {first_line[:100]}")
+            else:
+                record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, 
+                                     f"No A+ header found: {first_line[:100]}")
             
             return False
     
