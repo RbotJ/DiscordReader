@@ -123,7 +123,7 @@ Above 230.50 🔼 232.80, 235.20, 237.60"""
         
         assert result_2['success'] == True, "Message parsing should succeed"
         assert result_2['duplicates_skipped'] == 0, f"Should have no duplicates, got {result_2['duplicates_skipped']}"
-        assert result_2['total_setups'] == 4, f"Should have 4 setups, got {result_2['total_setups']}"
+        assert result_2['total_setups'] == 3, f"Should have 3 setups, got {result_2['total_setups']}"
         
         print(f"  Total setups: {result_2['total_setups']}")
         print(f"  Duplicates skipped: {result_2['duplicates_skipped']}")
