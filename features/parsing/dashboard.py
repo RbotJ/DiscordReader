@@ -313,6 +313,56 @@ def backlog_status():
         logger.error(f"Error getting backlog status: {e}")
         return jsonify({'error': str(e)}), 500
 
+@parsing_dashboard_bp.route('/duplicates.json')
+def duplicates_audit():
+    """Get duplicate trading days audit data"""
+    try:
+        from .store import get_parsing_store
+        store = get_parsing_store()
+        
+        # Get duplicate trading days
+        duplicate_days = store.get_duplicate_trading_days()
+        
+        # Format for frontend
+        duplicates_data = []
+        for trading_day, count in duplicate_days:
+            duplicates_data.append({
+                'trading_day': trading_day.strftime('%Y-%m-%d'),
+                'message_count': count,
+                'day_of_week': trading_day.strftime('%A')
+            })
+        
+        return jsonify({
+            'success': True,
+            'duplicate_days': duplicates_data,
+            'total_duplicate_days': len(duplicate_days),
+            'policy': getattr(store, 'DUPLICATE_POLICY', 'replace')
+        })
+    except Exception as e:
+        logger.error(f"Error getting duplicates audit: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@parsing_dashboard_bp.route('/duplicates/cleanup', methods=['POST'])
+def cleanup_duplicates():
+    """Clean up duplicate trade setups"""
+    try:
+        dry_run = request.json.get('dry_run', True) if request.is_json else True
+        
+        from .store import get_parsing_store
+        store = get_parsing_store()
+        result = store.cleanup_duplicate_setups(dry_run=dry_run)
+        
+        return jsonify({
+            'success': True,
+            'dry_run': dry_run,
+            'duplicates_found': result.get('duplicates_found', 0),
+            'duplicates_removed': result.get('duplicates_removed', 0) if not dry_run else 0,
+            'message': f"{'Would remove' if dry_run else 'Removed'} {result.get('duplicates_found', 0)} duplicate setups"
+        })
+    except Exception as e:
+        logger.error(f"Error cleaning up duplicates: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @parsing_dashboard_bp.route('/health')
 def health():
     """Parsing service health check"""

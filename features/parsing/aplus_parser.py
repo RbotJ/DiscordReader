@@ -330,9 +330,9 @@ class APlusMessageParser:
             record_parsing_failure("unknown", FailureReason.TEST_INDICATOR, content, "Test/draft content detected")
             return False
             
-        # Guard logic: Fat-finger safeguard
-        if len(content) < 300:
-            logger.debug(f"Message skipped: content too short ({len(content)} < 300 chars)")
+        # Guard logic: Fat-finger safeguard - relaxed threshold for better accuracy
+        if len(content) < 50:  # Reduced from 300 to 50 for better validation accuracy
+            logger.debug(f"Message skipped: content too short ({len(content)} < 50 chars)")
             record_parsing_failure("unknown", FailureReason.CONTENT_TOO_SHORT, content, f"Content length: {len(content)}")
             return False
 
