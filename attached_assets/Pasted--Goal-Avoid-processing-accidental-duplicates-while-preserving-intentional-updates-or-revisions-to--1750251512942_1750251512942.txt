@@ -1,0 +1,63 @@
+🧠 Goal
+Avoid processing accidental duplicates while preserving intentional updates or revisions to A+ setup messages for the same day.
+
+✅ Proposed Strategy: De-duplication Logic
+1. Detect Duplicate Trading Day Entries
+In parse_message() or during backlog parsing, check:
+
+Is there already a parsed message for this trading_day?
+
+If so, compare timestamps and message length to decide which is preferred.
+
+python
+Copy
+Edit
+def is_duplicate_setup(session, trading_day: date, message_id: str) -> bool:
+    existing = session.query(TradeSetup).filter_by(trading_day=trading_day).first()
+    if not existing:
+        return False
+    if existing.message_id == message_id:
+        return False  # Same message
+    return True  # Conflict on trading_day
+You can log this as a potential duplicate for review.
+
+2. Preserve, Replace, or Skip? Options
+Approach	Behavior
+Skip duplicates	If another message exists for same trading day, ignore this one
+Replace older entry	If new message is longer/more recent, delete existing setups and reparse
+Allow multiple but flag	Allow but tag them as revision=True or duplicate=True for dashboard/audit
+
+You can control this with a config setting:
+
+python
+Copy
+Edit
+DUPLICATE_POLICY = "replace"  # "skip", "replace", "allow"
+3. Recommended Default Policy: "Replace if newer and longer"
+This handles fat-finger mistakes gracefully and respects revisions.
+
+python
+Copy
+Edit
+def should_replace(existing_msg, new_msg):
+    return new_msg.timestamp > existing_msg.timestamp and len(new_msg.content) > len(existing_msg.content)
+On detection:
+
+Delete existing setups for that trading_day
+
+Parse and replace with the better message
+
+4. Track Duplicates in Dashboard Audit
+Add a new audit line:
+
+Duplicate Trading Days: 2
+(Multiple messages found for same trading_day: May 20, Jun 6)
+
+This keeps things visible without needing to auto-resolve everything immediately.
+
+🛠 Where to Implement
+File	Change
+features/parsing/aplus_parser.py	Add duplicate detection and resolution logic inside parse_message()
+features/parsing/store.py	Expose a query to find duplicate trading_day values (group by + count > 1)
+features/parsing/dashboard.py	Add audit indicator for duplicate day setups
+(optional) config.py	Define DUPLICATE_POLICY = "replace"

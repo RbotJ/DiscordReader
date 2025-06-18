@@ -18,6 +18,9 @@ from .setup_converter import convert_parsed_setup_to_model, create_levels_for_se
 
 logger = logging.getLogger(__name__)
 
+# Duplicate detection policy configuration
+DUPLICATE_POLICY = "replace"  # Options: "skip", "replace", "allow"
+
 
 class ParsingStore:
     """
@@ -28,6 +31,111 @@ class ParsingStore:
     def __init__(self):
         """Initialize the parsing store."""
         self.session = db.session
+    
+    def is_duplicate_setup(self, trading_day: date, message_id: str) -> bool:
+        """
+        Check if there's already a parsed message for this trading day.
+        
+        Args:
+            trading_day: The trading day to check
+            message_id: Current message ID to exclude from duplicate check
+            
+        Returns:
+            True if duplicate found, False otherwise
+        """
+        existing = self.session.query(TradeSetup).filter_by(trading_day=trading_day).first()
+        if not existing:
+            return False
+        if existing.message_id == message_id:
+            return False  # Same message
+        return True  # Conflict on trading_day
+    
+    def find_existing_message_for_day(self, trading_day: date) -> Optional[Tuple[str, datetime, int]]:
+        """
+        Find existing message for a trading day and return its details.
+        
+        Args:
+            trading_day: The trading day to check
+            
+        Returns:
+            Tuple of (message_id, timestamp, content_length) or None if not found
+        """
+        existing_setup = self.session.query(TradeSetup).filter_by(trading_day=trading_day).first()
+        if not existing_setup:
+            return None
+        
+        # Get message details from discord_messages table
+        from features.ingestion.models import DiscordMessage
+        message = self.session.query(DiscordMessage).filter_by(message_id=existing_setup.message_id).first()
+        if not message:
+            return None
+            
+        return (existing_setup.message_id, message.timestamp, len(message.content))
+    
+    def should_replace(self, existing_msg_details: Tuple[str, datetime, int], 
+                      new_msg_id: str, new_timestamp: datetime, new_content_length: int) -> bool:
+        """
+        Determine if new message should replace existing one.
+        
+        Args:
+            existing_msg_details: Tuple of (message_id, timestamp, content_length) for existing message
+            new_msg_id: New message ID
+            new_timestamp: New message timestamp
+            new_content_length: New message content length
+            
+        Returns:
+            True if new message should replace existing one
+        """
+        _, existing_timestamp, existing_length = existing_msg_details
+        return new_timestamp > existing_timestamp and new_content_length > existing_length
+    
+    def delete_setups_for_trading_day(self, trading_day: date) -> int:
+        """
+        Delete all setups and their levels for a specific trading day.
+        
+        Args:
+            trading_day: The trading day to clear
+            
+        Returns:
+            Number of setups deleted
+        """
+        try:
+            # First delete all levels for setups on this day
+            setups_to_delete = self.session.query(TradeSetup).filter_by(trading_day=trading_day).all()
+            levels_deleted = 0
+            
+            for setup in setups_to_delete:
+                level_count = self.session.query(ParsedLevel).filter_by(setup_id=setup.id).count()
+                self.session.query(ParsedLevel).filter_by(setup_id=setup.id).delete()
+                levels_deleted += level_count
+            
+            # Then delete the setups
+            setups_deleted = self.session.query(TradeSetup).filter_by(trading_day=trading_day).delete()
+            
+            logger.info(f"[store] Deleted {setups_deleted} setups and {levels_deleted} levels for trading day {trading_day}")
+            return setups_deleted
+            
+        except SQLAlchemyError as e:
+            logger.error(f"[store] Error deleting setups for trading day {trading_day}: {e}")
+            self.session.rollback()
+            return 0
+    
+    def get_duplicate_trading_days(self) -> List[Tuple[date, int]]:
+        """
+        Find trading days with multiple parsed messages.
+        
+        Returns:
+            List of tuples (trading_day, message_count)
+        """
+        result = self.session.execute(text("""
+            SELECT trading_day, COUNT(DISTINCT message_id) as msg_count
+            FROM trade_setups 
+            GROUP BY trading_day 
+            HAVING COUNT(DISTINCT message_id) > 1
+            ORDER BY trading_day DESC
+        """))
+        
+        return [(row.trading_day, row.msg_count) for row in result]
     
     def store_parsed_message(
         self, 

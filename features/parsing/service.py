@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 
 from .parser import MessageParser
 from .aplus_parser import get_aplus_parser
-from .store import get_parsing_store
+from .store import get_parsing_store, DUPLICATE_POLICY
 from .listener import get_parsing_listener
 from .models import TradeSetup, ParsedLevel
 
@@ -108,6 +108,14 @@ class ParsingService:
                 else:
                     logger.info(f"Using extracted trading date: {trading_day}")
             
+            # Duplicate detection logic
+            duplicate_action = self._handle_duplicate_detection(message_id, trading_day, message_content, message_timestamp)
+            if duplicate_action == "skip":
+                logger.info(f"Skipping duplicate message {message_id} for trading day {trading_day}")
+                return {'success': False, 'error': 'Duplicate message skipped', 'duplicate_detected': True}
+            elif duplicate_action == "replaced":
+                logger.info(f"Replaced existing setups for trading day {trading_day} with message {message_id}")
+            
             # Store the parsed setups using new TradeSetup dataclass
             parsed_setups = parsed_data.get('setups', [])
             ticker_bias_notes = parsed_data.get('ticker_bias_notes', {})
@@ -144,6 +152,66 @@ class ParsingService:
         except Exception as e:
             logger.error(f"Error parsing A+ message {message_id}: {e}")
             return {'success': False, 'error': str(e)}
+    
+    def _handle_duplicate_detection(self, message_id: str, trading_day: date, 
+                                   message_content: str, message_timestamp: Optional[datetime] = None) -> str:
+        """
+        Handle duplicate detection logic based on configured policy.
+        
+        Args:
+            message_id: Current message ID
+            trading_day: Trading day extracted from message
+            message_content: Raw message content
+            message_timestamp: Message timestamp for comparison
+            
+        Returns:
+            Action taken: "proceed", "skip", "replaced"
+        """
+        try:
+            # Check if there's already a message for this trading day
+            if not self.store.is_duplicate_setup(trading_day, message_id):
+                return "proceed"  # No duplicate found
+            
+            # Get existing message details
+            existing_details = self.store.find_existing_message_for_day(trading_day)
+            if not existing_details:
+                return "proceed"  # No existing message found
+            
+            existing_msg_id, existing_timestamp, existing_length = existing_details
+            logger.info(f"Duplicate detected for trading day {trading_day}: existing {existing_msg_id} vs new {message_id}")
+            
+            if DUPLICATE_POLICY == "skip":
+                logger.info(f"Policy 'skip': Ignoring duplicate message {message_id}")
+                return "skip"
+                
+            elif DUPLICATE_POLICY == "allow":
+                logger.info(f"Policy 'allow': Processing duplicate message {message_id} with flag")
+                # Could add a revision flag here if needed
+                return "proceed"
+                
+            elif DUPLICATE_POLICY == "replace":
+                # Default timestamp if not provided
+                if message_timestamp is None:
+                    message_timestamp = datetime.now()
+                
+                # Check if new message should replace existing
+                if self.store.should_replace(existing_details, message_id, message_timestamp, len(message_content)):
+                    logger.info(f"Policy 'replace': New message {message_id} is newer and longer, replacing existing {existing_msg_id}")
+                    # Delete existing setups for this trading day
+                    deleted_count = self.store.delete_setups_for_trading_day(trading_day)
+                    logger.info(f"Deleted {deleted_count} existing setups for trading day {trading_day}")
+                    return "replaced"
+                else:
+                    logger.info(f"Policy 'replace': Existing message {existing_msg_id} is preferred, skipping new {message_id}")
+                    return "skip"
+            
+            else:
+                logger.warning(f"Unknown duplicate policy '{DUPLICATE_POLICY}', defaulting to proceed")
+                return "proceed"
+                
+        except Exception as e:
+            logger.error(f"Error in duplicate detection for message {message_id}: {e}")
+            return "proceed"  # Default to processing on error
 
     def should_parse_message(self, content: str) -> bool:
         """
