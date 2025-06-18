@@ -68,7 +68,7 @@ def run_parsing_audit() -> Dict[str, Any]:
                     WHERE message_id = :message_id
                 """)
                 
-                setup_result = session.execute(setup_query, {"message_id": msg.id}).fetchone()
+                setup_result = session.execute(setup_query, {"message_id": str(msg.id)}).fetchone()
                 
                 successful_examples.append({
                     "message_id": msg.id,
@@ -93,7 +93,7 @@ def run_parsing_audit() -> Dict[str, Any]:
                         LIMIT 1
                     """)
                     
-                    failure_result = session.execute(failure_query, {"message_id": msg.id}).fetchone()
+                    failure_result = session.execute(failure_query, {"message_id": str(msg.id)}).fetchone()
                     failure_reason = failure_result.reason if failure_result else "unknown"
                     failure_details = failure_result.details if failure_result else "No failure details available"
                 except:
@@ -109,7 +109,7 @@ def run_parsing_audit() -> Dict[str, Any]:
                 })
         
         # Analysis of parsing patterns
-        pattern_analysis = analyze_message_patterns(aplus_messages, session)
+        pattern_analysis = analyze_message_patterns(list(aplus_messages), session)
         
         session.close()
         
