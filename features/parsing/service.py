@@ -108,8 +108,13 @@ class ParsingService:
                 else:
                     logger.info(f"Using extracted trading date: {trading_day}")
             
-            # TODO: Re-enable duplicate detection after fixing implementation
-            # For now, proceed with parsing to restore functionality
+            # Duplicate detection logic
+            duplicate_action = self._handle_duplicate_detection(message_id, trading_day, message_content, message_timestamp)
+            if duplicate_action == "skip":
+                logger.info(f"Skipping duplicate message {message_id} for trading day {trading_day}")
+                return {'success': False, 'error': 'Duplicate message skipped', 'duplicate_detected': True}
+            elif duplicate_action == "replaced":
+                logger.info(f"Replaced existing setups for trading day {trading_day} with message {message_id}")
             
             # Store the parsed setups using new TradeSetup dataclass
             parsed_setups = parsed_data.get('setups', [])
