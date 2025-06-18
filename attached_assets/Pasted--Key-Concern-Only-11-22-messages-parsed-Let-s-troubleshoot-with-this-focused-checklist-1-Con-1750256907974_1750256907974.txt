@@ -1,0 +1,66 @@
+❗Key Concern: Only 11/22 messages parsed
+👇 Let’s troubleshoot with this focused checklist:
+✅ 1. Confirm get_unparsed_messages() Behavior
+What to check:
+
+Is this function pulling the full set of 14 A+ messages from the discord_messages table?
+
+Are any filters like message_id in trade_setups or is_aplus_message() too aggressive?
+
+Debug step:
+
+python
+Copy
+Edit
+unparsed = store.get_unparsed_messages(limit=30)
+print([m['message_id'] for m in unparsed])
+👉 Look for: Are all 14 A+ messages appearing?
+
+✅ 2. Verify Parsing Loop Behavior
+What to check:
+
+Does parse_message() return a non-empty list of setups?
+
+Are messages getting silently dropped due to if not setups: return logic?
+
+Debug suggestion: Add logging to parse_aplus_message():
+
+python
+Copy
+Edit
+logger.info(f"[ParseCheck] Message ID {message_id} — extracted {len(setups)} setups")
+👉 Look for: Are 3–5 messages getting silently rejected due to parsing errors after validation passed?
+
+✅ 3. Audit TradeSetup Creation Guardrails
+What to check:
+
+Is there any check like “must have 3+ levels” or “must match X profile” that might reject parsed setups silently?
+
+Debug suggestion: Log setup creation just before commit:
+
+python
+Copy
+Edit
+logger.info(f"[SetupCreation] Created {len(setups)} setups for message {message_id}")
+👉 Look for: Are any parsed setups being discarded before DB insertion?
+
+✅ 4. Check for Duplicate Day Filtering Side Effects
+Even if the broken _handle_duplicate_detection() was removed, the new isolated logic might still be unintentionally flagging legit messages as duplicates.
+
+What to check:
+
+Does the duplicate detection check trading_day AND ticker or just trading_day?
+
+Is the logic overly broad and excluding too many messages?
+
+Debug step:
+
+python
+Copy
+Edit
+# Print trading day counts
+print(store.get_all_trading_days())
+
+# Or dump message ID to trading_day map
+[(m.id, m.trading_day) for m in session.query(TradeSetup)]
+👉 Look for: Are multiple messages on the same day being dropped due to conservative duplicate handling?
