@@ -327,30 +327,43 @@ def trigger_backlog():
                 }
             })
         
-        # Quick processing of first few messages only
-        for i, message in enumerate(unparsed_messages[:2]):  # Process max 2 messages to avoid timeout
+        # Process messages with proper application context and enhanced error logging
+        from flask import current_app
+        
+        for i, message in enumerate(unparsed_messages[:3]):  # Process max 3 messages
             try:
                 message_id = message.get('message_id')
                 content = message.get('content', '')
+                content_length = len(content) if content else 0
                 
-                # Check if content should be parsed
+                logger.info(f"Processing message {message_id}: length={content_length}, first_line='{content.split()[0] if content else 'empty'}...'")
+                
+                # Enhanced message classification
                 if not parsing_service.should_parse_message(content):
-                    logger.debug(f"Message {message_id} skipped - not an A+ message")
+                    logger.debug(f"Message {message_id} skipped - not an A+ message (length: {content_length})")
                     continue
                 
-                # Parse the A+ message directly
-                result = parsing_service.parse_aplus_message(content, message_id)
-                
-                if result and result.get('success'):
-                    processed_count += 1
-                    setups_created = result.get('setups_created', 0)
-                    logger.debug(f"Successfully processed message {message_id} - {setups_created} setups created")
-                else:
-                    error_count += 1
-                    logger.debug(f"Failed to parse message {message_id}: {result.get('error', 'Unknown error') if result else 'No result returned'}")
+                # Ensure we're in application context for database operations
+                with current_app.app_context():
+                    # Parse the A+ message with enhanced error reporting
+                    try:
+                        result = parsing_service.parse_aplus_message(content, message_id)
+                        
+                        if result and result.get('success'):
+                            processed_count += 1
+                            setups_created = result.get('setups_created', 0)
+                            logger.info(f"Successfully processed message {message_id} - {setups_created} setups created")
+                        else:
+                            error_count += 1
+                            error_msg = result.get('error', 'No result returned') if result else 'No result returned'
+                            logger.warning(f"Parse failed for message {message_id}: {error_msg}")
+                            
+                    except Exception as parse_error:
+                        error_count += 1
+                        logger.error(f"Parser exception for message {message_id}: {parse_error}")
                     
             except Exception as e:
-                logger.error(f"Error processing message {message.get('message_id')}: {e}")
+                logger.error(f"Error processing message {message.get('message_id', 'unknown')}: {e}")
                 error_count += 1
         
         return jsonify({
