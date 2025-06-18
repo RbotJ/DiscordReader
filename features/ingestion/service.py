@@ -78,15 +78,17 @@ class IngestionService:
             self.messages_ingested += 1
             self.last_ingestion_time = datetime.utcnow()
             
-            # Publish processing complete event
+            # Publish message stored event for parsing listener
             await publish_cross_slice_event(
-                "ingestion.message_processed",
+                "message.stored",
                 {
                     "message_id": message_dto.message_id,
                     "channel_id": message_dto.channel_id,
+                    "content": message_dto.content,
+                    "timestamp": message_dto.timestamp.isoformat(),
                     "processed_at": datetime.now().isoformat()
                 },
-                "ingestion"
+                "message"
             )
             
             logger.debug(f"Successfully processed message {message_dto.message_id}")
