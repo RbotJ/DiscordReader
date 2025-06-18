@@ -82,7 +82,7 @@ class ParsingService:
         """
         try:
             # Check if this is an A+ message
-            if not self.aplus_parser.validate_message(message_content):
+            if not self.aplus_parser.validate_message(message_content, message_id):
                 logger.warning(f"Message {message_id} is not a valid A+ scalp setups message")
                 return {'success': False, 'error': 'Not an A+ scalp setups message'}
             

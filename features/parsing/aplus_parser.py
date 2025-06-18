@@ -297,53 +297,63 @@ class APlusMessageParser:
         logger.info(f"Falling back to Central Time timestamp: {fallback_date} (method: fallback)")
         return fallback_date
 
-    def validate_message(self, content: str) -> bool:
+    def validate_message(self, content: str, message_id: str = "unknown") -> bool:
         """
-        Validate if this is an A+ scalp setups message with enhanced token-based and guard logic.
+        Validate if this is an A+ message with token-based header analysis.
+        
+        Accepts formats:
+        - "A+ Scalp Trade Setups"
+        - "A+ Trade Setups" 
+        - "A+ Scalp Setups"
         
         Args:
             content: Raw message content
+            message_id: Message ID for logging
             
         Returns:
-            True if message contains A+ trade setups header and passes guard checks
+            True if message contains valid A+ header and passes checks
         """
         if not content or not isinstance(content, str):
-            logger.debug(f"Message validation failed: empty or invalid content type")
+            logger.info(f'{{"reason": "empty_content", "message_id": "{message_id}"}}')
             return False
         
-        header = content.strip().splitlines()[0].lower() if content.strip() else ""
-
-        # Basic structure checks
-        if "a+" not in header:
-            logger.debug("Message rejected: missing 'A+' in header")
-            record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing A+ identifier")
+        # Get first line and tokenize first 6 words
+        lines = content.strip().splitlines()
+        if not lines:
+            logger.info(f'{{"reason": "no_lines", "message_id": "{message_id}"}}')
             return False
             
-        if "setup" not in header:
-            logger.debug("Message rejected: missing 'setup' in header")
-            record_parsing_failure("unknown", FailureReason.HEADER_MISSING, content, "Missing setup keyword")
+        header = lines[0].strip()
+        header_words = header.split()[:6]  # First 6 words only
+        header_tokens = [word.lower().rstrip('—').rstrip('-').rstrip(':') for word in header_words]
+        
+        # Required tokens: A+ and Setups
+        required_tokens = ["a+", "setups"]
+        has_required = all(any(token in header_token for header_token in header_tokens) for token in required_tokens)
+        
+        if not has_required:
+            logger.info(f'{{"reason": "header_token_mismatch", "message_id": "{message_id}", "header": "{header[:50]}", "missing_tokens": "{[t for t in required_tokens if not any(t in ht for ht in header_tokens)]}"}}')
+            return False
+        
+        # Rejection tokens: Test or Check
+        reject_tokens = ["test", "check"]
+        has_reject = any(reject_token in header_tokens for reject_token in reject_tokens)
+        
+        if has_reject:
+            logger.info(f'{{"reason": "test_indicator", "message_id": "{message_id}", "header": "{header[:50]}"}}')
             return False
             
-        # Guard logic: Skip test/draft messages
-        if any(flag in header for flag in ["test", "draft", "ignore", "template"]):
-            logger.debug("Message skipped due to test indicators")
-            record_parsing_failure("unknown", FailureReason.TEST_INDICATOR, content, "Test/draft content detected")
-            return False
-            
-        # Guard logic: Fat-finger safeguard - relaxed threshold for better accuracy
-        if len(content) < 50:  # Reduced from 300 to 50 for better validation accuracy
-            logger.debug(f"Message skipped: content too short ({len(content)} < 50 chars)")
-            record_parsing_failure("unknown", FailureReason.CONTENT_TOO_SHORT, content, f"Content length: {len(content)}")
+        # Content length check
+        if len(content) < 50:
+            logger.info(f'{{"reason": "content_too_short", "message_id": "{message_id}", "length": {len(content)}}}')
             return False
 
-        # Optional tokens for logging/confidence
-        tokens = set(re.findall(r'[a-zA-Z0-9]+', header))
-        has_scalp = "scalp" in tokens
-        has_trade = "trade" in tokens
-
-        logger.debug(f"[Validation] Header tokens={tokens}, has_scalp={has_scalp}, has_trade={has_trade}")
-
-        return True  # ✅ Passed all checks
+        # Log successful validation with optional tokens found
+        optional_tokens = ["scalp", "trade"]
+        found_optional = [token for token in optional_tokens if any(token in header_token for header_token in header_tokens)]
+        
+        logger.debug(f"Valid A+ message: {message_id}, header tokens: {header_tokens[:4]}, optional: {found_optional}")
+        return True
     
 
 
@@ -498,7 +508,7 @@ class APlusMessageParser:
         Returns:
             Dictionary with parsed data
         """
-        if not self.validate_message(content):
+        if not self.validate_message(content, message_id or "unknown"):
             return {
                 'success': False,
                 'error': 'Not an A+ scalp setups message',
@@ -612,12 +622,38 @@ class APlusMessageParser:
         parse_quality_metrics['parse_success_rate'] = round(parse_success_rate, 1)
         parse_quality_metrics['setup_yield'] = len(all_setups) / max(1, parse_quality_metrics['ticker_sections'])
         
+        # Deduplication step: track (ticker, setup_type, direction, trigger_level) to prevent duplicate insertions
+        deduplicated_setups = []
+        seen_setups = set()
+        duplicates_skipped = 0
+        
+        for setup in all_setups:
+            # Create deduplication key from setup characteristics
+            dedup_key = (
+                setup.ticker,
+                setup.label or "unlabeled",  # setup_type
+                setup.direction,
+                setup.trigger_level
+            )
+            
+            if dedup_key not in seen_setups:
+                seen_setups.add(dedup_key)
+                deduplicated_setups.append(setup)
+            else:
+                duplicates_skipped += 1
+                logger.info(f'{{"message_id": "{message_id or "unknown"}", "action": "duplicate_setup_skipped", "ticker": "{setup.ticker}", "trigger": {setup.trigger_level}, "direction": "{setup.direction}"}}')
+        
+        # Log deduplication summary if any duplicates were found
+        if duplicates_skipped > 0:
+            logger.info(f"Deduplication: kept {len(deduplicated_setups)} setups, skipped {duplicates_skipped} duplicates for message {message_id}")
+        
         return {
             'success': True,
-            'setups': all_setups,
+            'setups': deduplicated_setups,
             'trading_date': trading_date,
             'ticker_bias_notes': ticker_bias_notes,
-            'total_setups': len(all_setups),
+            'total_setups': len(deduplicated_setups),
+            'duplicates_skipped': duplicates_skipped,
             'tickers_found': list(ticker_sections.keys()),
             'message_id': message_id,
             'duplicate_status': duplicate_status,
