@@ -87,7 +87,7 @@ def force_reparse_message(message_id, content, timestamp, channel_id, parser, se
             print(f"    ⚠️  No setups extracted from message")
             
             # Store failure reason
-            store.record_parsing_failure(message_id, failure_reason, content, "No trade setups found in parsed content")
+            record_parsing_failure(message_id, FailureReason.NO_TICKER_SECTIONS, content, "No trade setups found in parsed content")
             
             return {
                 'success': False,
@@ -109,6 +109,7 @@ def force_reparse_message(message_id, content, timestamp, channel_id, parser, se
             
             # Mark message as processed only when setups are successfully created
             from app import db
+            from sqlalchemy import text
             db.session.execute(
                 text("UPDATE discord_messages SET is_processed = true WHERE id = :message_id"),
                 {"message_id": message_id}
@@ -129,7 +130,7 @@ def force_reparse_message(message_id, content, timestamp, channel_id, parser, se
             print(f"    ❌ Storage failed: {failure_reason}")
             
             # Store failure reason
-            store.record_parsing_failure(message_id, failure_reason, content, f"Storage error: {failure_reason}")
+            record_parsing_failure(message_id, FailureReason.UNKNOWN_ERROR, content, f"Storage error: {failure_reason}")
             
             return {
                 'success': False,
@@ -144,7 +145,7 @@ def force_reparse_message(message_id, content, timestamp, channel_id, parser, se
         print(f"    ❌ Exception during parsing: {error_msg}")
         
         # Store failure reason
-        store.record_parsing_failure(message_id, failure_reason, content, f"Exception: {error_msg}")
+        record_parsing_failure(message_id, FailureReason.UNKNOWN_ERROR, content, f"Exception: {error_msg}")
         
         return {
             'success': False,

@@ -235,8 +235,8 @@ class APlusMessageParser:
         # Message validation patterns - flexible to match actual format variations
         self.header_pattern = re.compile(r'A\+\s*(?:SCALP|Scalp)\s*(?:TRADE\s*)?(?:SETUPS|Setups)', re.IGNORECASE)
         
-        # Ticker section pattern (matches plain TICKER format, not **TICKER**)
-        self.ticker_pattern = re.compile(r'^([A-Z]{2,5})\s*$', re.MULTILINE)
+        # Ticker section pattern (matches plain TICKER format and ✅ TICKER format)
+        self.ticker_pattern = re.compile(r'^(?:✅\s+)?([A-Z]{2,5})\s*$', re.MULTILINE)
         
         # Bias pattern
         self.bias_pattern = re.compile(r'⚠️\s*Bias\s*[—-]\s*(.+?)(?=\n\n|\n[A-Z]{2,5}\n|$)', re.IGNORECASE | re.DOTALL)
