@@ -1,0 +1,50 @@
+✅ Step 1: Confirm Message Reception
+Did the bot receive and log the new Discord message event?
+
+Check the bot log (features/discord_bot/bot.py) for a new on_message or custom listener log.
+
+Was the message from the expected A+ channel (ID match)?
+
+Confirm the channel ID used matches the one the bot is listening to.
+
+✅ Step 2: Verify Event Emission
+Was an event emitted from the bot after message receipt?
+
+Inspect whether publish_event(...) or similar function was called after detecting the message.
+
+✅ Step 3: Check Event Infrastructure
+Is the event bus or messaging system initialized and active?
+
+If using something like Redis Pub/Sub or Flask signals, check if the connection is live and listeners are registered.
+
+Are there any warnings or errors like Cannot poll events outside Flask context in the logs?
+
+This may suggest that the event listener isn't running in an active app context.
+
+✅ Step 4: Ingestion Listener Registration
+Is the ingestion feature registered as an event listener/subscriber?
+
+In features/ingestion/listener.py, confirm a method like @on_event("discord.message.new") or similar is actively bound.
+
+Is the listener service running during the message event?
+
+The ingestion feature must be booted with the app or in the same process context that listens to events.
+
+✅ Step 5: Ingestion Logic Debug
+Did the ingestion service log any attempt to process the message?
+
+Check for logs in features/ingestion/service.py showing receipt, validation, or storage attempts.
+
+Is there a validation failure silently rejecting the message?
+
+Verify if _validate_message() or similar is rejecting the message due to length, format, or timestamp checks.
+
+Are all ingestion dependencies and imports resolving correctly (no circular or failed imports)?
+
+✅ Step 6: Storage Confirmation
+Was the message stored in the discord_messages table?
+
+Query the DB directly or check if store.save_raw_message() was called.
+
+Is there a timestamp mismatch (UTC vs local time) affecting today’s filter in queries?
+
