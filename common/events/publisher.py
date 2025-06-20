@@ -177,7 +177,7 @@ def publish_event(
         return False
 
 
-async def listen_for_events(handler: Callable[[str, Dict[str, Any]], None], channel: str = "events"):
+async def listen_for_events(handler: Callable, channel: str = "events"):
     """
     Listen for PostgreSQL NOTIFY events and call handler for each event.
     

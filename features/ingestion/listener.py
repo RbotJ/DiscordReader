@@ -1,7 +1,7 @@
 """
 Ingestion Listener Module
 
-Focused listener that only handles event listening and delegates processing to service.
+PostgreSQL LISTEN/NOTIFY based listener for cross-feature communication.
 Clean separation between listening and business logic.
 """
 import asyncio
@@ -9,23 +9,20 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from common.db import get_latest_events
-from common.events.constants import EventChannels
-from common.events.bus import get_event_bus
+from common.events.publisher import listen_for_events
 
 logger = logging.getLogger(__name__)
 
 
 class IngestionListener:
     """
-    Clean ingestion listener focused solely on event listening.
+    PostgreSQL LISTEN/NOTIFY based ingestion listener.
     Delegates all processing to the ingestion service.
     """
     
     def __init__(self, ingestion_service=None):
         """Initialize the ingestion listener."""
         self.ingestion_service = ingestion_service
-        self.last_processed_event_id = None
         self.running = False
         self.stats = {
             'events_received': 0,
@@ -35,75 +32,51 @@ class IngestionListener:
         }
     
     async def start_listening(self, poll_interval: float = 5.0):
-        """Start listening for ingestion events using event bus subscription."""
+        """Start listening for ingestion events using PostgreSQL LISTEN/NOTIFY."""
         if not self.ingestion_service:
             logger.error("No ingestion service provided to listener")
             return
             
         self.running = True
-        logger.info("Ingestion listener starting - subscribing to discord.message.new events")
+        logger.info("Ingestion listener starting - subscribing to PostgreSQL events channel")
         
         try:
-            # Get event bus and subscribe to discord message events
-            bus = await get_event_bus()
-            bus.subscribe("discord.message.new", self._handle_discord_message_event)
-            logger.info("Successfully subscribed to discord.message.new events")
+            # Start PostgreSQL LISTEN/NOTIFY listener
+            await listen_for_events(self._handle_event, "events")
             
-            # Keep the listener alive with periodic stats updates
-            while self.running:
-                try:
-                    self._update_stats()
-                    await asyncio.sleep(poll_interval)
-                except KeyboardInterrupt:
-                    logger.info("Received interrupt signal, stopping listener")
-                    break
-                except Exception as e:
-                    logger.error(f"Error in listener main loop: {e}")
-                    self.stats['errors'] += 1
-                    await asyncio.sleep(poll_interval)
-                    
         except Exception as e:
-            logger.error(f"Error setting up event subscription: {e}")
+            logger.error(f"Error setting up PostgreSQL listener: {e}")
             self.stats['errors'] += 1
     
     def stop_listening(self):
         """Stop the listener."""
         self.running = False
         logger.info("Ingestion listener stopped")
-    
-    async def _process_pending_events(self):
-        """Process any pending events and delegate to service."""
+
+    async def _handle_event(self, event_type: str, data: Dict[str, Any]) -> bool:
+        """Handle PostgreSQL NOTIFY events."""
         try:
-            events = get_latest_events(
-                EventChannels.DISCORD_MESSAGE,
-                since_timestamp=self.last_processed_event_id,
-                limit=10
-            )
+            logger.info(f"Received PostgreSQL event: {event_type} with data: {data}")
+            self.stats['events_received'] += 1
+            self._update_stats()
             
-            if not events:
-                return
-            
-            logger.debug(f"Received {len(events)} events")
-            self.stats['events_received'] += len(events)
-            
-            for event in events:
-                success = await self._handle_event(event)
-                if success:
-                    self.last_processed_event_id = event.get('id')
-                    self.stats['events_processed'] += 1
+            # Handle discord.message.new events
+            if event_type == "discord.message.new":
+                return await self._handle_discord_message_event(event_type, data)
+            else:
+                logger.debug(f"Unhandled event type: {event_type}")
+                return True
                 
         except Exception as e:
-            logger.error(f"Error processing pending events: {e}")
+            logger.error(f"Error handling event {event_type}: {e}")
             self.stats['errors'] += 1
-    
-    async def _handle_discord_message_event(self, event):
-        """Handle discord.message.new events from the event bus."""
+            return False
+
+    async def _handle_discord_message_event(self, event_type: str, data: Dict[str, Any]) -> bool:
+        """Handle discord.message.new events from PostgreSQL NOTIFY."""
         try:
-            logger.info(f"Received discord.message.new event: {event.data}")
-            self.stats['events_received'] += 1
-            
             # Extract channel_id from event data
-            channel_id = event.data.get('channel_id')
+            channel_id = data.get('channel_id')
             if not channel_id:
                 logger.warning("No channel_id in discord message event")
                 return False
@@ -111,8 +84,8 @@ class IngestionListener:
             # Trigger ingestion for this channel
             if self.ingestion_service:
                 success = await self.ingestion_service.handle_event({
-                    'event_type': 'discord.message.new',
-                    'payload': event.data
+                    'event_type': event_type,
+                    'payload': data
                 })
                 if success:
                     self.stats['events_processed'] += 1
@@ -123,20 +96,6 @@ class IngestionListener:
                 
         except Exception as e:
             logger.error(f"Error handling discord message event: {e}")
-            self.stats['errors'] += 1
-            return False
-
-    async def _handle_event(self, event: Dict[str, Any]) -> bool:
-        """Handle a single event by delegating to service."""
-        try:
-            # Simply pass the event to the service for processing
-            # The service handles all business logic
-            if self.ingestion_service:
-                return await self.ingestion_service.handle_event(event)
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error handling event: {e}")
             self.stats['errors'] += 1
             return False
     
