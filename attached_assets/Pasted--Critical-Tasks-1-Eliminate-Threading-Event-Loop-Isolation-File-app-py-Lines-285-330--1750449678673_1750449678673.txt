@@ -1,0 +1,69 @@
+🚨 Critical Tasks
+1. 🔥 Eliminate Threading + Event Loop Isolation
+File: app.py (Lines ~285-330)
+
+✅ Remove usage of threading.Thread() and asyncio.new_event_loop() for launching:
+
+The Discord bot
+
+The PostgreSQL event listener
+
+🧠 Instead, restructure the app to use a single shared asyncio event loop.
+
+Launch the Discord bot and listener using loop.create_task(...)
+
+Ensure all async tasks share the same DB session context
+
+🔒 PostgreSQL LISTEN will not deliver messages across threads with isolated event loops — this must be unified.
+
+2. ❌ Remove All Legacy Imports and Calls to publish_cross_slice_event
+✅ Delete these broken references:
+
+features/discord_bot/services/message_relay.py:12 → remove from common.events.bus import publish_cross_slice_event
+
+features/ingestion/service.py:235, 264 → replace with:
+
+python
+Copy
+Edit
+from common.events.publisher import publish_event
+await publish_event("event_name", {"your": "payload"})
+🧹 Search entire codebase for any remaining calls to publish_cross_slice_event() or imports from common.events.bus and remove them.
+
+3. 🧭 Standardize Event Publishing System
+✅ Use only:
+
+python
+Copy
+Edit
+from common.events.publisher import publish_event
+🚫 Avoid mixing in:
+
+enhanced_publisher.py
+
+any EventPublisher classes with DB-only storage but no real-time NOTIFY
+
+🔄 If needed, consolidate logic from enhanced_publisher.py into publisher.py and delete the former to reduce ambiguity.
+
+4. 🚫 Fix PostgreSQL Listener Isolation
+File: features/ingestion/listener.py
+
+✅ Confirm this module calls:
+
+python
+Copy
+Edit
+from common.events.publisher import listen_for_events
+🚫 Do NOT start it in a thread with its own event loop
+
+🔁 Start it from app.py using loop.create_task(...) in the main Flask app context
+
+✅ Final Acceptance Criteria
+Checkpoint	Criteria
+✅ Single Loop Architecture	No new threads or isolated event loops in app.py
+✅ Unified Publisher Module	All events use common.events.publisher.publish_event()
+✅ Legacy Bus Removed	No publish_cross_slice_event or common.events.bus references
+✅ Listener Uses Shared Connection	listen_for_events() runs in main app event loop, not isolated thread
+✅ Logging for Debugging	Event publishing and listening is clearly logged at INFO level
+
+Let me know once these items are complete, and I will validate via Discord message event flow and database persistence.

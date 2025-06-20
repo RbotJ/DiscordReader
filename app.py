@@ -85,106 +85,98 @@ def register_socketio_events():
     def handle_disconnect():
         logging.info('Client disconnected')
 
+async def start_unified_async_services(app):
+    """Start Discord bot and PostgreSQL listener in unified async context."""
+    import asyncio
+    
+    try:
+        # Ensure we're in Flask context so services can access DB, events, etc.
+        with app.app_context():
+            # Gather credentials & early exit if missing
+            token = os.getenv("DISCORD_BOT_TOKEN")
+            if not token:
+                logging.warning("Discord token missing; bot disabled.")
+                return
+
+            # Build your vertical slices
+            try:
+                from features.ingestion.service import IngestionService
+                from features.discord_channels.channel_manager import ChannelManager
+                from common.events.publisher import publish_event
+                from common.db import db
+
+                # Ingestion slice
+                ingestion_svc = IngestionService()
+
+                # Channel slice
+                channel_svc = ChannelManager()
+                
+                # Parsing slice
+                from features.parsing.service import start_parsing_service
+                parsing_service = start_parsing_service(app=app)
+                logging.info("Parsing service started successfully")
+
+                # Start PostgreSQL event listener in shared async context
+                from features.ingestion.listener import start_ingestion_listener
+                
+                # Create task for PostgreSQL listener
+                listener_task = asyncio.create_task(start_ingestion_listener())
+                logging.info("PostgreSQL ingestion listener started in shared async context")
+
+                # Discord slice
+                from features.discord_bot.bot import TradingDiscordBot
+                bot = TradingDiscordBot(
+                    ingestion_service=ingestion_svc,
+                    channel_manager=channel_svc,
+                    flask_app=app
+                )
+                
+                # Store bot instance in app config for API access
+                app.config['DISCORD_BOT'] = bot
+
+                logging.info("Starting Discord bot in shared async context...")
+                # Get token from environment
+                from features.discord_bot.config.settings import get_discord_token
+                token = get_discord_token()
+                
+                if not token:
+                    logging.error("Discord bot token not found in environment")
+                    return
+                
+                # Create task for Discord bot
+                bot_task = asyncio.create_task(bot.start(token))
+                logging.info("Discord bot started in shared async context")
+                
+                # Wait for both tasks to complete
+                await asyncio.gather(listener_task, bot_task, return_exceptions=True)
+                
+            except ImportError as e:
+                logging.error(f"Discord bot import error: {e}")
+                logging.warning("Discord bot dependencies not available - bot disabled")
+                return
+
+    except Exception:
+        logging.exception("Unified async services startup failed")
+
 def start_discord_bot_background(app):
-    """Start Discord bot in background thread."""
+    """Start Discord bot and services using unified async approach."""
     import threading
     import asyncio
     
-    def run_bot():
+    def run_unified_services():
+        """Run unified async services in background thread."""
         try:
-            # Ensure we're in Flask context so ingestion can access DB, events, etc.
-            with app.app_context():
-                # Gather credentials & early exit if missing
-                token = os.getenv("DISCORD_BOT_TOKEN")
-                if not token:
-                    logging.warning("Discord token missing; bot disabled.")
-                    return
-
-                # Build your vertical slices
-                try:
-                    from features.ingestion.service import IngestionService
-                    from features.discord_channels.channel_manager import ChannelManager
-                    from common.events.publisher import publish_event
-                    from common.db import db
-
-                    # Ingestion slice
-                    ingestion_svc = IngestionService()
-
-                    # Channel slice
-                    channel_svc = ChannelManager()
-                    
-                    # Parsing slice
-                    from features.parsing.service import start_parsing_service
-                    parsing_service = start_parsing_service(app=app)
-                    logging.info("Parsing service started successfully")
-
-                    # Start PostgreSQL event listener in main thread
-                    from features.ingestion.listener import start_ingestion_listener
-                    
-                    def start_postgres_listener():
-                        """Start PostgreSQL listener in the main Flask thread."""
-                        try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            loop.run_until_complete(start_ingestion_listener())
-                        except Exception as e:
-                            logging.error(f"Error starting PostgreSQL listener: {e}")
-                    
-                    # Start listener in background thread
-                    import threading
-                    listener_thread = threading.Thread(target=start_postgres_listener, daemon=True)
-                    listener_thread.start()
-                    logging.info("PostgreSQL ingestion listener started")
-
-                    # Discord slice
-                    from features.discord_bot.bot import TradingDiscordBot
-                    bot = TradingDiscordBot(
-                        ingestion_service=ingestion_svc,
-                        channel_manager=channel_svc,
-                        flask_app=app
-                    )
-                    
-                    # Store bot instance in app config for API access
-                    app.config['DISCORD_BOT'] = bot
-
-                    logging.info("🔄 Starting Discord bot...")
-                    # Get token from environment
-                    from features.discord_bot.config.settings import get_discord_token
-                    token = get_discord_token()
-                    
-                    if not token:
-                        logging.error("Discord bot token not found in environment")
-                        return
-                    
-                    # Start the bot asynchronously without blocking
-                    def run_bot_async():
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            loop.run_until_complete(bot.start(token))
-                        except Exception as e:
-                            logging.error(f"Discord bot error: {e}")
-                        finally:
-                            loop.close()
-                    
-                    # Run bot startup in separate thread to avoid blocking
-                    import threading
-                    bot_thread = threading.Thread(target=run_bot_async, daemon=True)
-                    bot_thread.start()
-                    
-                    logging.info("Discord bot startup initiated")
-                    
-                except ImportError as e:
-                    logging.error(f"Discord bot import error: {e}")
-                    logging.warning("Discord bot dependencies not available - bot disabled")
-                    return
-
-        except Exception:
-            logging.exception("Discord bot startup failed")
-
-    t = threading.Thread(target=run_bot, daemon=True, name="DiscordBot")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(start_unified_async_services(app))
+        except Exception as e:
+            logging.error(f"Error in unified async services: {e}")
+        finally:
+            loop.close()
+    
+    t = threading.Thread(target=run_unified_services, daemon=True, name="UnifiedAsyncServices")
     t.start()
-    logging.info("Discord bot background thread launched")
+    logging.info("Unified async services background thread launched")
 
 def validate_environment():
     """

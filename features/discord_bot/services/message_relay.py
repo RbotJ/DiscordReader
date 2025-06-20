@@ -8,7 +8,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from common.events.bus import publish_cross_slice_event
+from common.events.publisher import publish_event
 
 logger = logging.getLogger(__name__)
 

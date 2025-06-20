@@ -79,7 +79,8 @@ class IngestionService:
             self.last_ingestion_time = datetime.utcnow()
             
             # Publish message stored event for parsing listener
-            await publish_cross_slice_event(
+            from common.events.publisher import publish_event
+            await publish_event(
                 "message.stored",
                 {
                     "message_id": message_dto.message_id,
