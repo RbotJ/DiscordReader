@@ -31,4 +31,5 @@ dependencies = [
     "schedule>=1.2.2",
     "pytest-asyncio>=1.0.0",
     "python-dateutil>=2.9.0.post0",
+    "asyncpg>=0.30.0",
 ]

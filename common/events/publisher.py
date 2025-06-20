@@ -1,90 +1,278 @@
 """
-Centralized Event Publisher
+PostgreSQL LISTEN/NOTIFY Event System
 
-Provides a unified interface for publishing events across the application.
-Handles Flask application context properly to avoid context warnings.
+Unified event publisher and listener using PostgreSQL NOTIFY/LISTEN
+for real-time cross-feature communication.
 """
 
+import asyncio
+import asyncpg
+import json
 import logging
+import os
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 from flask import current_app, has_app_context
 
 logger = logging.getLogger(__name__)
 
+# Global connection pool for PostgreSQL LISTEN/NOTIFY
+_connection_pool = None
+_listener_connections = {}
 
-def publish_event(
+
+async def get_connection_pool():
+    """Get or create the PostgreSQL connection pool."""
+    global _connection_pool
+    if _connection_pool is None:
+        database_url = os.environ.get('DATABASE_URL')
+        if not database_url:
+            raise RuntimeError("DATABASE_URL environment variable not set")
+        
+        _connection_pool = await asyncpg.create_pool(
+            database_url,
+            min_size=2,
+            max_size=10,
+            command_timeout=60
+        )
+        logger.info("PostgreSQL connection pool created for event system")
+    
+    return _connection_pool
+
+
+async def publish_event_async(
     event_type: str, 
-    data: dict, 
-    channel: str = "default", 
+    data: Dict[str, Any], 
+    channel: str = "events", 
     source: str = None, 
     correlation_id: str = None
 ) -> bool:
     """
-    Enhanced event publishing wrapper with proper Flask context handling.
+    Publish event using PostgreSQL NOTIFY.
     
     Args:
-        event_type: Type of event (e.g. 'parsing.setup.parsed')
+        event_type: Type of event (e.g. 'discord.message.new')
         data: Event data (dict)
-        channel: Event channel (e.g. 'parsing:setup')
-        source: Source service/module (e.g. 'discord_parser')
+        channel: PostgreSQL channel name (default: 'events')
+        source: Source service/module (e.g. 'discord_bot')
         correlation_id: UUID string for tracing related events
         
     Returns:
         bool: True if event published successfully, False otherwise
     """
     try:
-        # Check if we have Flask application context
-        if not has_app_context():
-            logger.warning(f"Attempted to publish event {event_type} outside Flask application context")
-            return False
-        
-        # Import here to avoid circular imports
-        from sqlalchemy import text
-        from common.db import db
+        pool = await get_connection_pool()
         
         # Generate correlation ID if not provided
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
         
-        # Create event data
-        event_data = {
+        # Create event payload
+        event_payload = {
             'event_type': event_type,
-            'channel': channel,
             'data': data,
             'source': source or 'unknown',
             'correlation_id': correlation_id,
-            'timestamp': datetime.utcnow(),
-            'created_at': datetime.utcnow()
+            'timestamp': datetime.utcnow().isoformat()
         }
         
-        # Insert into events table
-        query = text("""
-            INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
-            VALUES (:event_type, :channel, :data, :source, :correlation_id, :created_at)
-        """)
+        async with pool.acquire() as conn:
+            # Insert into events table for persistence
+            await conn.execute("""
+                INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            """, event_type, channel, data, source, correlation_id, datetime.utcnow())
+            
+            # Send NOTIFY for real-time listeners
+            await conn.execute(f"NOTIFY {channel}, $1", json.dumps(event_payload))
         
-        db.session.execute(query, {
-            'event_type': event_data['event_type'],
-            'channel': event_data['channel'],
-            'data': data,  # Keep as dict for JSONB column
-            'source': event_data['source'],
-            'correlation_id': event_data['correlation_id'],
-            'created_at': event_data['created_at']
-        })
-        
-        db.session.commit()
-        
-        logger.debug(f"Published event: {event_type} to channel: {channel}")
+        logger.info(f"Published PostgreSQL event: {event_type} on channel {channel} from {source}")
         return True
         
     except Exception as e:
         logger.error(f"Failed to publish event {event_type}: {e}")
+        return False
+
+
+def publish_event(
+    event_type: str, 
+    data: dict, 
+    channel: str = "events", 
+    source: str = None, 
+    correlation_id: str = None
+) -> bool:
+    """
+    Synchronous wrapper for event publishing that works in Flask context.
+    
+    Args:
+        event_type: Type of event (e.g. 'discord.message.new')
+        data: Event data (dict)
+        channel: PostgreSQL channel name (default: 'events')
+        source: Source service/module (e.g. 'discord_bot')
+        correlation_id: UUID string for tracing related events
+        
+    Returns:
+        bool: True if event published successfully, False otherwise
+    """
+    try:
+        # For synchronous Flask context, we'll use the database directly
+        if has_app_context():
+            from sqlalchemy import text
+            from common.db import db
+            
+            # Generate correlation ID if not provided
+            if not correlation_id:
+                correlation_id = str(uuid.uuid4())
+            
+            # Insert into events table
+            db.session.execute(text("""
+                INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
+                VALUES (:event_type, :channel, :data, :source, :correlation_id, :created_at)
+            """), {
+                'event_type': event_type,
+                'channel': channel,
+                'data': data,
+                'source': source or 'unknown',
+                'correlation_id': correlation_id,
+                'created_at': datetime.utcnow()
+            })
+            
+            # Use PostgreSQL NOTIFY via raw SQL
+            event_payload = {
+                'event_type': event_type,
+                'data': data,
+                'source': source or 'unknown',
+                'correlation_id': correlation_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            db.session.execute(text(f"NOTIFY {channel}, :payload"), {
+                'payload': json.dumps(event_payload)
+            })
+            
+            db.session.commit()
+            
+            logger.info(f"Published PostgreSQL event: {event_type} on channel {channel} from {source}")
+            return True
+        else:
+            # For async contexts, schedule the async version
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Create task for async publishing
+                asyncio.create_task(publish_event_async(event_type, data, channel, source, correlation_id))
+                return True
+            else:
+                # Run async version
+                return loop.run_until_complete(publish_event_async(event_type, data, channel, source, correlation_id))
+        
+    except Exception as e:
+        logger.error(f"Failed to publish event {event_type}: {e}")
         try:
-            db.session.rollback()
+            if has_app_context():
+                from common.db import db
+                db.session.rollback()
         except:
             pass
+        return False
+
+
+async def listen_for_events(handler: Callable[[str, Dict[str, Any]], None], channel: str = "events"):
+    """
+    Listen for PostgreSQL NOTIFY events and call handler for each event.
+    
+    Args:
+        handler: Async function to handle events - handler(event_type, payload)
+        channel: PostgreSQL channel to listen on (default: 'events')
+    """
+    global _listener_connections
+    
+    try:
+        pool = await get_connection_pool()
+        conn = await pool.acquire()
+        _listener_connections[channel] = conn
+        
+        # Set up the listener
+        await conn.add_listener(channel, lambda conn, pid, channel, payload: 
+                               asyncio.create_task(_handle_notification(handler, payload)))
+        
+        logger.info(f"PostgreSQL listener started for channel: {channel}")
+        
+        # Keep the connection alive
+        while True:
+            await asyncio.sleep(1)
+            
+    except Exception as e:
+        logger.error(f"Error in PostgreSQL listener for channel {channel}: {e}")
+        # Clean up connection
+        if channel in _listener_connections:
+            try:
+                await _listener_connections[channel].close()
+                del _listener_connections[channel]
+            except:
+                pass
+
+
+async def _handle_notification(handler: Callable, payload: str):
+    """Handle a PostgreSQL notification by calling the provided handler."""
+    try:
+        event_data = json.loads(payload)
+        event_type = event_data.get('event_type')
+        data = event_data.get('data', {})
+        
+        logger.info(f"Received PostgreSQL event: {event_type} from channel 'events'")
+        
+        # Call the handler
+        if asyncio.iscoroutinefunction(handler):
+            await handler(event_type, data)
+        else:
+            handler(event_type, data)
+            
+    except Exception as e:
+        logger.error(f"Error handling PostgreSQL notification: {e}")
+
+
+def publish_event_safe(
+    event_type: str, 
+    data: dict, 
+    channel: str = "events", 
+    source: str = None, 
+    correlation_id: str = None
+) -> bool:
+    """
+    Safe event publishing that works both inside and outside Flask context.
+    Falls back to logging when Flask context is not available.
+    
+    Args:
+        event_type: Type of event
+        data: Event data
+        channel: Event channel
+        source: Source service/module
+        correlation_id: UUID string for tracing
+        
+    Returns:
+        bool: True if published or logged successfully
+    """
+    if has_app_context():
+        return publish_event(event_type, data, channel, source, correlation_id)
+    else:
+        # Log the event when Flask context is not available
+        logger.info(f"Event [{event_type}] on channel [{channel}] from [{source}]: {data}")
+        return True
+
+
+def flush_event_buffer():
+    """
+    Flush any buffered events to the database.
+    Useful for batch processing scenarios.
+    """
+    try:
+        if has_app_context():
+            from common.db import db
+            db.session.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Failed to flush event buffer: {e}")
         return False
 
 

@@ -50,7 +50,7 @@ This document is the main reference for understanding how the different componen
 The following guidelines should be followed when contributing to the A+ Trading App:
 
 1. **Feature-First Organization**: New code should be organized by feature, not by layer
-2. **Event-Driven Communication**: Components should communicate via Redis pub/sub events
+2. **Event-Driven Communication**: Components should communicate via PostGres events
 3. **Clear Documentation**: All new features should include documentation in their respective README.md files
 4. **API Design**: RESTful API endpoints should follow consistent naming and response patterns
 5. **Testing**: All new features should include unit tests

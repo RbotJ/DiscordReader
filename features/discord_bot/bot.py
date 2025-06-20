@@ -17,7 +17,7 @@ from .config.settings import (
     get_channel_name
 )
 from features.discord_bot.services.correlation_service import DiscordCorrelationService
-from common.events.bus import publish_cross_slice_event
+# PostgreSQL event system - imports handled in methods
 from features.ingestion.service import IngestionService
 
 logger = logging.getLogger(__name__)
@@ -188,12 +188,14 @@ class TradingDiscordBot(discord.Client):
     async def _trigger_ingestion(self, channel_id: int):
         """Trigger ingestion event for new Discord message."""
         try:
-            await publish_cross_slice_event(
+            from common.events.publisher import publish_event_async
+            await publish_event_async(
                 "discord.message.new",
                 {"channel_id": str(channel_id)},
+                "events",
                 "discord_bot"
             )
-            logger.info(f"Published ingestion event for channel: {channel_id}")
+            logger.info(f"Published PostgreSQL ingestion event for channel: {channel_id}")
         except Exception as e:
             logger.error(f"Error publishing ingestion event: {e}")
 

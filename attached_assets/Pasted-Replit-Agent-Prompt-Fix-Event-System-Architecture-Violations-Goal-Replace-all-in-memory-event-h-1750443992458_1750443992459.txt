@@ -1,0 +1,77 @@
+Replit Agent Prompt: Fix Event System Architecture Violations
+🧠 Goal:
+Replace all in-memory event handling with a unified PostgreSQL LISTEN/NOTIFY system that operates across all features and threads. The current system is broken due to isolated in-memory EventBus instances that do not propagate events between the Discord bot and ingestion listener.
+
+🔧 Required Refactors
+1. Delete In-Memory EventBus Implementation
+✅ Delete common/events/bus.py entirely.
+
+🔥 Remove all asyncio.Queue, defaultdict, subscribe(), and publish_cross_slice_event() usage.
+
+2. Replace All Cross-Slice Publishing Calls
+🔄 In the following files:
+
+features/discord_bot/bot.py
+
+features/ingestion/service.py
+
+Replace all calls to publish_cross_slice_event(...) with:
+
+python
+Copy
+Edit
+from common.events.publisher import publish_event
+await publish_event("discord.message.new", {"channel_id": channel_id})
+3. Update Ingestion Listener to Use Postgres
+In features/ingestion/listener.py, replace bus.subscribe(...) logic with:
+
+python
+Copy
+Edit
+from common.events.publisher import listen_for_events
+from .service import process_discord_message_event
+
+async def handle_event(event_type, payload):
+    if event_type == "discord.message.new":
+        await process_discord_message_event(payload)
+
+def start_listening():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(listen_for_events(handle_event))
+Ensure listen_for_events is implemented with asyncpg.add_listener() and a persistent connection to the database.
+
+4. Unify on PostgreSQL Event System
+✅ Use only common/events/publisher.py for all publishing and listening.
+
+🧹 Remove or isolate any enhanced_publisher.py if it duplicates functionality.
+
+Ensure publish_event() uses:
+
+python
+Copy
+Edit
+await conn.execute("NOTIFY events, $1", json.dumps({ ... }))
+5. Remove Threading Workarounds
+🔥 In app.py, remove any thread-based listener bootstrapping.
+
+Replace with single-event loop shared asyncio startup logic.
+
+Confirm start_listening() is invoked exactly once in the main thread.
+
+6. Log and Trace Events
+Add INFO log when events are published and received:
+
+e.g. "Published PostgreSQL event: discord.message.new"
+
+e.g. "Received event from channel 'events': discord.message.new"
+
+✅ Final Result
+All cross-slice communication uses PostgreSQL LISTEN/NOTIFY
+
+All feature listeners use a persistent asyncpg connection
+
+There is no more in-memory event dispatching
+
+The ingestion pipeline will now correctly receive Discord message events
+
