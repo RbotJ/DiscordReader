@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
-from common.events.bus import get_event_bus, publish_cross_slice_event
+# PostgreSQL event system - imports handled in methods
 from common.models import DiscordMessageDTO
 from .validator import MessageValidator, ValidationResult
 from .store import MessageStore
@@ -258,8 +258,9 @@ class IngestionService:
             # Process the batch
             result = await self.process_batch(messages)
             
-            # Publish startup completion event
-            await publish_cross_slice_event(
+            # Publish startup completion event using PostgreSQL
+            from common.events.publisher import publish_event_async
+            await publish_event_async(
                 "ingestion.startup_complete",
                 {
                     "result": {
@@ -270,6 +271,7 @@ class IngestionService:
                     },
                     "completed_at": datetime.now().isoformat()
                 },
+                "events",
                 "ingestion"
             )
             
