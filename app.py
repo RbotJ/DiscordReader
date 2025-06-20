@@ -118,6 +118,29 @@ def start_discord_bot_background(app):
                     parsing_service = start_parsing_service(app=app)
                     logging.info("Parsing service started successfully")
 
+                    # Start ingestion listener
+                    from features.ingestion.listener import start_ingestion_listener
+                    import threading
+                    
+                    async def start_listeners():
+                        await start_ingestion_listener()
+                    
+                    # Run listener startup in the bot's event loop
+                    def start_listeners_sync():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(start_listeners())
+                        except Exception as e:
+                            logging.error(f"Error starting listeners: {e}")
+                        finally:
+                            loop.close()
+                    
+                    # Start listeners in background thread
+                    listener_thread = threading.Thread(target=start_listeners_sync, daemon=True)
+                    listener_thread.start()
+                    logging.info("Ingestion listener startup initiated")
+
                     # Discord slice
                     from features.discord_bot.bot import TradingDiscordBot
                     bot = TradingDiscordBot(

@@ -185,7 +185,17 @@ class TradingDiscordBot(discord.Client):
         else:
             logger.debug(f"Message from {message.channel.name} (ID={message.channel.id}) doesn't match target channel {self.aplus_setups_channel_id}")
 
-
+    async def _trigger_ingestion(self, channel_id: int):
+        """Trigger ingestion event for new Discord message."""
+        try:
+            await publish_cross_slice_event(
+                "discord.message.new",
+                {"channel_id": str(channel_id)},
+                "discord_bot"
+            )
+            logger.info(f"Published ingestion event for channel: {channel_id}")
+        except Exception as e:
+            logger.error(f"Error publishing ingestion event: {e}")
 
     async def _startup_catchup_ingestion(self):
         """Trigger startup catchup ingestion using ingestion service."""
