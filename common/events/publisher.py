@@ -3,6 +3,10 @@ PostgreSQL LISTEN/NOTIFY Event System
 
 Unified event publisher and listener using PostgreSQL NOTIFY/LISTEN
 for real-time cross-feature communication.
+
+IMPORTANT: This is the only approved mechanism for cross-slice events. 
+All components must use publish_event() or listen_for_events() from this file.
+No other event systems should be used in this codebase.
 """
 
 import asyncio
@@ -87,7 +91,7 @@ async def publish_event_async(
             # Send NOTIFY for real-time listeners
             await conn.execute(f"NOTIFY {channel}, $1", json.dumps(event_payload))
         
-        logger.info(f"Published PostgreSQL event: {event_type} on channel {channel} from {source}")
+        logger.info(f"📢 Published event: {event_type} on channel {channel} from {source}")
         return True
         
     except Exception as e:

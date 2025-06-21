@@ -188,11 +188,13 @@ class BotService:
         try:
             self._monitored_channels.add(channel_id)
             
-            # Publish channel monitoring event
-            await publish_cross_slice_event(
+            # Publish channel monitoring event using PostgreSQL NOTIFY
+            from common.events.publisher import publish_event_async
+            await publish_event_async(
                 "discord.channel_monitoring_added",
                 {"channel_id": channel_id},
-                "discord_bot"
+                channel="events",
+                source="discord_bot"
             )
             
             logger.info(f"Added channel {channel_id} to monitoring")
@@ -215,11 +217,13 @@ class BotService:
         try:
             self._monitored_channels.discard(channel_id)
             
-            # Publish channel monitoring event
-            await publish_cross_slice_event(
+            # Publish channel monitoring event using PostgreSQL NOTIFY
+            from common.events.publisher import publish_event_async
+            await publish_event_async(
                 "discord.channel_monitoring_removed",
                 {"channel_id": channel_id},
-                "discord_bot"
+                channel="events",
+                source="discord_bot"
             )
             
             logger.info(f"Removed channel {channel_id} from monitoring")
@@ -270,20 +274,13 @@ class BotService:
             logger.info("📢 Discord bot triggering ingestion startup")
             
             # Return simple success - ingestion service handles startup internally
+            self._startup_complete = True
+            logger.info("📢 Discord bot startup ingestion completed")
             return {
-                "status": "completed", 
+                "status": "completed",
                 "total_processed": 0,
                 "trigger": "bot_startup"
             }
-            )
-            
-            if response:
-                self._startup_complete = True
-                logger.info(f"Startup ingestion complete: {response}")
-                return response
-            else:
-                logger.warning("Startup ingestion request timed out")
-                return {"status": "timeout"}
                 
         except Exception as e:
             logger.error(f"Error during startup ingestion: {e}")
