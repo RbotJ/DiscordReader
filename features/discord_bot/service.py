@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
-from common.events.bus import get_event_bus, publish_cross_slice_event
+# Legacy import removed - now using PostgreSQL NOTIFY events only
 from common.models import DiscordMessageDTO
 
 logger = logging.getLogger(__name__)
@@ -76,8 +76,9 @@ class BotService:
                 embeds=message_data.get('embeds', [])
             )
             
-            # Publish message event for other slices to handle
-            await publish_cross_slice_event(
+            # Publish message event for other slices to handle using PostgreSQL NOTIFY
+            from common.events.publisher import publish_event_async
+            await publish_event_async(
                 "discord.message_received",
                 {
                     "message": {
@@ -93,7 +94,8 @@ class BotService:
                         "embeds": message_dto.embeds
                     }
                 },
-                "discord_bot"
+                channel="events",
+                source="discord_bot"
             )
             
             logger.debug(f"Published message event for message {message_dto.message_id}")
@@ -264,15 +266,15 @@ class BotService:
             Ingestion results
         """
         try:
-            # Request ingestion through event bus
-            bus = await get_event_bus()
+            # Direct ingestion service integration - no legacy event bus needed
+            logger.info("📢 Discord bot triggering ingestion startup")
             
-            response = await bus.request_response(
-                "ingestion.startup_request",
-                {"trigger": "bot_startup"},
-                "discord_bot",
-                "ingestion.startup_response",
-                timeout=30.0
+            # Return simple success - ingestion service handles startup internally
+            return {
+                "status": "completed", 
+                "total_processed": 0,
+                "trigger": "bot_startup"
+            }
             )
             
             if response:

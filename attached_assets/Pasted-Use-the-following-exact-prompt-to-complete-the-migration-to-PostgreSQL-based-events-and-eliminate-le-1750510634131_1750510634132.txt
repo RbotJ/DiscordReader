@@ -1,0 +1,76 @@
+Use the following exact prompt to complete the migration to PostgreSQL-based events and eliminate legacy patterns:
+
+✅ Replit Agent Prompt: Finalize PostgreSQL Event System Migration
+🎯 Objective:
+Eliminate remaining non-compliant event logic and enforce full PostgreSQL LISTEN/NOTIFY consistency across all publishers and listeners.
+
+🔧 Tasks to Complete
+🔁 1. Replace Legacy Event Publisher in Discord Bot
+📍 File: features/discord_bot/service.py (Lines 80–90)
+
+🔥 Issue: Calls publish_cross_slice_event, which is now undefined and obsolete.
+
+✅ Fix: Replace with:
+
+python
+Copy
+Edit
+from common.events.publisher import publish_event_async
+
+await publish_event_async("discord.message.new", {"channel_id": channel.id, "message_id": message.id})
+🧼 Clean up any leftover imports or references to publish_cross_slice_event.
+
+🔁 2. Fix Parsing Listener to Use PostgreSQL Events
+📍 File: features/parsing/listener.py (Lines 45–55)
+
+🔥 Issue: Calls consumer.subscribe() which implies in-memory subscription.
+
+✅ Fix: Replace with PostgreSQL-based listener:
+
+python
+Copy
+Edit
+from common.events.publisher import listen_for_events
+from .parser import parse_setup_message
+
+async def handle_event(event_type, payload):
+    if event_type == "MESSAGE_STORED":
+        await parse_setup_message(payload["message_id"])
+
+def start_listening():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(listen_for_events(handle_event))
+📌 Ensure start_listening() is registered once during app.py startup, using the same unified async loop.
+
+🧪 3. Verify Unified Async Context
+📍 File: app.py (Lines 90–120)
+
+🔄 Status: Partially refactored. Check:
+
+Are start_listening() functions from all slices registered in the same event loop?
+
+Are there any remaining Thread(target=...) or isolated event loops (asyncio.run(...))?
+
+✅ Fix: Use a single asyncio.get_event_loop() instance for all listener registration.
+
+🔍 4. Add Logging to Event Handlers
+✅ In every publish_event and listen_for_events function:
+
+Add:
+
+python
+Copy
+Edit
+logger.info("📢 Published event: %s", event_type)
+logger.info("📥 Received event: %s", event_type)
+🚫 Do not suppress exceptions in event publishing. If publish_event_async fails, log the full exception.
+
+🧹 Cleanup Tasks
+✅ Remove common/events/bus.py if still present.
+
+✅ Ensure publish_cross_slice_event() no longer exists anywhere.
+
+✅ Add comment in publisher.py explaining:
+
+"This is the only approved mechanism for cross-slice events. All components must use publish_event() or listen_for_events() from this file."

@@ -40,16 +40,42 @@ class ParsingListener:
         self.consumer = EventConsumer('parsing', ['ingestion:message'], app=app)
         logger.info("Parsing listener initialized")
     
-    def start_listening(self):
-        """Start listening for ingestion events."""
+    async def start_listening(self):
+        """Start listening for ingestion events using PostgreSQL LISTEN/NOTIFY."""
         try:
-            logger.info("Starting parsing listener...")
-            self.consumer.subscribe('message.stored', self._handle_message_stored)
-            self.consumer.start()
-            logger.info("Parsing listener started successfully")
+            logger.info("📢 Starting PostgreSQL-based parsing listener...")
+            from common.events.publisher import listen_for_events
+            
+            # Start PostgreSQL LISTEN/NOTIFY listener
+            await listen_for_events(self._handle_event, "events")
+            logger.info("📢 Parsing listener started successfully with PostgreSQL NOTIFY")
         except Exception as e:
             logger.error(f"Error starting parsing listener: {e}")
             raise
+    
+    async def _handle_event(self, event_type: str, payload: dict):
+        """Handle PostgreSQL NOTIFY events."""
+        try:
+            logger.info(f"📥 Received event: {event_type}")
+            
+            if event_type == "discord.message_received":
+                # Extract message data from payload and process
+                message_data = payload.get('message', {})
+                if message_data:
+                    # Convert to event format expected by existing handler
+                    event_data = {
+                        'message_id': message_data.get('message_id'),
+                        'content': message_data.get('content'),
+                        'channel_id': message_data.get('channel_id'),
+                        'timestamp': message_data.get('timestamp')
+                    }
+                    # Call existing message handler with converted data
+                    self._handle_message_stored({'data': event_data})
+            else:
+                logger.debug(f"Ignoring unhandled event type: {event_type}")
+                
+        except Exception as e:
+            logger.error(f"Error handling event {event_type}: {e}")
     
     def stop_listening(self):
         """Stop listening for events."""
