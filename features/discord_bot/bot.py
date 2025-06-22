@@ -167,14 +167,12 @@ class TradingDiscordBot(discord.Client):
         if tracker:
             await tracker.on_message(message)
             
-        # Only process messages from aplus-setups channel (fix type comparison)
+        # Only process messages from aplus-setups channel
         if str(message.channel.id) == str(self.aplus_setups_channel_id):
             logger.info(f"Processing message from #aplus-setups: {message.id}")
             # Update channel activity
             self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
             await self._trigger_ingestion(message.channel.id)
-        else:
-            logger.debug(f"Message from {message.channel.name} (ID={message.channel.id}) doesn't match target channel {self.aplus_setups_channel_id}")
 
     async def _trigger_ingestion(self, channel_id: int):
         """Trigger ingestion event for new Discord message."""
