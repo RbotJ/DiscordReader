@@ -1,0 +1,59 @@
+Add Unit Tests for Discord Bot Events
+**Objective:** Add unit tests for the `on_ready()` and `_trigger_ingestion()` methods in `features/discord_bot/bot.py`.
+
+### Test File:
+Place tests in `tests/features/discord_bot/test_bot.py`
+
+### Test Cases:
+
+1. `test_on_ready_logs_connection`  
+   - Mock the Discord client and guild/channel return values  
+   - Assert that log messages like "Bot ready" and "Guild sync complete" are triggered
+
+2. `test_trigger_ingestion_publishes_event`  
+   - Mock `publish_event_async` using `unittest.mock.patch`  
+   - Call `_trigger_ingestion()` manually  
+   - Assert `publish_event_async()` was called with event type `"discord.message.new"`
+
+### Constraints:
+- Do not test real Discord connectivity
+- Use mocks and async test tools (e.g., `pytest-asyncio`)
+✅ 2. Add Structured Logging in on_message() Flow
+
+🎯 Purpose: Create a traceable path from Discord → DB for message flow debugging.
+
+✅ Suggested Log Additions
+Add these to on_message() in bot.py:
+
+logger.info("[on_message] Received message from %s in #%s: %r",
+            message.author, message.channel.name, message.content[:100])
+
+if message.channel.id != self.target_channel_id:
+    logger.debug("[on_message] Ignored message from channel ID %s (target is %s)",
+                 message.channel.id, self.target_channel_id)
+
+logger.info("[on_message] Triggering ingestion for message ID: %s", message.id)
+Optional: Add message_id, channel_id, user_id as structured JSON in logs if your stack supports structured log parsing (e.g., logger.info(json.dumps({...}))).
+
+✅ 3. Add Uptime/Heartbeat Metric
+
+🎯 Purpose: Track how long the bot has been running and expose that via /api/discord/status.
+
+✅ Changes
+In bot.py, add:
+
+self._start_time = datetime.utcnow()
+In api.py (/api/discord/status route):
+
+"uptime_seconds": (datetime.utcnow() - bot._start_time).total_seconds()
+Optional: Add "heartbeat_ts": datetime.utcnow().isoformat() to show last known alive time.
+
+✅ 4. Log Discord Rate-Limit Warnings
+
+🎯 Purpose: Capture signs of Discord throttling for better observability.
+
+✅ Add Event Handler in bot.py
+@self.client.event
+async def on_rate_limit(payload):
+    logger.warning("⚠️ Discord rate limit hit: bucket=%s retry_after=%s", payload.get("bucket"), payload.get("retry_after"))
+Or listen for warnings from the underlying REST client if using discord.py v2+.

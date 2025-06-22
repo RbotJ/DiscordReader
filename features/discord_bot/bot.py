@@ -48,9 +48,11 @@ class TradingDiscordBot(discord.Client):
         self._messages_today = 0
         self._triggers_today = 0
         self._storage_errors_today = 0
+        
+        # Uptime tracking
+        self._start_time = datetime.utcnow()
         self._last_storage_error = None
         self._last_reset_date = datetime.utcnow().date()
-        self._start_time = datetime.utcnow()
 
     def _reset_if_needed(self):
         """Reset daily counters at midnight UTC."""
@@ -150,16 +152,26 @@ class TradingDiscordBot(discord.Client):
         if message.author == self.user:
             return
         
+        # Structured logging for message reception
+        logger.info("[on_message] Received message from %s in #%s: %r",
+                   message.author, getattr(message.channel, 'name', 'unknown'), 
+                   message.content[:100] if message.content else '')
+        
         # Reset counters if needed (daily reset)
         self._reset_if_needed()
         
+        # Check if message is from target channel
+        if str(message.channel.id) != str(self.aplus_setups_channel_id):
+            logger.debug("[on_message] Ignored message from channel ID %s (target is %s)",
+                        message.channel.id, self.aplus_setups_channel_id)
+            return
+        
         # Count all messages in target channel (live metrics)
-        if str(message.channel.id) == str(self.aplus_setups_channel_id):
-            self._messages_today += 1
-            
-            # Count trigger messages separately
-            if self._is_trigger_message(message):
-                self._triggers_today += 1
+        self._messages_today += 1
+        
+        # Count trigger messages separately
+        if self._is_trigger_message(message):
+            self._triggers_today += 1
         
         # Notify status tracker of message activity
         from .status_tracker import get_status_tracker
@@ -167,24 +179,29 @@ class TradingDiscordBot(discord.Client):
         if tracker:
             await tracker.on_message(message)
             
-        # Only process messages from aplus-setups channel
-        if str(message.channel.id) == str(self.aplus_setups_channel_id):
-            logger.info(f"Processing message from #aplus-setups: {message.id}")
-            # Update channel activity
-            self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
-            await self._trigger_ingestion(message.channel.id)
+        # Process message from aplus-setups channel
+        logger.info("[on_message] Triggering ingestion for message ID: %s", message.id)
+        # Update channel activity
+        self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
+        await self._trigger_ingestion(message)
 
-    async def _trigger_ingestion(self, channel_id: int):
+    async def _trigger_ingestion(self, message):
         """Trigger ingestion event for new Discord message."""
         try:
             from common.events.publisher import publish_event_async
             await publish_event_async(
-                "discord.message.new",
-                {"channel_id": str(channel_id)},
-                "events",
-                "discord_bot"
+                event_type="discord.message.new",
+                data={
+                    "message_id": str(message.id),
+                    "channel_id": str(message.channel.id),
+                    "author": str(message.author),
+                    "content_preview": message.content[:100] if message.content else "",
+                    "timestamp": message.created_at.isoformat()
+                },
+                channel="discord",
+                source="discord_bot"
             )
-            logger.info(f"Published PostgreSQL ingestion event for channel: {channel_id}")
+            logger.info(f"Published PostgreSQL ingestion event for message: {message.id}")
         except Exception as e:
             logger.error(f"Error publishing ingestion event: {e}")
 
