@@ -205,15 +205,43 @@ def initialize_async_services(app):
                 app.config['DISCORD_BOT'] = bot
                 logging.info("✅ Discord bot instance created and registered in app.config['DISCORD_BOT']")
                 
-                # Schedule background startup
+                # Schedule background startup and start immediately
                 def start_services():
                     try:
-                        socketio.start_background_task(run_async_services_safe, app)
-                        logging.info("Discord bot background startup scheduled")
+                        # Use SocketIO's background task for async operations
+                        def async_wrapper():
+                            import asyncio
+                            try:
+                                # Create new event loop for background task
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                
+                                # Start the Discord bot connection
+                                async def connect_bot():
+                                    try:
+                                        logging.info("Starting Discord bot connection...")
+                                        await bot.start(token)
+                                    except Exception as e:
+                                        logging.error(f"Discord bot connection failed: {e}")
+                                
+                                loop.run_until_complete(connect_bot())
+                            except Exception as e:
+                                logging.error(f"Error in async wrapper: {e}")
+                            finally:
+                                try:
+                                    loop.close()
+                                except:
+                                    pass
+                        
+                        socketio.start_background_task(async_wrapper)
+                        logging.info("Discord bot background startup scheduled and initiated")
                     except Exception as e:
                         logging.error(f"Failed to start async services: {e}")
                 
                 app.config['ASYNC_SERVICES_STARTER'] = start_services
+                
+                # Start services immediately during initialization
+                start_services()
                 
             except ImportError as e:
                 logging.error(f"Discord bot import error during initialization: {e}")
