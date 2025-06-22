@@ -1,8 +1,11 @@
 """
 Enhanced Event Publisher
 
-Replaces basic event publishing with structured event bus using refined schema.
-Provides correlation tracking and improved debugging capabilities.
+DEPRECATED: This publisher only stores events in database without PostgreSQL NOTIFY.
+Use common/events/publisher.py which provides both database persistence AND 
+PostgreSQL LISTEN/NOTIFY for real-time event delivery.
+
+This file is retained for reference only.
 """
 import uuid
 import logging

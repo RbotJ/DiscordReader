@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, date
 from typing import Dict, Any, List
 
-from common.events.consumer import EventConsumer
+# EventConsumer removed - using PostgreSQL LISTEN/NOTIFY via common.events.publisher
 from common.events.publisher import publish_event
 from .parser import MessageParser
 from .store import ParsingStore, get_parsing_store

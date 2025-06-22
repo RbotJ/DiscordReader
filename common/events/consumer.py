@@ -275,122 +275,28 @@ def get_latest_event_id() -> Optional[int]:
         return None
 
 
-class EventConsumer:
-    """
-    Event consumer class for subscribing to and processing events.
-    """
-    
-    def __init__(self, service_name: str, channels: List[str], poll_interval: int = 5, app=None):
-        """Initialize event consumer."""
-        self.service_name = service_name
-        self.channels = channels
-        self.poll_interval = poll_interval
-        self.callbacks = {}
-        self.running = False
-        self.thread = None
-        self.last_timestamp = None
-        self.app = app
-        
-    def subscribe(self, event_type: str, callback_func):
-        """Subscribe to a specific event type."""
-        self.callbacks[event_type] = callback_func
-        logger.info(f"Subscribed to {event_type} events")
-    
-    def start(self):
-        """Start the event consumer."""
-        if self.running:
-            return
-        
-        self.running = True
-        self.last_timestamp = datetime.utcnow()
-        self.thread = threading.Thread(target=self._poll_worker, daemon=True)
-        self.thread.start()
-        logger.info(f"Event consumer {self.service_name} started")
-    
-    def stop(self):
-        """Stop the event consumer."""
-        self.running = False
-        if self.thread:
-            self.thread.join(timeout=1)
-        logger.info(f"Event consumer {self.service_name} stopped")
-    
-    def is_running(self) -> bool:
-        """Check if consumer is running."""
-        return self.running
-    
-    def _poll_worker(self):
-        """Background worker for polling events."""
-        import time
-        
-        while self.running:
-            try:
-                # Ensure we have Flask app context when polling
-                if self.app:
-                    with self.app.app_context():
-                        events = poll_events(self.channels, since_timestamp=self.last_timestamp)
-                        
-                        if events:
-                            # Update timestamp for next poll
-                            self.last_timestamp = max(event['timestamp'] for event in events)
-                            
-                            # Process each event
-                            for event in events:
-                                self._process_event(event)
-                else:
-                    # Skip polling if no app context available
-                    logger.debug(f"Skipping event poll for {self.service_name} - no app context")
-                
-                time.sleep(self.poll_interval)
-                
-            except Exception as e:
-                logger.error(f"Error in event consumer polling: {e}")
-                time.sleep(self.poll_interval)
-    
-    def _process_event(self, event: Dict[str, Any]):
-        """Process a single event."""
-        event_type = event.get('event_type')
-        if event_type in self.callbacks:
-            try:
-                self.callbacks[event_type](event)
-            except Exception as e:
-                logger.error(f"Error processing {event_type} event: {e}")
+# DEPRECATED: EventConsumer class removed due to PostgreSQL compliance violations.
+# The class used threading and polling instead of PostgreSQL LISTEN/NOTIFY.
+# 
+# Use PostgreSQL LISTEN/NOTIFY via common.events.publisher.listen_for_events() instead.
 
 
 def subscribe_to_events(channels: List[str], callback_func, poll_interval: int = 5):
     """
-    Subscribe to events on specified channels with a callback function.
+    DEPRECATED: This function used threading-based polling instead of PostgreSQL LISTEN/NOTIFY.
     
-    Args:
-        channels: List of channels to subscribe to
-        callback_func: Function to call when new events are found
-        poll_interval: Polling interval in seconds
-    """
-    import time
-    import threading
+    Use PostgreSQL LISTEN/NOTIFY via common.events.publisher.listen_for_events() instead.
     
-    def poll_worker():
-        last_timestamp = datetime.utcnow()
+    Example:
+        from common.events.publisher import listen_for_events
         
-        while True:
-            try:
-                events = poll_events(channels, since_timestamp=last_timestamp)
-                
-                if events:
-                    # Update timestamp for next poll
-                    last_timestamp = max(event['timestamp'] for event in events)
-                    
-                    # Call the callback with new events
-                    callback_func(events)
-                
-                time.sleep(poll_interval)
-                
-            except Exception as e:
-                logger.error(f"Error in event subscription polling: {e}")
-                time.sleep(poll_interval)
-    
-    # Start polling in background thread
-    thread = threading.Thread(target=poll_worker, daemon=True)
-    thread.start()
-    
-    logger.info(f"Started event subscription for channels: {channels}")
+        async def handle_event(event_data):
+            # Process event
+            pass
+            
+        await listen_for_events(handle_event, "events")
+    """
+    raise DeprecationWarning(
+        "subscribe_to_events is deprecated. Use common.events.publisher.listen_for_events() instead."
+    )
     return thread
