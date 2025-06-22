@@ -82,6 +82,12 @@ class TradingDiscordBot(discord.Client):
         # Reset counters if needed on startup
         self._reset_if_needed()
         
+        # Set up rate limit monitoring
+        @self.event
+        async def on_rate_limit(payload):
+            logger.warning("⚠️ Discord rate limit hit: bucket=%s retry_after=%s", 
+                         payload.get("bucket"), payload.get("retry_after"))
+        
         # Initialize status tracker and notify it of ready event
         from .status_tracker import initialize_status_tracker, get_status_tracker
         initialize_status_tracker(self)
