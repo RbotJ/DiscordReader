@@ -8,7 +8,6 @@ import logging
 import os
 from typing import Optional, Dict, Any
 import discord
-from discord.ext import tasks
 from datetime import datetime
 
 from .config.settings import (
@@ -147,13 +146,8 @@ class TradingDiscordBot(discord.Client):
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
-        # Add debug logging as per troubleshooting guide
-        print(f"[DEBUG on_message] Author={message.author}, Channel={message.channel.name}, Content={message.content!r}")
-        logger.debug(f"Message received: channel.id={message.channel.id!r} ({type(message.channel.id)}), target_channel_id={self.aplus_setups_channel_id!r} ({type(self.aplus_setups_channel_id)})")
-        
         # Skip bot's own messages
         if message.author == self.user:
-            logger.debug("Skipping bot's own message")
             return
         
         # Reset counters if needed (daily reset)
@@ -166,9 +160,6 @@ class TradingDiscordBot(discord.Client):
             # Count trigger messages separately
             if self._is_trigger_message(message):
                 self._triggers_today += 1
-                logger.debug(f"Trigger message detected. Today: {self._messages_today} total, {self._triggers_today} triggers")
-            else:
-                logger.debug(f"Regular message counted. Today: {self._messages_today} total, {self._triggers_today} triggers")
         
         # Notify status tracker of message activity
         from .status_tracker import get_status_tracker
