@@ -1,0 +1,68 @@
+ FINAL FIX TASKS FOR 100% COMPLIANCE
+
+🔧 1. Remove asyncio.new_event_loop() from features/discord_bot/api.py
+File: features/discord_bot/api.py
+Line: ~45
+Issue: Manually creating a new event loop can fragment the system and lead to hard-to-debug concurrency issues.
+
+Fix:
+Replace:
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(some_async_function())
+With:
+
+import asyncio
+asyncio.run(some_async_function())
+Or, if inside a Flask/SocketIO context, use:
+
+from flask_socketio import SocketIO
+socketio.start_background_task(some_async_function)
+Goal: Always re-use the main asyncio loop or background task mechanism from your server framework.
+
+🔧 2. Remove asyncio.new_event_loop() from features/market/client.py
+File: features/market/client.py
+Line: ~78
+Issue: Same fragmentation risk as above, especially if this module interacts with feed.py or Alpaca streams.
+
+Fix:
+If this is part of a CLI or data backfill command, wrap in:
+
+if __name__ == "__main__":
+    asyncio.run(main())
+If it’s an imported module: pass the loop down from the caller.
+
+🧼 3. Optional Cleanup: Delete Deprecated Files
+File: common/events/enhanced_publisher.py
+Action:
+
+Delete the file if unused in the codebase.
+If tests still import from it, migrate them to use publisher.py.
+🧼 4. Remove Deprecated consumer.py::subscribe_to_events()
+File: common/events/consumer.py
+Action:
+
+Delete or comment out all legacy subscribe_to_events() logic.
+Add a docstring to the file:
+“Deprecated: This module has been replaced by PostgreSQL LISTEN/NOTIFY in publisher.py.”
+✅ 5. Add a Final events/README.md for Developer Clarity
+Content:
+
+# Event System Architecture (PostgreSQL-Only)
+
+This app exclusively uses PostgreSQL LISTEN/NOTIFY for all cross-slice communication.
+All events must be published and consumed using the functions in `common/events/publisher.py`.
+
+❌ No in-memory queues
+❌ No Redis/Socket-based event handlers
+✅ Use `publish_event()` and `listen_for_events()` only
+
+Refer to `publisher.py` for implementation details.
+🎯 Completion Checklist
+
+Item	Fix Status	Notes
+Remove all asyncio.new_event_loop() calls	⏳ In Progress	2 known files
+Delete enhanced_publisher.py	✅ If unused	Confirm no live references
+Remove consumer.py::subscribe_to_events()	✅	Leave comment or remove file
+Add common/events/README.md	✅	For onboarding/dev clarity

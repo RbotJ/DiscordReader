@@ -542,12 +542,9 @@ def _run_stream():
             return
 
     try:
-        # Create a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Run the stream handler
-        loop.run_until_complete(_handle_stream())
+        # Use asyncio.run() instead of creating new event loop
+        # This is safer and avoids event loop fragmentation
+        asyncio.run(_handle_stream())
 
     except Exception as e:
         logger.error(f"Error in market data stream thread: {e}")

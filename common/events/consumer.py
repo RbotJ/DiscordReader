@@ -281,22 +281,5 @@ def get_latest_event_id() -> Optional[int]:
 # Use PostgreSQL LISTEN/NOTIFY via common.events.publisher.listen_for_events() instead.
 
 
-def subscribe_to_events(channels: List[str], callback_func, poll_interval: int = 5):
-    """
-    DEPRECATED: This function used threading-based polling instead of PostgreSQL LISTEN/NOTIFY.
-    
-    Use PostgreSQL LISTEN/NOTIFY via common.events.publisher.listen_for_events() instead.
-    
-    Example:
-        from common.events.publisher import listen_for_events
-        
-        async def handle_event(event_data):
-            # Process event
-            pass
-            
-        await listen_for_events(handle_event, "events")
-    """
-    raise DeprecationWarning(
-        "subscribe_to_events is deprecated. Use common.events.publisher.listen_for_events() instead."
-    )
-    return thread
+# DEPRECATED: subscribe_to_events function removed - use PostgreSQL LISTEN/NOTIFY instead
+# See common/events/publisher.py listen_for_events() for replacement

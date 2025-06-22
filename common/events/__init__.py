@@ -33,7 +33,6 @@ __all__ = [
     'get_events_by_correlation_id',
     'poll_events',
     'get_latest_event_id',
-    'subscribe_to_events',
     
     # Models
     'Event'

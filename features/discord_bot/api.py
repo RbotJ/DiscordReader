@@ -116,39 +116,49 @@ def sync_message_history():
         before_id = data.get('before_id')
         
         # Publish sync start event
-        from common.events.bus import publish_cross_slice_event
-        publish_cross_slice_event(
-            "discord.sync_started",
-            {
+        from common.events.publisher import publish_event_safe
+        publish_event_safe(
+            channel="discord",
+            event_type="discord.sync_started",
+            data={
                 "channel_id": str(bot.aplus_setups_channel_id),
                 "limit": limit,
                 "before_id": before_id,
                 "source": "manual_api",
                 "started_at": datetime.now().isoformat()
             },
-            "discord_bot"
+            source="discord_bot"
         )
         
-        # Run async sync operation
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Use SocketIO background task instead of new event loop
+        from flask import current_app
+        socketio = current_app.extensions.get('socketio')
         
-        try:
-            result = loop.run_until_complete(
-                bot._manual_sync_history(limit=limit, before_id=before_id)
-            )
-        finally:
-            loop.close()
+        if socketio:
+            # Run async operation in background task
+            def sync_task():
+                try:
+                    result = asyncio.run(bot._manual_sync_history(limit=limit, before_id=before_id))
+                    return result
+                except Exception as e:
+                    logger.error(f"Background sync task failed: {e}")
+                    return {"error": str(e), "synced": 0}
+            
+            result = socketio.start_background_task(sync_task)
+        else:
+            # Fallback to asyncio.run for environments without SocketIO
+            result = asyncio.run(bot._manual_sync_history(limit=limit, before_id=before_id))
         
         # Publish completion event
-        publish_cross_slice_event(
-            "discord.sync_completed",
-            {
+        publish_event_safe(
+            channel="discord",
+            event_type="discord.sync_completed",
+            data={
                 "channel_id": str(bot.aplus_setups_channel_id),
                 "result": result,
                 "completed_at": datetime.now().isoformat()
             },
-            "discord_bot"
+            source="discord_bot"
         )
         
         return jsonify({
@@ -163,14 +173,15 @@ def sync_message_history():
         
         # Publish error event
         try:
-            from common.events.bus import publish_cross_slice_event
-            publish_cross_slice_event(
-                "discord.sync_failed",
-                {
+            from common.events.publisher import publish_event_safe
+            publish_event_safe(
+                channel="discord",
+                event_type="discord.sync_failed",
+                data={
                     "error": str(e),
                     "failed_at": datetime.now().isoformat()
                 },
-                "discord_bot"
+                source="discord_bot"
             )
         except:
             pass  # Don't fail on event publishing errors
