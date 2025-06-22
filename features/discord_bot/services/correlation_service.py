@@ -9,7 +9,6 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from common.events.enhanced_publisher import EventPublisher
 from common.events.constants import EventChannels, EventTypes
 from common.events.publisher import publish_event
 

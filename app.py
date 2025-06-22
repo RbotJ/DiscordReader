@@ -170,27 +170,57 @@ async def start_unified_async_services(app):
         logging.exception("Unified async services startup failed")
 
 def initialize_async_services(app):
-    """Initialize async services without thread isolation."""
+    """Initialize async services and immediately create bot instance."""
     try:
-        # Store initialization function for deferred startup
-        def start_services():
+        # Create and register Discord bot instance immediately
+        with app.app_context():
             try:
-                # Use SocketIO's background task system to avoid thread isolation
-                socketio.start_background_task(run_async_services_safe, app)
-                logging.info("Async services scheduled with SocketIO background task")
+                # Get credentials early
+                token = os.getenv("DISCORD_BOT_TOKEN")
+                if not token:
+                    logging.warning("Discord token missing; bot registration skipped.")
+                    return
+                
+                logging.info("Creating Discord bot services...")
+                
+                # Create services
+                from features.ingestion.service import IngestionService
+                from features.discord_channels.channel_manager import ChannelManager
+                
+                ingestion_svc = IngestionService()
+                channel_svc = ChannelManager()
+                logging.info("Discord bot services created successfully")
+                
+                # Create bot instance
+                from features.discord_bot.bot import TradingDiscordBot
+                logging.info("Creating TradingDiscordBot instance...")
+                
+                bot = TradingDiscordBot(
+                    ingestion_service=ingestion_svc,
+                    channel_manager=channel_svc,
+                    flask_app=app
+                )
+                
+                # Store bot immediately for API access
+                app.config['DISCORD_BOT'] = bot
+                logging.info("✅ Discord bot instance created and registered in app.config['DISCORD_BOT']")
+                
+                # Schedule background startup
+                def start_services():
+                    try:
+                        socketio.start_background_task(run_async_services_safe, app)
+                        logging.info("Discord bot background startup scheduled")
+                    except Exception as e:
+                        logging.error(f"Failed to start async services: {e}")
+                
+                app.config['ASYNC_SERVICES_STARTER'] = start_services
+                
+            except ImportError as e:
+                logging.error(f"Discord bot import error during initialization: {e}")
+                logging.exception("Full import traceback:")
             except Exception as e:
-                logging.error(f"Failed to start async services: {e}")
-        
-        # Store starter function and immediately start services
-        app.config['ASYNC_SERVICES_STARTER'] = start_services
-        
-        # Start services immediately using a deferred call after SocketIO init
-        @socketio.on('connect', namespace='/')
-        def trigger_async_services():
-            if not app.config.get('ASYNC_SERVICES_STARTED'):
-                start_services()
-                app.config['ASYNC_SERVICES_STARTED'] = True
-                logging.info("✅ Async services auto-started on SocketIO init")
+                logging.error(f"Unexpected error during Discord bot initialization: {e}")
+                logging.exception("Full initialization traceback:")
         
     except Exception as e:
         logging.error(f"Failed to initialize async services: {e}")
@@ -200,18 +230,32 @@ def run_async_services_safe(app):
     import asyncio
     
     try:
-        # Create async wrapper that handles app context
-        async def run_services():
-            with app.app_context():
-                await start_unified_async_services(app)
+        # Run async services in the current event loop if available, otherwise schedule
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
         
-        # Run within SocketIO's event loop
-        task = asyncio.create_task(run_services())
-        logging.info("✅ Async services task created and scheduled")
-        return task
-        
+        if loop:
+            # We're in an async context, create a task
+            async def run_services():
+                try:
+                    with app.app_context():
+                        await start_unified_async_services(app)
+                except Exception as e:
+                    logging.error(f"Error in async services: {e}")
+            
+            task = loop.create_task(run_services())
+            logging.info("✅ Discord bot async task created")
+            return task
+        else:
+            # No event loop, let SocketIO handle it
+            logging.info("No event loop available, services will start on SocketIO connect")
+            return None
+            
     except Exception as e:
-        logging.error(f"Error running async services: {e}")
+        logging.error(f"Error setting up async services: {e}")
         return None
 
 def validate_environment():
