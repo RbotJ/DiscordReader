@@ -122,6 +122,47 @@ def health():
         logger.error(f"Error checking ingestion health: {e}")
         return jsonify({'error': str(e)}), 500
 
+@ingest_bp.route('/enhanced-metrics.json')
+def enhanced_metrics():
+    """API endpoint for enhanced ingestion metrics with uptime and duplicate handling."""
+    try:
+        service = get_ingestion_service()
+        if service:
+            metrics = service.get_metrics()
+            
+            # Extract enhanced metrics
+            enhanced_data = {
+                'core_metrics': {
+                    'messages_ingested': metrics.get('messages_ingested', 0),
+                    'ingestion_errors': metrics.get('ingestion_errors', 0),
+                    'validation_success_rate': metrics.get('validation_success_rate', 100.0),
+                    'service_status': metrics.get('service_status', 'unknown')
+                },
+                'uptime_tracking': {
+                    'uptime_seconds': metrics.get('uptime_seconds', 0),
+                    'service_start_time': (utc_now() - timedelta(seconds=metrics.get('uptime_seconds', 0))).isoformat(),
+                    'last_ingestion': metrics.get('last_ingestion')
+                },
+                'duplicate_handling': {
+                    'duplicates_skipped': metrics.get('duplicates_skipped', 0),
+                    'duplicates_skipped_today': metrics.get('duplicates_skipped_today', 0),
+                    'total_processing_attempts': metrics.get('messages_ingested', 0) + metrics.get('duplicates_skipped', 0)
+                },
+                'daily_metrics': {
+                    'messages_ingested_today': metrics.get('messages_ingested_today', 0),
+                    'messages_processed_today': metrics.get('messages_processed_today', 0),
+                    'validation_failures_today': metrics.get('validation_failures_today', 0)
+                },
+                'timestamp': utc_now().isoformat()
+            }
+            
+            return jsonify(enhanced_data)
+        else:
+            return jsonify({'error': 'Ingestion service unavailable'}), 500
+    except Exception as e:
+        logger.error(f"Error getting enhanced ingestion metrics: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @ingest_bp.route('/clear-data', methods=['POST'])
 def clear_data():
     """Clear all stored messages from the ingestion pipeline."""

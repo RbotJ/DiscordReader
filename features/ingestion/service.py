@@ -58,6 +58,7 @@ class IngestionService:
             # Check if already processed
             if message_dto.message_id in self._processed_messages:
                 logger.debug(f"Message {message_dto.message_id} already processed, skipping")
+                self.duplicates_skipped += 1
                 return True
                 
             # Validate message using consolidated validator
@@ -79,6 +80,9 @@ class IngestionService:
             # Update metrics
             self.messages_ingested += 1
             self.last_ingestion_time = datetime.utcnow()
+            
+            # Structured logging after successful storage
+            logger.info("[ingestion] Stored message ID: %s (event: message.stored)", message_dto.message_id)
             
             # Publish message stored event for parsing listener
             from common.events.publisher import publish_event_async
@@ -247,6 +251,15 @@ class IngestionService:
         """Check if a message has been processed."""
         return message_id in self._processed_messages
         
+    def get_uptime_seconds(self) -> int:
+        """
+        Get service uptime in seconds.
+        
+        Returns:
+            int: Uptime in seconds since service start
+        """
+        return int((datetime.utcnow() - self._start_time).total_seconds())
+        
     def get_recent_messages(self, limit: int = 20) -> List[Dict[str, Any]]:
         """
         Get recent messages for dashboard display.
@@ -338,7 +351,12 @@ class IngestionService:
             'queue_depth': 0,
             'avg_processing_time_ms': 25,
             'validation_failures_today': int(self.ingestion_errors),
-            'last_processed_message': last_processed
+            'last_processed_message': last_processed,
+            # New metrics for uptime and duplicate handling
+            'uptime_seconds': self.get_uptime_seconds(),
+            'messages_ingested_today': int(processed_today),  # Alias for compatibility
+            'duplicates_skipped': int(self.duplicates_skipped),
+            'duplicates_skipped_today': int(self.duplicates_skipped)
         }
     
     def clear_all_messages(self) -> int:
@@ -353,9 +371,10 @@ class IngestionService:
             cleared_count = self.store.clear_all_messages()
             
             # Reset stats after clearing
-            self.stats['messages_processed'] = 0
-            self.stats['processing_errors'] = 0
-            self.stats['last_activity'] = None
+            self.messages_ingested = 0
+            self.ingestion_errors = 0
+            self.duplicates_skipped = 0
+            self.last_ingestion_time = None
             
             logger.info(f"Cleared {cleared_count} messages from ingestion pipeline")
             return cleared_count
