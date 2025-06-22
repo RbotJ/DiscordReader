@@ -36,6 +36,8 @@ class IngestionService:
         self.messages_ingested = 0
         self.ingestion_errors = 0
         self.last_ingestion_time = None
+        self._start_time = datetime.utcnow()  # Track service start time for uptime
+        self.duplicates_skipped = 0  # Track duplicate handling
         
         # Initialize dependencies
         self.validator = MessageValidator()

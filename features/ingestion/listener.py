@@ -56,7 +56,7 @@ class IngestionListener:
     async def _handle_event(self, event_type: str, data: Dict[str, Any]) -> bool:
         """Handle PostgreSQL NOTIFY events."""
         try:
-            logger.info(f"Received PostgreSQL event: {event_type} with data: {data}")
+            logger.info("[listener] Received event: %s with payload ID: %s", event_type, data.get('message_id'))
             self.stats['events_received'] += 1
             self._update_stats()
             
