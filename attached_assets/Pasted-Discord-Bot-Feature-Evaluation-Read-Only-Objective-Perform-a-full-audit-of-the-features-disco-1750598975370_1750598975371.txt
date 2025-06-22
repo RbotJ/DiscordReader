@@ -1,0 +1,64 @@
+Discord Bot Feature Evaluation (Read-Only)
+
+🎯 Objective:
+Perform a full audit of the features/discord_bot/ feature slice. This is the first component in the event flow pipeline and must comply with the current event-driven architecture using PostgreSQL LISTEN/NOTIFY.
+
+🔍 Evaluation Criteria
+Please inspect only—do not make any changes yet. Report your findings under these categories:
+
+✅ 1. Architectural Compliance
+
+Does the feature adhere to vertical-slice architecture principles?
+Are all external interactions (e.g., event publishing) routed through common.events.publisher?
+Are there any legacy patterns (e.g., in-memory bus, threading hacks, manual loops)?
+🔐 2. Event Flow Integrity
+
+When a Discord message is received:
+Is it triggering the correct publish_event_async(...) call?
+Are the published events logged?
+Are event payloads structured correctly (e.g., includes message_id, channel_id)?
+Are events being published from within the main async loop?
+🧼 3. Code Cleanliness and Maintainability
+
+Are there any unused functions, imports, or TODOs that should be cleaned up?
+Are there any duplicate logging, overly verbose debug output, or unreachable code paths?
+Are docstrings and comments up to date with the PostgreSQL event model?
+🧪 4. Testing & Observability
+
+Is the Discord bot’s behavior verifiable through logging?
+Are there tests or testable entry points for Discord message ingestion or mocking?
+Are there retry or fail-safe mechanisms in place (e.g., retry if Discord API temporarily fails)?
+🔒 5. Security & Resilience
+
+Are Discord bot tokens and secrets accessed securely from environment variables?
+Is there protection against untrusted message sources or formats?
+📂 Target Scope
+Evaluate the following files within features/discord_bot/:
+
+bot.py
+service.py
+api.py (if exists)
+__init__.py
+Any templates, helpers, or unused modules
+🧾 Expected Output Format
+Please return your findings in this format:
+
+### 🧠 Discord Bot Feature Evaluation
+
+#### ✅ Architecture Compliance
+...
+
+#### 🔁 Event Flow Integrity
+...
+
+#### 🧼 Code Cleanliness
+...
+
+#### 🧪 Testing & Observability
+...
+
+#### 🔒 Security & Resilience
+...
+
+### 🔍 Summary
+- No major issues / 1 minor issue found / Several improvements recommended...
