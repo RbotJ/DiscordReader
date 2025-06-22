@@ -12,8 +12,8 @@ from .consumer import (
     get_latest_events,
     get_events_by_correlation_id,
     poll_events,
-    get_latest_event_id,
-    subscribe_to_events
+    get_latest_event_id
+    # subscribe_to_events deprecated - use publisher.listen_for_events instead
 )
 from .models import Event
 

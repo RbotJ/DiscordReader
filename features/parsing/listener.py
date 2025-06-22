@@ -36,8 +36,8 @@ class ParsingListener:
             'last_processed': None
         }
         
-        # Initialize event consumer with Flask app context
-        self.consumer = EventConsumer('parsing', ['ingestion:message'], app=app)
+        # PostgreSQL LISTEN/NOTIFY used instead of legacy EventConsumer
+        self.app = app
         logger.info("Parsing listener initialized")
     
     async def start_listening(self):
