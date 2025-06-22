@@ -79,6 +79,7 @@ class IngestionListener:
             channel_id = data.get('channel_id')
             if not channel_id:
                 logger.warning("No channel_id in discord message event")
+                self.stats['errors'] += 1
                 return False
             
             # Trigger ingestion for this channel
