@@ -1,0 +1,52 @@
+erify Discord Bot Enhancements (Unit Tests, Logging, Uptime, Rate-Limit Handling)
+
+🎯 Objective:
+Verify that the following enhancements to the features/discord_bot/ slice were fully and correctly implemented. This is a read-only audit — do not make changes. For each item, report where and how it was implemented, and if anything is missing.
+
+✅ Checklist of Items to Verify
+1. Unit Tests Added
+
+File: tests/features/discord_bot/test_bot.py
+Confirm the existence of tests for:
+on_ready() — e.g., test_on_ready_logs_connection
+_trigger_ingestion() — e.g., test_trigger_ingestion_publishes_event
+Note whether mocks were used (e.g., mock.AsyncMock, patch)
+Confirm pytest-asyncio or equivalent is used for async tests
+2. Structured Logging in on_message()
+
+File: features/discord_bot/bot.py
+Confirm presence of logging like:
+"Received message from" with author and channel info
+"Triggering ingestion for message ID" before calling _trigger_ingestion
+Note if logs use logger.info vs logger.debug, and whether structured logging (e.g., JSON-style) is used
+3. Uptime Metric or Heartbeat
+
+File(s): bot.py, api.py
+Confirm _start_time is set in the bot class (e.g., self._start_time = datetime.utcnow())
+Confirm /api/discord/status includes uptime_seconds or heartbeat_ts
+4. Rate-Limit Warning Logs
+
+File: features/discord_bot/bot.py
+Confirm an event handler exists for on_rate_limit or similar
+Confirm it logs warning-level messages when Discord rate limits are encountered
+📦 Output Format
+Please return the results like this:
+
+### 🔍 Discord Bot Enhancement Verification
+
+#### ✅ Unit Tests
+✔ test_on_ready_logs_connection exists with mock objects
+✔ test_trigger_ingestion_publishes_event uses patch on publish_event_async
+
+#### ✅ Structured Logging
+✔ on_message() logs message receipt and ingestion trigger with logger.info
+
+#### ✅ Uptime / Heartbeat
+✔ self._start_time initialized in bot.py
+✔ /api/discord/status returns uptime_seconds
+
+#### ✅ Rate-Limit Logs
+✔ on_rate_limit event handler logs retry_after and bucket info
+
+### 🟢 All enhancements verified successfully
+If any part is missing, please list it with a ❌ and describe what was found instead. Let me know the results and I’ll guide any necessary follow-up fixes.
