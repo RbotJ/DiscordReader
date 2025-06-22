@@ -36,9 +36,16 @@ def get_discord_metrics():
             }), 503
         
         # Collect live metrics from bot instance
+        latency_ms = None
+        if bot.latency is not None and not (isinstance(bot.latency, float) and (bot.latency != bot.latency)):  # Check for NaN
+            try:
+                latency_ms = round(bot.latency * 1000)
+            except (ValueError, TypeError):
+                latency_ms = None
+        
         metrics = {
             'connected': bot.is_ready(),
-            'latency_ms': round(bot.latency * 1000) if bot.latency else None,
+            'latency_ms': latency_ms,
             'live_messages_today': bot._messages_today,
             'triggers_today': bot._triggers_today,
             'uptime_seconds': bot.get_uptime_seconds(),
@@ -68,10 +75,18 @@ def get_discord_status():
         if not bot:
             return jsonify({'status': 'not_initialized'}), 503
         
+        # Handle latency safely
+        latency_ms = None
+        if bot.latency is not None and not (isinstance(bot.latency, float) and (bot.latency != bot.latency)):  # Check for NaN
+            try:
+                latency_ms = round(bot.latency * 1000)
+            except (ValueError, TypeError):
+                latency_ms = None
+        
         return jsonify({
             'status': 'connected' if bot.is_ready() else 'disconnected',
             'user': str(bot.user) if bot.user else None,
-            'latency_ms': round(bot.latency * 1000) if bot.latency else None,
+            'latency_ms': latency_ms,
             'uptime_seconds': bot.get_uptime_seconds() if hasattr(bot, 'get_uptime_seconds') else 0
         })
         

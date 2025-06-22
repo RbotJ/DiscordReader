@@ -1,0 +1,59 @@
+Validate Live Discord Bot Connectivity
+🎯 Objective:
+Verify that the Discord bot is not only initialized and stored in app.config, but also actively connected to the Discord API and functioning properly.
+
+🔍 Validation Checklist
+Please verify the following — do not make changes yet unless instructed.
+
+✅ 1. Discord Gateway Connection
+
+Confirm that the bot has connected to the Discord WebSocket Gateway.
+There should be log entries such as:
+[INFO] Bot ready - logged in as MyBot#1234
+or:
+
+[INFO] Discord bot has connected to the gateway
+✅ 2. API Status Response Accuracy
+
+Hit /api/discord/status and confirm:
+{"status": "connected"}
+or "ready" — anything besides "not_initialized".
+Check the logic in the status endpoint:
+Does it return status based on bot.is_ready() or bot.client.is_ready()?
+Does it account for async delay during initial connection?
+✅ 3. Async Task Completion
+
+Confirm that any await bot.start() or await bot.connect() calls inside app.py or background startup complete successfully.
+Check for:
+Runtime warnings like "coroutine was never awaited"
+Errors like "no running event loop" during startup
+✅ 4. Event Handling Readiness
+
+Confirm that the bot has received and logged at least one event (e.g., on_ready, on_message).
+Validate that the message counter in the dashboard increases when a message is posted in the configured channel.
+✅ 5. Blueprint & Frontend Route Integrity
+
+Confirm that:
+/dashboard/discord/ route loads without errors
+register_all_blueprints() in app.py includes the Discord blueprint (discord_bp)
+JavaScript assets for the bot dashboard are loading (check console logs for missing files)
+📝 Output Format
+### 🔍 Discord Bot Live Status Verification
+
+#### ✅ Gateway Connection
+✔ Confirmed via "[Bot ready]" log
+
+#### ✅ API Status Response
+✔ /api/discord/status → {"status": "connected"}
+
+#### ✅ Async Initialization
+✔ Bot startup coroutine successfully awaited
+
+#### ✅ Event Handling
+✔ Bot received on_ready and on_message events
+
+#### ✅ Dashboard Routes
+✔ /dashboard/discord/ loads successfully
+
+### ✅ Discord bot is fully connected and operational
+If any steps fail, include detailed logs so we can follow up with a targeted patch. Let me know the agent’s findings — we’ll either greenlight the slice or surgically fix the last gaps.
