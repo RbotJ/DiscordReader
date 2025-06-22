@@ -76,10 +76,20 @@ def register_web_routes(app):
 
 def register_socketio_events():
     """Register Socket.IO event handlers"""
+    from flask import current_app
+    
     @socketio.on('connect')
     def handle_connect():
         logging.info('Client connected')
         emit('status', {'msg': 'Connected to trading server'})
+        
+        # Start async services if they haven't been started yet
+        if hasattr(current_app, 'config') and not current_app.config.get('ASYNC_SERVICES_STARTED'):
+            starter = current_app.config.get('ASYNC_SERVICES_STARTER')
+            if starter:
+                starter()
+                current_app.config['ASYNC_SERVICES_STARTED'] = True
+                logging.info("✅ Async services triggered via SocketIO connect")
     
     @socketio.on('disconnect')
     def handle_disconnect():
@@ -131,8 +141,9 @@ async def start_unified_async_services(app):
                     flask_app=app
                 )
                 
-                # Store bot instance in app config for API access
+                # Store bot instance in app config for API access BEFORE starting
                 app.config['DISCORD_BOT'] = bot
+                logging.info("✅ Discord bot initialized and registered in app.config['DISCORD_BOT']")
 
                 logging.info("Starting Discord bot in shared async context...")
                 # Get token from environment
@@ -145,7 +156,7 @@ async def start_unified_async_services(app):
                 
                 # Create task for Discord bot
                 bot_task = asyncio.create_task(bot.start(token))
-                logging.info("Discord bot started in shared async context")
+                logging.info("Discord bot task created in shared async context")
                 
                 # Wait for both tasks to complete
                 await asyncio.gather(listener_task, bot_task, return_exceptions=True)
@@ -170,8 +181,16 @@ def initialize_async_services(app):
             except Exception as e:
                 logging.error(f"Failed to start async services: {e}")
         
-        # Schedule services to start when SocketIO initializes
+        # Store starter function and immediately start services
         app.config['ASYNC_SERVICES_STARTER'] = start_services
+        
+        # Start services immediately using a deferred call after SocketIO init
+        @socketio.on('connect', namespace='/')
+        def trigger_async_services():
+            if not app.config.get('ASYNC_SERVICES_STARTED'):
+                start_services()
+                app.config['ASYNC_SERVICES_STARTED'] = True
+                logging.info("✅ Async services auto-started on SocketIO init")
         
     except Exception as e:
         logging.error(f"Failed to initialize async services: {e}")
@@ -187,10 +206,13 @@ def run_async_services_safe(app):
                 await start_unified_async_services(app)
         
         # Run within SocketIO's event loop
-        asyncio.create_task(run_services())
+        task = asyncio.create_task(run_services())
+        logging.info("✅ Async services task created and scheduled")
+        return task
         
     except Exception as e:
         logging.error(f"Error running async services: {e}")
+        return None
 
 def validate_environment():
     """
@@ -349,6 +371,16 @@ app = create_app()
 if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
     initialize_async_services(app)
     logging.info("Async services initialization enabled")
+    
+    # Trigger immediate startup using Flask's before_first_request equivalent
+    with app.app_context():
+        # Start services immediately after app creation
+        if not app.config.get('ASYNC_SERVICES_STARTED'):
+            starter = app.config.get('ASYNC_SERVICES_STARTER')
+            if starter:
+                starter()
+                app.config['ASYNC_SERVICES_STARTED'] = True
+                logging.info("✅ Async services started immediately during app initialization")
 else:
     logging.info("Async services disabled by ENABLE_DISCORD_BOT environment variable")
 
