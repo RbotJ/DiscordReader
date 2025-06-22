@@ -1,0 +1,54 @@
+Final Compliance Fix for PostgreSQL Event System
+
+🎯 Objective:
+Resolve the final architectural violations identified in the PostgreSQL Event System Compliance Audit. The goal is to eliminate thread-isolated services, remove legacy non-PostgreSQL event mechanisms, and clarify or remove ambiguous event publishers.
+
+🔧 Scope of Work: Fix Remaining Compliance Issues
+🚫 1. Eliminate Thread-Based Event Isolation
+
+📍 File: app.py (Lines 285–330)
+🔥 Issue: Uses asyncio.new_event_loop() and threading.Thread(target=...) to start services like the Discord bot.
+✅ Fix:
+Refactor to run all async services (Discord bot, event listeners) in the same main asyncio event loop.
+If needed, create a main async def run_all() function and call it via asyncio.run(run_all()) during app startup.
+❗ The goal is to guarantee that all event publishers and listeners share the same async context and DB pool.
+🧼 2. Remove or Deprecate Legacy EventConsumer
+
+📍 File: common/events/consumer.py
+🔥 Issue: Contains EventConsumer class using in-memory subscribe() and threaded polling.
+✅ Fix:
+If not actively used, delete the file.
+If used only in tests or temporary code, move it to a tests/legacy/ or dev_tools/ folder and add a header comment:
+# Deprecated: This file uses non-PostgreSQL in-memory events.
+# Do not use in production. Retained for isolated test scenarios only.
+❓ 3. Clarify enhanced_publisher.py Purpose
+
+📍 File: common/events/enhanced_publisher.py
+⚠️ Issue: Unclear if this file duplicates or conflicts with publisher.py.
+✅ Fix:
+If it wraps publisher.py with correlation IDs or audit trails, refactor it to clearly import and extend publish_event() from publisher.py.
+If redundant, merge useful features into publisher.py and delete it.
+Add documentation at the top of publisher.py to declare:
+"This is the only source of truth for event publishing. All features must use publish_event() or publish_event_async()."
+🧹 4. Delete Legacy Event/Alert Files
+
+🔍 Files:
+features/alerts/discord.old/publisher.py
+Any event_bus.py, event_queue.py, or .backup versions of events.py
+✅ Fix:
+Delete all unused legacy or .old/ event publishers
+Confirm no current imports point to these modules
+🧪 Test and Confirm
+After completing these changes:
+
+Ensure only one publisher: common/events/publisher.py
+All listeners use listen_for_events(...)
+All services run in the same event loop and share DB pool
+No Thread(...), asyncio.new_event_loop(), or publish_cross_slice_event() remain
+✅ Post-Fix Summary
+Once implemented, the system will:
+
+Publish events via PostgreSQL NOTIFY
+Listen via PostgreSQL LISTEN on a shared connection
+Share a unified event loop with no thread separation
+Maintain architectural clarity for future development

@@ -2,10 +2,12 @@
 Event Consumer Utilities
 
 Provides functions for retrieving and processing events from the database.
+
+DEPRECATED: EventConsumer class has been removed as it used non-PostgreSQL 
+threading-based polling. Use PostgreSQL LISTEN/NOTIFY via common/events/publisher.py instead.
 """
 
 import logging
-import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from flask import has_app_context

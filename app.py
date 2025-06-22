@@ -158,25 +158,39 @@ async def start_unified_async_services(app):
     except Exception:
         logging.exception("Unified async services startup failed")
 
-def start_discord_bot_background(app):
-    """Start Discord bot and services using unified async approach."""
-    import threading
+def initialize_async_services(app):
+    """Initialize async services without thread isolation."""
+    try:
+        # Store initialization function for deferred startup
+        def start_services():
+            try:
+                # Use SocketIO's background task system to avoid thread isolation
+                socketio.start_background_task(run_async_services_safe, app)
+                logging.info("Async services scheduled with SocketIO background task")
+            except Exception as e:
+                logging.error(f"Failed to start async services: {e}")
+        
+        # Schedule services to start when SocketIO initializes
+        app.config['ASYNC_SERVICES_STARTER'] = start_services
+        
+    except Exception as e:
+        logging.error(f"Failed to initialize async services: {e}")
+
+def run_async_services_safe(app):
+    """Safely run async services using SocketIO's event loop."""
     import asyncio
     
-    def run_unified_services():
-        """Run unified async services in background thread."""
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(start_unified_async_services(app))
-        except Exception as e:
-            logging.error(f"Error in unified async services: {e}")
-        finally:
-            loop.close()
-    
-    t = threading.Thread(target=run_unified_services, daemon=True, name="UnifiedAsyncServices")
-    t.start()
-    logging.info("Unified async services background thread launched")
+    try:
+        # Create async wrapper that handles app context
+        async def run_services():
+            with app.app_context():
+                await start_unified_async_services(app)
+        
+        # Run within SocketIO's event loop
+        asyncio.create_task(run_services())
+        
+    except Exception as e:
+        logging.error(f"Error running async services: {e}")
 
 def validate_environment():
     """
@@ -305,10 +319,19 @@ def create_app():
     @app.template_filter('localdate')
     def localdate_filter(utc_dt, tz_name="America/Chicago"):
         """Convert UTC datetime to local date for display."""
+        from datetime import datetime
+        from common.utils import to_local, ensure_utc
+        
         if utc_dt is None:
             return "N/A"
-        local_dt = to_local(utc_dt, tz_name)
-        return local_dt.strftime('%b %d, %Y')
+        
+        try:
+            utc_dt = ensure_utc(utc_dt)
+            local_dt = to_local(utc_dt, tz_name)
+            return local_dt.strftime('%b %d, %Y')
+        except Exception as e:
+            logging.warning(f"Failed to convert date to local time: {e}")
+            return str(utc_dt) if utc_dt else "N/A"
 
     socketio.init_app(app, cors_allowed_origins="*")
     register_feature_routes(app)
@@ -322,12 +345,12 @@ def create_app():
 # Build & wire everything
 app = create_app()
 
-# Start Discord bot only if enabled (default: true for backward compatibility)
+# Initialize async services (Discord bot, event listeners) only if enabled
 if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
-    start_discord_bot_background(app)
-    logging.info("Discord bot startup enabled")
+    initialize_async_services(app)
+    logging.info("Async services initialization enabled")
 else:
-    logging.info("Discord bot startup disabled by ENABLE_DISCORD_BOT environment variable")
+    logging.info("Async services disabled by ENABLE_DISCORD_BOT environment variable")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False, log_output=True)

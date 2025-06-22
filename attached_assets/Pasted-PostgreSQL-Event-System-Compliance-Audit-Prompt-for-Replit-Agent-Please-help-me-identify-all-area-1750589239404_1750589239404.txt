@@ -1,0 +1,65 @@
+PostgreSQL Event System Compliance Audit – Prompt for Replit Agent
+Please help me identify all areas of the codebase that deviate from the intended event-driven architecture, which mandates PostgreSQL LISTEN/NOTIFY as the inter-feature communication mechanism.
+
+✅ Checklist of Audit Questions
+1. 🔍 Search for In-Memory or Local Event Bus Implementations
+Are there any custom EventBus, PubSub, or Observer classes implemented that use in-process memory or threading?
+
+Are there any queue.Queue, asyncio.Queue, or multiprocessing.Queue used for cross-feature messaging?
+
+Are there any @event_handler or @on_event decorators that imply in-process signaling?
+
+→ These should be replaced or removed in favor of PostgreSQL NOTIFY/LISTEN.
+
+2. 🔍 Find Calls to Non-Postgres-Based Event Publishers
+Which modules contain publish_cross_slice_event() or publish_event() definitions?
+
+Are any of these implementations using in-memory function dispatch or non-Postgres messaging (e.g., redis, emit, or dispatch)?
+
+→ Confirm that only the implementation using asyncpg.execute("NOTIFY ...") is active.
+
+3. 🔍 Listener Bootstrapping Across Features
+Which features define start_listening() or equivalent listener initialization logic?
+
+Are any of these listener functions registering against non-database event channels?
+
+Are all listeners using asyncpg.add_listener() (or an abstraction thereof)?
+
+→ Listeners should be consolidated to one unified PostgreSQL-based system.
+
+4. 🔍 Threading or Event Loop Isolation Risks
+Are there any listeners or event processors running in threads with their own event loops or DB sessions?
+
+Does any slice (e.g. features/discord_bot) use a separate asyncio.run(), thread, or task group that might cause DB isolation?
+
+→ PostgreSQL NOTIFY events must be subscribed to on a long-lived connection, preferably shared.
+
+5. 🔍 Fallback or Stub Event Implementations
+Are there any “fallback” event implementations (e.g., dummy event handlers, no-op queues) used for tests or local dev?
+
+Do any test mocks override real event publishing with a local dictionary or mock bus?
+
+→ Flag these clearly and isolate them to test contexts only.
+
+6. 🔍 Ambiguous or Duplicated Event Utility Files
+Are there multiple events.py, bus.py, or event_utils.py scattered across the codebase?
+
+Are any feature slices (e.g. strategy, execution) maintaining their own mini-event buses?
+
+→ These should be unified under /common/events.py using Postgres.
+
+7. 🧪 Validate Event Flow Tracing and Logging
+Are all publish_event() and listen_for_events() calls logging their activity (event name, source, success/failure)?
+
+Are there any try/except blocks that suppress errors in publishing or listening?
+
+→ Log every event_type and channel for traceability.
+
+🎯 Output Format
+Please provide:
+
+✅ File paths and line numbers for each event system violation or risk
+
+🔧 Suggested fix for each issue (e.g., “Replace in-memory queue with Postgres NOTIFY”, “Consolidate listener into common/events.py”)
+
+🗂️ Summary list of all event publishers and listeners with type (Postgres / other)
