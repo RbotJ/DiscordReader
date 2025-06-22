@@ -84,8 +84,8 @@ async def test_on_ready_logs_connection(mock_flask_app, mock_services, mock_disc
         bot.client = mock_discord_client
         bot.aplus_setups_channel_id = "1372012942848954388"
     
-    # Mock publish_event_async
-    with patch('features.discord_bot.bot.publish_event_async') as mock_publish:
+    # Mock publish_event_async from the correct import path
+    with patch('common.events.publisher.publish_event_async') as mock_publish:
         # Trigger on_ready event
         with caplog.at_level(logging.INFO):
             await bot.on_ready()
@@ -123,8 +123,8 @@ async def test_trigger_ingestion_publishes_event(mock_flask_app, mock_services):
     message.content = "Test message content"
     message.created_at = datetime.utcnow()
     
-    # Mock publish_event_async
-    with patch('features.discord_bot.bot.publish_event_async') as mock_publish:
+    # Mock publish_event_async from the correct import path
+    with patch('common.events.publisher.publish_event_async') as mock_publish:
         await bot._trigger_ingestion(message)
     
     # Assert publish_event_async was called with correct parameters
