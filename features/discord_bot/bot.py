@@ -213,16 +213,16 @@ class TradingDiscordBot(discord.Client):
             # Debug log of full payload
             logger.debug("[discord_bot] Full payload: %r", payload)
             
-            # Use synchronous event publishing to avoid asyncio loop conflicts
-            from common.events.publisher import publish_event_safe
+            # Use direct database event publishing to bypass Flask context
+            from common.events.direct_publisher import publish_event_direct
             
-            publish_event_safe(
+            event_id = publish_event_direct(
                 event_type="discord.message.new",
-                data=payload,
                 channel="events",
+                payload=payload,
                 source="discord_bot"
             )
-            logger.info("[discord_bot] Published ingestion event: %s", payload["message_id"])
+            logger.info("[discord_bot] Published ingestion event directly: %s", event_id)
         except Exception as e:
             logger.error(f"Error publishing ingestion event: {e}")
             import traceback
