@@ -362,6 +362,60 @@ def create_app():
     from common.events.cleanup_service import cleanup_service
     cleanup_service.start_cleanup_scheduler()
     
+    # Start ingestion listener after database initialization
+    print("[init] About to attempt ingestion listener startup")
+    logging.info("[init] About to attempt ingestion listener startup")
+    
+    try:
+        print("[init] Importing required modules for ingestion listener")
+        import threading
+        import asyncio
+        from features.ingestion.listener import start_ingestion_listener
+        
+        print("[init] Modules imported successfully")
+        logging.info("[init] Modules imported successfully")
+        
+        def start_ingestion_background():
+            """Start ingestion listener in background thread."""
+            print("[init] Starting ingestion listener background thread execution...")
+            logging.info("[init] Starting ingestion listener background thread execution...")
+            try:
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                print("[init] Event loop created")
+                
+                # Start the ingestion listener
+                loop.run_until_complete(start_ingestion_listener())
+                print("✅ PostgreSQL ingestion listener started")
+                logging.info("✅ PostgreSQL ingestion listener started")
+                
+                # Keep the listener running
+                loop.run_forever()
+            except Exception as e:
+                print(f"Error in ingestion listener background thread: {e}")
+                logging.error(f"Error in ingestion listener background thread: {e}")
+                import traceback
+                logging.error(f"Traceback: {traceback.format_exc()}")
+            finally:
+                try:
+                    loop.close()
+                except:
+                    pass
+        
+        # Start in daemon thread to avoid blocking app startup
+        print("[init] Creating ingestion background thread")
+        ingestion_thread = threading.Thread(target=start_ingestion_background, daemon=True)
+        ingestion_thread.start()
+        print("[init] Ingestion listener background thread started")
+        logging.info("[init] Ingestion listener background thread started")
+        
+    except Exception as e:
+        print(f"Failed to start ingestion listener: {e}")
+        logging.error(f"Failed to start ingestion listener: {e}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
+    
     # Initialize Alpaca WebSocket for real-time ticker prices (optional)
     # Use ENABLE_LIVE_PRICE_STREAM=true to enable (default: disabled)
     live_stream_enabled = app.config.get("ENABLE_LIVE_PRICE_STREAM", "false").lower() == "true"
@@ -432,50 +486,7 @@ def create_app():
     register_web_routes(app)
     register_socketio_events()
     
-    # Start ingestion listener directly during app creation
-    logging.info("🔄 Attempting to start ingestion listener during app creation...")
-    
-    try:
-        import threading
-        import asyncio
-        from features.ingestion.listener import start_ingestion_listener
-        
-        logging.info("✅ Ingestion listener imports successful")
-        
-        def start_ingestion_background():
-            """Start ingestion listener in background thread."""
-            logging.info("🚀 Starting ingestion listener background thread execution...")
-            try:
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                logging.info("📡 Event loop created for ingestion listener")
-                
-                # Start the ingestion listener
-                loop.run_until_complete(start_ingestion_listener())
-                logging.info("✅ PostgreSQL ingestion listener started successfully")
-                
-                # Keep the listener running
-                loop.run_forever()
-            except Exception as e:
-                logging.error(f"❌ Error in ingestion listener background thread: {e}")
-                import traceback
-                logging.error(f"Traceback: {traceback.format_exc()}")
-            finally:
-                try:
-                    loop.close()
-                except:
-                    pass
-        
-        # Start in daemon thread to avoid blocking app startup
-        ingestion_thread = threading.Thread(target=start_ingestion_background, daemon=True)
-        ingestion_thread.start()
-        logging.info("✅ Ingestion listener background thread started successfully")
-        
-    except Exception as e:
-        logging.error(f"❌ Failed to start ingestion listener: {e}")
-        import traceback
-        logging.error(f"Traceback: {traceback.format_exc()}")
+
     
     # Note: Feature dashboard blueprints are already registered through register_all_blueprints
 
@@ -485,56 +496,71 @@ def create_app():
 app = create_app()
 
 # Initialize async services (Discord bot, event listeners) only if enabled
-logging.info("🔍 DEBUG: Checking ENABLE_DISCORD_BOT setting...")
+print("[STARTUP] Checking ENABLE_DISCORD_BOT setting...")
+logging.info("[STARTUP] Checking ENABLE_DISCORD_BOT setting...")
+
 if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
-    logging.info("🔍 DEBUG: Starting initialize_async_services...")
+    print("[STARTUP] Starting initialize_async_services...")
+    logging.info("[STARTUP] Starting initialize_async_services...")
     initialize_async_services(app)
-    logging.info("Async services initialization enabled")
+    print("[STARTUP] Async services initialization enabled")
+    logging.info("[STARTUP] Async services initialization enabled")
     
-    # Start ingestion listener using the initialized SocketIO instance
-    logging.info("🔍 DEBUG: Starting ingestion listener initialization...")
+    # Start ingestion listener immediately at module level
+    print("[STARTUP] Starting ingestion listener initialization...")
+    logging.info("[STARTUP] Starting ingestion listener initialization...")
+    
     try:
+        import threading
+        import asyncio
         from features.ingestion.listener import start_ingestion_listener
-        logging.info("🔍 DEBUG: Successfully imported start_ingestion_listener")
         
-        # Verify SocketIO is available
-        if not hasattr(socketio, 'start_background_task'):
-            raise RuntimeError("SocketIO not properly initialized")
-        logging.info("🔍 DEBUG: SocketIO background task method confirmed available")
+        print("[STARTUP] Successfully imported start_ingestion_listener")
+        logging.info("[STARTUP] Successfully imported start_ingestion_listener")
         
-        def ingestion_wrapper():
-            import asyncio
+        def start_ingestion_background():
+            """Start ingestion listener in background thread at module level."""
+            print("[STARTUP] Starting ingestion listener background thread execution...")
+            logging.info("[STARTUP] Starting ingestion listener background thread execution...")
             try:
-                logging.info("🔍 DEBUG: Creating event loop for ingestion listener")
-                # Create event loop for ingestion listener
+                # Create new event loop for this thread
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
+                print("[STARTUP] Event loop created for ingestion listener")
+                
+                # Start the ingestion listener
                 loop.run_until_complete(start_ingestion_listener())
+                print("✅ PostgreSQL ingestion listener started")
+                logging.info("✅ PostgreSQL ingestion listener started")
+                
+                # Keep the listener running
+                loop.run_forever()
             except Exception as e:
-                logging.error(f"Error in ingestion listener: {e}")
+                print(f"Error in ingestion listener background thread: {e}")
+                logging.error(f"Error in ingestion listener background thread: {e}")
+                import traceback
+                logging.error(f"Traceback: {traceback.format_exc()}")
             finally:
                 try:
                     loop.close()
                 except:
                     pass
         
-        socketio.start_background_task(ingestion_wrapper)
-        logging.info("[init] Ingestion listener startup scheduled")
+        # Start in daemon thread at module level
+        print("[STARTUP] Creating ingestion background thread")
+        ingestion_thread = threading.Thread(target=start_ingestion_background, daemon=True)
+        ingestion_thread.start()
+        print("[STARTUP] Ingestion listener background thread started")
+        logging.info("[STARTUP] Ingestion listener background thread started")
+        
     except Exception as e:
+        print(f"Failed to start ingestion listener: {e}")
         logging.error(f"Failed to start ingestion listener: {e}")
-        logging.exception("Ingestion listener startup error:")
-    
-    # Trigger immediate startup using Flask's before_first_request equivalent
-    with app.app_context():
-        # Start services immediately after app creation
-        if not app.config.get('ASYNC_SERVICES_STARTED'):
-            starter = app.config.get('ASYNC_SERVICES_STARTER')
-            if starter:
-                starter()
-                app.config['ASYNC_SERVICES_STARTED'] = True
-                logging.info("✅ Async services started immediately during app initialization")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
 else:
-    logging.info("🔍 DEBUG: Discord bot disabled, skipping ingestion listener")
+    print("[STARTUP] Discord bot disabled via ENABLE_DISCORD_BOT")
+    logging.info("[STARTUP] Discord bot disabled via ENABLE_DISCORD_BOT")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False, log_output=True)
