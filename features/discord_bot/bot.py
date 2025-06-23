@@ -195,19 +195,27 @@ class TradingDiscordBot(discord.Client):
         """Trigger ingestion event for new Discord message."""
         try:
             from common.events.publisher import publish_event_async
+            
+            # Build full metadata payload for ingestion slice
+            payload = {
+                "message_id": str(message.id),
+                "channel_id": str(message.channel.id),
+                "author_id": str(message.author.id),
+                "author_name": str(message.author.name),
+                "content": message.content,
+                "timestamp": message.created_at.isoformat()
+            }
+            
+            # Debug log of full payload
+            logger.debug("[discord_bot] Full payload: %r", payload)
+            
             await publish_event_async(
                 event_type="discord.message.new",
-                data={
-                    "message_id": str(message.id),
-                    "channel_id": str(message.channel.id),
-                    "author": str(message.author),
-                    "content_preview": message.content[:100] if message.content else "",
-                    "timestamp": message.created_at.isoformat()
-                },
+                data=payload,
                 channel="events",
                 source="discord_bot"
             )
-            logger.info(f"Published PostgreSQL ingestion event for message: {message.id}")
+            logger.info("[discord_bot] Published ingestion event: %s", payload["message_id"])
         except Exception as e:
             logger.error(f"Error publishing ingestion event: {e}")
 
