@@ -74,17 +74,41 @@ class IngestionListener:
 
     async def _handle_discord_message_event(self, event_type: str, data: Dict[str, Any]) -> bool:
         """Handle discord.message.new events from PostgreSQL NOTIFY with Flask context."""
+        message_id = data.get('message_id', 'unknown')
+        
         try:
+            logger.info(f"[listener] Processing Discord event for message: {message_id}")
+            
             # Extract channel_id from event data
             channel_id = data.get('channel_id')
             if not channel_id:
-                logger.warning("No channel_id in discord message event")
+                logger.warning(f"[listener] No channel_id in discord message event for {message_id}")
                 self.stats['errors'] += 1
                 return False
             
-            # Trigger ingestion for this channel with Flask context
-            if self.ingestion_service:
-                # Create Flask app context for database operations
+            # Verify we have ingestion service
+            if not self.ingestion_service:
+                logger.error(f"[listener] No ingestion service available for {message_id}")
+                self.stats['errors'] += 1
+                return False
+            
+            # Process with Flask context and detailed logging
+            logger.debug(f"[listener] Creating Flask context for message {message_id}")
+            
+            # Use existing Flask app instance instead of creating new one
+            from flask import current_app
+            try:
+                # Try to use current app context if available
+                if current_app:
+                    success = await self.ingestion_service.handle_event({
+                        'event_type': event_type,
+                        'payload': data
+                    })
+                else:
+                    raise RuntimeError("No Flask app context available")
+            except RuntimeError:
+                # Fall back to creating new app context
+                logger.debug(f"[listener] No current app context, creating new one for {message_id}")
                 from app import create_app
                 app = create_app()
                 
@@ -93,17 +117,20 @@ class IngestionListener:
                         'event_type': event_type,
                         'payload': data
                     })
-                    if success:
-                        self.stats['events_processed'] += 1
-                    return success
+            
+            if success:
+                logger.info(f"[listener] Successfully processed Discord event for message: {message_id}")
+                self.stats['events_processed'] += 1
             else:
-                logger.error("No ingestion service available")
-                return False
+                logger.error(f"[listener] Failed to process Discord event for message: {message_id}")
+                self.stats['errors'] += 1
+            
+            return success
                 
         except Exception as e:
-            logger.error(f"Error handling discord message event: {e}")
+            logger.error(f"[listener] Error handling discord message event for {message_id}: {e}")
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"[listener] Traceback: {traceback.format_exc()}")
             self.stats['errors'] += 1
             return False
     

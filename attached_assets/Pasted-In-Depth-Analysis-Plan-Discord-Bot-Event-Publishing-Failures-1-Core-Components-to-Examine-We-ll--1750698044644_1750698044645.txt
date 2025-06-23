@@ -1,0 +1,84 @@
+In-Depth Analysis Plan: Discord Bot Event Publishing Failures
+✅ 1. Core Components to Examine
+We'll audit these components for correctness and reliability:
+
+discord_bot.bot.on_message() → detects and initiates event flow
+
+publish_event_safe() or publish_event() → async-safe publisher
+
+common.events.publisher → responsible for formatting and routing event
+
+PostgreSQL NOTIFY mechanism → actual event bus
+
+Listener (start_ingestion_listener()) → consumes events from LISTEN events
+
+⚠️ 2. Textbook Failure Modes (and Where to Check for Them)
+Failure Mode	Symptoms	Audit Location	Typical Fix
+❌ Wrong event loop	“attached to a different loop” error	publish_event_safe() or loop.run_until_complete(...)	Use asyncio.run_coroutine_threadsafe or isolate loop
+❌ Missing async context	Event not awaited, no logs from publish_event	on_message() logic	Wrap await inside async def, or use thread-safe bridge
+❌ Event structure malformed	Event published, but ingestion crashes or ignores	publisher.py, validate payload	Add validation schema before publishing
+❌ No DB transaction / connection	“No connection” or “not in transaction” errors	publish_event() or DB wrapper	Ensure DB session management wraps NOTIFY
+❌ No PostgreSQL listener running	No LISTEN in pg_stat_activity	ingestion startup logs	Fix start_ingestion_listener() or startup flow
+❌ Publishing before listener starts	Message “published” but never seen	Startup timing mismatch	Delay bot startup until listener confirms active
+❌ Silently failing try/except	No logs, no errors, nothing happens	publish_event_safe() or bot logic	Add structured logging + logger.exception() blocks
+❌ Self-messages filtered too aggressively	Bot ignores everything, no logs	on_message() or message author ID check	Add debug log for skipped messages
+❌ Wrong channel or event_type	Events go to wrong listener or are ignored	channel="events" vs "discord", etc.	Standardize event_type/channel naming
+
+🧪 3. Checklist for Code Instrumentation
+To detect these reliably, implement the following:
+
+✅ Add debug logs:
+
+Before/after every publish
+
+Inside exception blocks (logger.exception)
+
+When message is skipped due to filters
+
+✅ Log the event_type, channel, and full payload being published
+
+✅ In pg_stat_activity, confirm presence of LISTEN events
+
+✅ In ingestion logs, confirm:
+
+Received event
+
+Processing message ID: xyz
+
+✅ In database:
+
+sql
+Copy
+Edit
+SELECT message_id, created_at FROM discord_messages ORDER BY created_at DESC LIMIT 5;
+🛠️ 4. Recommended Fix Plan (Once Failures Are Found)
+Wrap all event publishing logic in:
+
+python
+Copy
+Edit
+try:
+    await publish_event(...)
+except Exception as e:
+    logger.exception("Failed to publish event")
+If async context fails, fall back to:
+
+python
+Copy
+Edit
+asyncio.run_coroutine_threadsafe(..., loop)
+Ensure start_ingestion_listener() is:
+
+Not dependent on app traffic
+
+Confirmed by startup log like [init] Listener running
+
+Seen in pg_stat_activity as active
+
+Create a test harness that:
+
+Posts a fake message via the bot
+
+Publishes directly to event table
+
+Asserts message ID appears in discord_messages
