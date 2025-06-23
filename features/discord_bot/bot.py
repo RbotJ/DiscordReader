@@ -200,8 +200,6 @@ class TradingDiscordBot(discord.Client):
     async def _trigger_ingestion(self, message):
         """Trigger ingestion event for new Discord message."""
         try:
-            from common.events.publisher import publish_event_async
-            
             # Build full metadata payload for ingestion slice
             payload = {
                 "message_id": str(message.id),
@@ -215,7 +213,10 @@ class TradingDiscordBot(discord.Client):
             # Debug log of full payload
             logger.debug("[discord_bot] Full payload: %r", payload)
             
-            await publish_event_async(
+            # Use synchronous event publishing to avoid asyncio loop conflicts
+            from common.events.publisher import publish_event_safe
+            
+            publish_event_safe(
                 event_type="discord.message.new",
                 data=payload,
                 channel="events",
@@ -224,6 +225,8 @@ class TradingDiscordBot(discord.Client):
             logger.info("[discord_bot] Published ingestion event: %s", payload["message_id"])
         except Exception as e:
             logger.error(f"Error publishing ingestion event: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def _startup_catchup_ingestion(self):
         """Trigger startup catchup ingestion using ingestion service."""
