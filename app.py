@@ -129,9 +129,17 @@ async def start_unified_async_services(app):
                 # Start PostgreSQL event listener in shared async context
                 from features.ingestion.listener import start_ingestion_listener
                 
-                # Create task for PostgreSQL listener
-                listener_task = asyncio.create_task(start_ingestion_listener())
-                logging.info("PostgreSQL ingestion listener started in shared async context")
+                # Create task for PostgreSQL listener with proper error handling
+                async def start_listener_with_logging():
+                    try:
+                        logging.info("Starting PostgreSQL ingestion listener...")
+                        await start_ingestion_listener()
+                    except Exception as e:
+                        logging.error(f"Failed to start PostgreSQL listener: {e}")
+                        logging.exception("PostgreSQL listener startup error:")
+                
+                listener_task = asyncio.create_task(start_listener_with_logging())
+                logging.info("PostgreSQL ingestion listener task created in shared async context")
 
                 # Discord slice
                 from features.discord_bot.bot import TradingDiscordBot
