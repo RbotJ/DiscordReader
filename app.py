@@ -440,21 +440,27 @@ def create_app():
 app = create_app()
 
 # Initialize async services (Discord bot, event listeners) only if enabled
+logging.info("🔍 DEBUG: Checking ENABLE_DISCORD_BOT setting...")
 if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
+    logging.info("🔍 DEBUG: Starting initialize_async_services...")
     initialize_async_services(app)
     logging.info("Async services initialization enabled")
     
     # Start ingestion listener using the initialized SocketIO instance
+    logging.info("🔍 DEBUG: Starting ingestion listener initialization...")
     try:
         from features.ingestion.listener import start_ingestion_listener
+        logging.info("🔍 DEBUG: Successfully imported start_ingestion_listener")
         
         # Verify SocketIO is available
         if not hasattr(socketio, 'start_background_task'):
             raise RuntimeError("SocketIO not properly initialized")
+        logging.info("🔍 DEBUG: SocketIO background task method confirmed available")
         
         def ingestion_wrapper():
             import asyncio
             try:
+                logging.info("🔍 DEBUG: Creating event loop for ingestion listener")
                 # Create event loop for ingestion listener
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -483,7 +489,7 @@ if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
                 app.config['ASYNC_SERVICES_STARTED'] = True
                 logging.info("✅ Async services started immediately during app initialization")
 else:
-    logging.info("Async services disabled by ENABLE_DISCORD_BOT environment variable")
+    logging.info("🔍 DEBUG: Discord bot disabled, skipping ingestion listener")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False, log_output=True)
