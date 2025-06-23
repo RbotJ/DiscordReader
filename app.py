@@ -432,45 +432,7 @@ def create_app():
     register_web_routes(app)
     register_socketio_events()
     
-    # Start ingestion listener using threading approach
-    try:
-        import threading
-        from features.ingestion.service import IngestionService
-        from features.ingestion.listener import IngestionListener
-        
-        # Initialize ingestion service and listener
-        ingestion_service = IngestionService()
-        ingestion_listener = IngestionListener(ingestion_service)
-        
-        def start_listener_thread():
-            """Start the PostgreSQL listener in a separate thread."""
-            import asyncio
-            try:
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                # Start the listener
-                loop.run_until_complete(ingestion_listener.start())
-                logging.info("PostgreSQL listener started successfully")
-                
-                # Keep the listener running
-                loop.run_forever()
-            except Exception as e:
-                logging.error(f"Error in ingestion listener thread: {e}")
-            finally:
-                try:
-                    loop.close()
-                except:
-                    pass
-        
-        # Start listener in daemon thread
-        listener_thread = threading.Thread(target=start_listener_thread, daemon=True)
-        listener_thread.start()
-        logging.info("Ingestion listener thread started during app creation")
-        
-    except Exception as e:
-        logging.error(f"Failed to start ingestion listener during app creation: {e}")
+    # Ingestion listener will be started with unified async services
     
     # Note: Feature dashboard blueprints are already registered through register_all_blueprints
 
