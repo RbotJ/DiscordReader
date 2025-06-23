@@ -1,0 +1,51 @@
+Restore Event-Driven Architecture
+Please help me restore the original event-driven architecture in my trading application’s Discord-to-Ingestion pipeline. Here’s what I need:
+
+✅ 1. Reinstate Event Bus Publishing in the Discord Bot
+
+Replace the use of publish_event_direct() in the Discord bot with await publish_event() or a properly wrapped asyncio.run_coroutine_threadsafe(...) version.
+
+Ensure publish_event_safe() or publish_event() is used and logs event publishing correctly.
+
+Fix any “attached to a different loop” errors by isolating the event loop or using a thread-safe wrapper.
+
+✅ 2. Startup PostgreSQL Listener Automatically on App Launch
+
+Ensure the ingestion listener (start_ingestion_listener() or equivalent) is started automatically:
+
+Inside create_app() or via a Flask before_first_request handler
+
+OR with a @socketio.on('connect') background task if appropriate
+
+Verify the logs show “PostgreSQL ingestion listener started” and that pg_stat_activity confirms a LISTEN "events" connection.
+
+✅ 3. Remove Curl Trigger Dependency
+
+Remove the need to manually trigger the ingestion listener using curl localhost:5000.
+
+Ensure the ingestion listener is started unconditionally during normal application startup, not based on user traffic.
+
+✅ 4. Preserve Direct Publishing for Testing Only
+
+Keep publish_event_direct() only in test scripts or fallback diagnostics, not in production Discord bot code.
+
+Clearly log if it’s used to indicate that event bus was bypassed.
+
+✅ 5. Verify Full Pipeline
+
+Simulate a Discord message through the bot.
+
+Verify logs for:
+
+Published ingestion event
+
+Received event: discord.message.new
+
+Processing Discord message
+
+Stored message ID
+
+Confirm the latest discord_messages row matches the test message.
+
+Please walk through the required edits step by step, log key verification points, and confirm that the system now uses only the intended architecture.
+I want the event bus and listener system to be the default, with direct publishing strictly reserved for fallback diagnostics.
