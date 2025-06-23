@@ -1,0 +1,73 @@
+Since the Discord bot runs outside Flask’s context and doesn’t share its async loop, using Flask-bound publishing (publish_event_safe) fails silently. Here's a recommended prompt to finalize Step 2 – Event Publishing, ensure direct DB writes from the bot, and enable proper logging:
+
+✅ Replit Prompt — Fix Event Publishing from Discord Bot
+markdown
+Copy
+Edit
+Please fix Step 2: Event Publishing from the Discord bot.
+
+Problem:
+- The Discord bot runs in an async context and fails to publish ingestion events because `publish_event_safe()` checks for Flask app context.
+- No events appear in the `events` table.
+- No logs show "[discord_bot] Published ingestion event: ..."
+
+Instructions:
+1. In `common/events/publisher.py`, add a new function:
+```python
+def publish_event_direct(event_type: str, channel: str, payload: dict, source: str = "unknown"):
+    from common.db import SessionLocal
+    from common.models import Event
+    from datetime import datetime
+    import uuid
+    session = SessionLocal()
+    try:
+        event = Event(
+            id=str(uuid.uuid4()),
+            event_type=event_type,
+            channel=channel,
+            payload=payload,
+            source=source,
+            correlation_id=payload.get("message_id", str(uuid.uuid4())),
+            created_at=datetime.utcnow(),
+        )
+        session.add(event)
+        session.commit()
+        return event.id
+    except Exception as e:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+In features/discord_bot/bot.py, replace the call to publish_event_safe or publish_event_async with:
+
+python
+Copy
+Edit
+from common.events.publisher import publish_event_direct
+
+event_id = publish_event_direct("discord.message.new", "events", payload, source="discord_bot")
+logger.info("[discord_bot] Published ingestion event directly: %s", event_id)
+Restart the application.
+
+Post a test message in #aplus-setups.
+
+Run:
+
+sql
+Copy
+Edit
+SELECT event_type, correlation_id, created_at FROM events ORDER BY created_at DESC LIMIT 5;
+Also check logs for:
+
+bash
+Copy
+Edit
+grep -E "\[discord_bot\] Published ingestion event directly" /proc/$(pgrep -f gunicorn)/fd/1
+Confirm:
+✅ Event appears in DB
+✅ Log confirms publishing
+✅ Correlation ID matches test message ID
+
+If this works, you can optionally wrap publish_event_direct() with retry logic or switch back to async in the future when your architecture evolves.
+
+Let me know when you’re ready to continue to Step 3 – Listener Receipt & Processing.

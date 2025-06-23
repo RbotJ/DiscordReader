@@ -245,7 +245,7 @@ def publish_event_safe(
 ) -> bool:
     """
     Safe event publishing that works both inside and outside Flask context.
-    Falls back to logging when Flask context is not available.
+    Uses direct database connection when Flask context is not available.
     
     Args:
         event_type: Type of event
@@ -255,14 +255,74 @@ def publish_event_safe(
         correlation_id: UUID string for tracing
         
     Returns:
-        bool: True if published or logged successfully
+        bool: True if published successfully
     """
     if has_app_context():
         return publish_event(event_type, data, channel, source, correlation_id)
     else:
-        # Log the event when Flask context is not available
-        logger.info(f"Event [{event_type}] on channel [{channel}] from [{source}]: {data}")
+        # Use direct database connection when Flask context not available
+        return _publish_event_direct(event_type, data, channel, source, correlation_id)
+
+
+def _publish_event_direct(
+    event_type: str, 
+    data: dict, 
+    channel: str = "events", 
+    source: str = None, 
+    correlation_id: str = None
+) -> bool:
+    """
+    Direct database event publishing without Flask context.
+    """
+    import os
+    import psycopg2
+    import json
+    import uuid
+    from datetime import datetime
+    
+    try:
+        # Generate correlation ID if not provided
+        if not correlation_id:
+            correlation_id = str(uuid.uuid4())
+        
+        # Create event payload
+        event_payload = {
+            'event_type': event_type,
+            'data': data,
+            'source': source or 'unknown',
+            'correlation_id': correlation_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        # Connect to database
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            logger.error("No DATABASE_URL available for direct event publishing")
+            return False
+            
+        conn = psycopg2.connect(database_url)
+        cur = conn.cursor()
+        
+        # Insert into events table
+        cur.execute("""
+            INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (event_type, channel, json.dumps(data), source, correlation_id, datetime.utcnow()))
+        
+        # Send PostgreSQL NOTIFY
+        notify_payload = json.dumps(event_payload)
+        cur.execute(f'NOTIFY "{channel}", %s', (notify_payload,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Event [{event_type}] published successfully via direct connection")
         return True
+        
+    except Exception as e:
+        logger.error(f"Error in direct event publishing: {e}")
+        return False
 
 
 def flush_event_buffer():

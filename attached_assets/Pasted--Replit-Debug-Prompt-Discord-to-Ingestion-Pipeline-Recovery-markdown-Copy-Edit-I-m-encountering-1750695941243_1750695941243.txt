@@ -1,0 +1,67 @@
+🛠 Replit Debug Prompt – Discord-to-Ingestion Pipeline Recovery
+
+markdown
+Copy
+Edit
+I'm encountering issues with the Discord-to-Ingestion pipeline. Please follow these steps to diagnose and fix the system. Do not skip ahead — verify each step in order.
+
+---
+
+**STEP 1: Verify Discord Bot Detection**
+- Confirm the bot is connected and monitoring the correct channel
+- Post a new test message in `#aplus-setups`
+- Check for logs like:
+  - `[on_message] Triggering ingestion for message ID: ...`
+
+---
+
+**STEP 2: Verify Event Publishing**
+- Check that `publish_event_async()` is called from the bot with:
+  - event = `"discord.message.new"`
+  - channel = `"events"`
+- Ensure the payload includes:
+  - message_id, channel_id, author_id, author_name, content, timestamp
+- Fix any `asyncio loop` attachment errors
+- Confirm logs:
+  - `[discord_bot] Published ingestion event: ...`
+  - `[discord_bot] Full payload: { ... }`
+
+---
+
+**STEP 3: Verify PostgreSQL Listener**
+- Confirm the ingestion listener starts with the app (during first request or boot)
+- Check logs:
+  - `PostgreSQL ingestion listener started`
+  - `Received event: discord.message.new ...`
+- Verify active LISTEN with:
+```sql
+SELECT pid, application_name, state, query FROM pg_stat_activity WHERE query LIKE '%LISTEN%' OR application_name LIKE '%python%';
+STEP 4: Verify Ingestion Event Processing
+
+Confirm that handle_event() in the ingestion service routes the event
+
+Check logs:
+
+[ingestion] Processing Discord message: ...
+
+[ingestion] Stored message ID: ...
+
+STEP 5: Confirm Message Storage
+
+Run:
+
+sql
+Copy
+Edit
+SELECT message_id, content, created_at FROM discord_messages ORDER BY created_at DESC LIMIT 1;
+Confirm the new test message appears
+
+Confirm /dashboard/ingestion/enhanced-metrics.json shows:
+
+messages_ingested_today > 0
+
+last_ingestion is recent
+
+If any step fails, debug it in place and report exactly what failed with logs or traceback. Ensure the entire Discord → Event → Listener → Service → Database flow is confirmed working.
+
+Let’s resolve this pipeline once and for all. ✅
