@@ -250,31 +250,6 @@ def initialize_async_services(app):
                 logging.error(f"Unexpected error during Discord bot initialization: {e}")
                 logging.exception("Full initialization traceback:")
         
-        # Start ingestion listener independently of Discord bot
-        try:
-            from features.ingestion.listener import start_ingestion_listener
-            
-            def ingestion_wrapper():
-                import asyncio
-                try:
-                    # Create event loop for ingestion listener
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(start_ingestion_listener())
-                except Exception as e:
-                    logging.error(f"Error in ingestion listener: {e}")
-                finally:
-                    try:
-                        loop.close()
-                    except:
-                        pass
-            
-            socketio.start_background_task(ingestion_wrapper)
-            logging.info("[init] Ingestion listener startup scheduled")
-        except Exception as e:
-            logging.error(f"Failed to start ingestion listener: {e}")
-            logging.exception("Ingestion listener startup error:")
-        
     except Exception as e:
         logging.error(f"Failed to initialize async services: {e}")
 
@@ -468,6 +443,35 @@ app = create_app()
 if os.getenv("ENABLE_DISCORD_BOT", "true").lower() == "true":
     initialize_async_services(app)
     logging.info("Async services initialization enabled")
+    
+    # Start ingestion listener using the initialized SocketIO instance
+    try:
+        from features.ingestion.listener import start_ingestion_listener
+        
+        # Verify SocketIO is available
+        if not hasattr(socketio, 'start_background_task'):
+            raise RuntimeError("SocketIO not properly initialized")
+        
+        def ingestion_wrapper():
+            import asyncio
+            try:
+                # Create event loop for ingestion listener
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(start_ingestion_listener())
+            except Exception as e:
+                logging.error(f"Error in ingestion listener: {e}")
+            finally:
+                try:
+                    loop.close()
+                except:
+                    pass
+        
+        socketio.start_background_task(ingestion_wrapper)
+        logging.info("[init] Ingestion listener startup scheduled")
+    except Exception as e:
+        logging.error(f"Failed to start ingestion listener: {e}")
+        logging.exception("Ingestion listener startup error:")
     
     # Trigger immediate startup using Flask's before_first_request equivalent
     with app.app_context():
