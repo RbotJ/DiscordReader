@@ -174,7 +174,10 @@ class IngestionService:
             event_type = event.get('event_type', 'unknown')
             payload = event.get('payload', {})
             
-            if event_type == 'message.stored':
+            if event_type == 'discord.message.new':
+                # Handle new Discord message from bot
+                return await self._process_discord_message_event(payload)
+            elif event_type == 'message.stored':
                 # Handle stored message event - delegate to parsing slice
                 return await self._handle_message_stored_event(event)
             else:
@@ -185,6 +188,45 @@ class IngestionService:
             logger.error(f"Error handling event: {e}")
             return False
     
+    async def _process_discord_message_event(self, payload: Dict[str, Any]) -> bool:
+        """
+        Process a discord.message.new event payload.
+        
+        Args:
+            payload: Discord message payload from bot
+            
+        Returns:
+            bool: True if message was processed successfully
+        """
+        try:
+            message_id = payload.get('message_id')
+            logger.info("[ingestion] Processing Discord message: %s", message_id)
+            
+            # Convert payload to DiscordMessageDTO
+            message_dto = DiscordMessageDTO(
+                message_id=payload.get('message_id'),
+                channel_id=payload.get('channel_id'),
+                author_id=payload.get('author_id'),
+                author_name=payload.get('author_name'),
+                content=payload.get('content', ''),
+                timestamp=self.processor.parse_timestamp(payload.get('timestamp'))
+            )
+            
+            # Process through existing validation and storage pipeline
+            success = await self.process_message(message_dto)
+            
+            if success:
+                logger.info("[ingestion] Successfully processed Discord message: %s", message_id)
+            else:
+                logger.warning("[ingestion] Failed to process Discord message: %s", message_id)
+                
+            return success
+            
+        except Exception as e:
+            logger.error("[ingestion] Error processing Discord message event: %s", e)
+            logger.exception("[ingestion] Failed to process message payload: %r", payload)
+            return False
+
     async def _handle_message_stored_event(self, event: Dict[str, Any]) -> bool:
         """Handle a message stored event by publishing to parsing slice."""
         try:

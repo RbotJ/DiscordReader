@@ -1,0 +1,73 @@
+Verify Ingestion Slice Handles Enriched Discord Payload
+🎯 Objective:
+Verify that the features/ingestion/ slice correctly receives and processes the full Discord message payload published by the discord_bot slice. Ensure all fields are validated, stored, and logged appropriately.
+
+🔍 Checklist for features/ingestion/
+1. Event Listener Behavior
+📍 File: listener.py
+
+Confirms it listens for "discord.message.new" via listen_for_events(...)
+
+Logs incoming event (e.g., "Received event: discord.message.new with payload ID...")
+
+Passes full payload to process_discord_message_event(...) or equivalent
+
+2. Payload Field Handling
+📍 File: service.py (or validator.py)
+
+Confirms fields from the payload are accessed:
+
+message_id, channel_id, author_id, author_name, content, timestamp
+
+Logs any missing or invalid fields
+
+Ensures content validation (length, formatting, not empty)
+
+3. Storage Layer
+📍 File: store.py or models.py
+
+Confirms data model or DB insert includes:
+
+message_id, author_id, author_name, content, timestamp, etc.
+
+If not already present, suggest whether these fields should be added
+
+4. Logging
+Confirms log output like:
+
+"Stored message ID: ...", "Rejected message ID: ... due to validation error"
+
+Logs payload or field issues (e.g., truncated content, malformed timestamps)
+
+5. Metrics / Observability
+Confirms:
+
+messages_ingested_today metric is updated
+
+last_ingestion timestamp is updated
+
+duplicates_skipped is tracked
+
+📦 Output Format
+markdown
+Copy
+Edit
+### ✅ Ingestion Payload Handling Verification
+
+#### 1. Listener
+✔ Receives "discord.message.new" and calls handle_event
+
+#### 2. Payload Field Access
+✔ Accesses all required fields: message_id, channel_id, author_id, author_name, content, timestamp
+
+#### 3. Storage
+✔ store.save_raw_message() includes enriched fields
+
+#### 4. Logging
+✔ Logs stored or skipped messages with appropriate detail
+
+#### 5. Metrics
+✔ messages_ingested_today increments on success
+
+### 🟢 Ingestion is correctly processing enriched Discord payloads
+Let me know what it returns, and I’ll help patch or expand anything that's missing.

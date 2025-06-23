@@ -1,0 +1,87 @@
+You're receiving the event — but there's no "bridge function" in the ingestion service to process "discord.message.new" payloads, validate them, and store them. This is a textbook gap between the listener and processing logic.
+
+🎯 Objective: Add a handle_discord_message_event() in the ingestion service
+This function should:
+
+Accept the published payload (already enriched)
+
+Convert it to a DiscordMessageDTO (or model/dict depending on your pattern)
+
+Run it through your existing validation + storage pipeline
+
+Log results and emit a "message.stored" event
+
+🛠️ Replit Agent Prompt: Implement Ingestion Handler for Discord Events
+Here’s the fix prompt to close the ingestion loop completely:
+
+🛠️ Replit Agent Prompt: Add Discord Message Event Handler to Ingestion Slice
+🎯 Objective:
+Implement a new method in the ingestion service to process discord.message.new events from the listener. This will complete the ingestion pipeline and allow full Discord messages to be validated and stored.
+
+📂 Target Files
+features/ingestion/service.py
+
+features/ingestion/listener.py (only to wire in the new handler)
+
+🔧 Required Changes
+1. In service.py, add:
+python
+Copy
+Edit
+async def process_discord_message_event(payload: dict):
+    from .models import DiscordMessageModel
+    from .store import insert_message
+    from .validator import validate_message
+    from common.events.publisher import publish_event_async
+    from common.utils import logger
+
+    try:
+        validated = validate_message(payload)
+        message_id = payload.get("message_id")
+
+        logger.info("[ingestion] Validated message: %s", message_id)
+
+        await insert_message(validated)
+
+        logger.info("[ingestion] Stored message ID: %s", message_id)
+
+        await publish_event_async("message.stored", {"message_id": message_id}, channel="events")
+
+    except Exception as e:
+        logger.exception("[ingestion] Failed to process message: %r", payload)
+2. In listener.py, update handle_event(...):
+python
+Copy
+Edit
+if event_type == "discord.message.new":
+    await process_discord_message_event(payload)
+✅ Logging Requirements
+Log successful validation and storage
+
+Log failed processing with payload summary
+
+⚠ Do Not:
+Add DB logic to the listener
+
+Skip validation step
+
+Publish "message.stored" unless storage succeeded
+
+📦 After Fix Validation
+You should now see:
+
+"Received event: discord.message.new"
+
+"Validated message: ..."
+
+"Stored message ID: ..."
+
+"Published message.stored event"
+
+And metrics like:
+
+messages_ingested_today should increment
+
+last_ingestion timestamp should update
+
+Let me know once this is applied — and I’ll guide the verification flow to confirm everything works end-to-end.
