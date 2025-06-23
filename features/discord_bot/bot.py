@@ -199,6 +199,7 @@ class TradingDiscordBot(discord.Client):
 
     async def _trigger_ingestion(self, message):
         """Trigger ingestion event for new Discord message."""
+        logger.info("[discord_bot] Starting _trigger_ingestion for message: %s", message.id)
         try:
             # Build full metadata payload for ingestion slice
             payload = {
@@ -210,11 +211,11 @@ class TradingDiscordBot(discord.Client):
                 "timestamp": message.created_at.isoformat()
             }
             
-            # Debug log of full payload
-            logger.debug("[discord_bot] Full payload: %r", payload)
+            logger.info("[discord_bot] Built payload for message: %s", payload["message_id"])
             
             # Use direct database event publishing to bypass Flask context
             from common.events.direct_publisher import publish_event_direct
+            logger.info("[discord_bot] About to call publish_event_direct")
             
             event_id = publish_event_direct(
                 event_type="discord.message.new",
