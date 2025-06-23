@@ -177,6 +177,10 @@ class IngestionService:
             if event_type == 'discord.message.new':
                 # Handle new Discord message from bot
                 return await self._process_discord_message_event(payload)
+            elif event_type == 'discord.message.recovery':
+                # Handle recovery message event - same as new message but with recovery flag
+                logger.info(f"[ingestion] Processing recovery event for message: {payload.get('message_id', 'unknown')}")
+                return await self._process_discord_message_event(payload)
             elif event_type == 'message.stored':
                 # Handle stored message event - delegate to parsing slice
                 return await self._handle_message_stored_event(event)

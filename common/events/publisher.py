@@ -53,7 +53,7 @@ async def publish_event_async(
     correlation_id: str = None
 ) -> bool:
     """
-    Publish event using PostgreSQL NOTIFY with thread-safe connection handling.
+    Publish event using PostgreSQL NOTIFY with comprehensive error handling and recovery.
     
     Args:
         event_type: Type of event (e.g. 'discord.message.new')
@@ -68,10 +68,14 @@ async def publish_event_async(
     import asyncpg
     import os
     
+    message_id = data.get('message_id', 'unknown')
+    
     try:
         # Generate correlation ID if not provided
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
+        
+        logger.debug(f"[publisher] Publishing {event_type} for message {message_id}")
         
         # Create event payload
         event_payload = {
