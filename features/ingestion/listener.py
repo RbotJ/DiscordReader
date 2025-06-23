@@ -73,7 +73,7 @@ class IngestionListener:
             return False
 
     async def _handle_discord_message_event(self, event_type: str, data: Dict[str, Any]) -> bool:
-        """Handle discord.message.new events from PostgreSQL NOTIFY."""
+        """Handle discord.message.new events from PostgreSQL NOTIFY with Flask context."""
         try:
             # Extract channel_id from event data
             channel_id = data.get('channel_id')
@@ -82,21 +82,28 @@ class IngestionListener:
                 self.stats['errors'] += 1
                 return False
             
-            # Trigger ingestion for this channel
+            # Trigger ingestion for this channel with Flask context
             if self.ingestion_service:
-                success = await self.ingestion_service.handle_event({
-                    'event_type': event_type,
-                    'payload': data
-                })
-                if success:
-                    self.stats['events_processed'] += 1
-                return success
+                # Create Flask app context for database operations
+                from app import create_app
+                app = create_app()
+                
+                with app.app_context():
+                    success = await self.ingestion_service.handle_event({
+                        'event_type': event_type,
+                        'payload': data
+                    })
+                    if success:
+                        self.stats['events_processed'] += 1
+                    return success
             else:
                 logger.error("No ingestion service available")
                 return False
                 
         except Exception as e:
             logger.error(f"Error handling discord message event: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             self.stats['errors'] += 1
             return False
     
