@@ -53,7 +53,7 @@ async def publish_event_async(
     correlation_id: str = None
 ) -> bool:
     """
-    Publish event using PostgreSQL NOTIFY.
+    Publish event using PostgreSQL NOTIFY with thread-safe connection handling.
     
     Args:
         event_type: Type of event (e.g. 'discord.message.new')
@@ -65,9 +65,10 @@ async def publish_event_async(
     Returns:
         bool: True if event published successfully, False otherwise
     """
+    import asyncpg
+    import os
+    
     try:
-        pool = await get_connection_pool()
-        
         # Generate correlation ID if not provided
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
@@ -81,18 +82,32 @@ async def publish_event_async(
             'timestamp': datetime.utcnow().isoformat()
         }
         
-        async with pool.acquire() as conn:
+        # Use direct asyncpg connection to avoid pool conflicts
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            logger.error("No DATABASE_URL available for async event publishing")
+            return False
+        
+        # Create a new connection for this operation
+        conn = await asyncpg.connect(database_url)
+        
+        try:
             # Insert into events table for persistence
             await conn.execute("""
                 INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6)
-            """, event_type, channel, data, source, correlation_id, datetime.utcnow())
+            """, event_type, channel, json.dumps(data), source, correlation_id, datetime.utcnow())
             
-            # Send NOTIFY for real-time listeners
-            await conn.execute(f"NOTIFY {channel}, $1", json.dumps(event_payload))
-        
-        logger.info(f"📢 Published event: {event_type} on channel {channel} from {source}")
-        return True
+            # Send NOTIFY for real-time listeners using string interpolation
+            payload_str = json.dumps(event_payload)
+            notify_sql = f"NOTIFY \"{channel}\", '{payload_str}'"
+            await conn.execute(notify_sql)
+            
+            logger.info(f"📢 Published event: {event_type} on channel {channel} from {source}")
+            return True
+            
+        finally:
+            await conn.close()
         
     except Exception as e:
         logger.error(f"Failed to publish event {event_type}: {e}")
