@@ -204,7 +204,7 @@ class TradingDiscordBot(discord.Client):
                     "content_preview": message.content[:100] if message.content else "",
                     "timestamp": message.created_at.isoformat()
                 },
-                channel="discord",
+                channel="events",
                 source="discord_bot"
             )
             logger.info(f"Published PostgreSQL ingestion event for message: {message.id}")

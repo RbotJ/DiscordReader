@@ -1,0 +1,57 @@
+Audit Discord-to-Ingestion Event Flow
+
+🎯 Objective:
+Audit the event communication between the discord_bot and ingestion slices to diagnose why Discord messages are not triggering ingestion. This is a read-only analysis — do not modify any code.
+
+🔍 Areas to Audit
+1. Check if publish_event_async(...) is being called and awaited
+
+📍 File: features/discord_bot/bot.py (inside on_message() or _trigger_ingestion())
+Confirm:
+publish_event_async("discord.message.new", payload) is called
+The call is awaited
+Errors are not suppressed (should be wrapped in try/except with logger.exception if needed)
+Logs like "Triggering ingestion for message ID" are present before publishing
+Report the line number and payload structure used in the event
+2. Check if the ingestion listener is subscribed to PostgreSQL events
+
+📍 File: features/ingestion/listener.py
+Confirm:
+listen_for_events(handle_event) is called inside start_listening()
+start_listening() is called at application startup (e.g., in app.py)
+The handle_event() function handles the "discord.message.new" event
+Logs like "Received event: discord.message.new" or "Processing message ID" are emitted when the listener is active
+Report whether the listener is active, and what it logs upon receiving an event
+3. Verify the event payload structure matches ingestion expectations
+
+📍 Files:
+features/discord_bot/bot.py (event publisher)
+features/ingestion/service.py (message processor)
+Confirm:
+The payload sent from the bot includes all required fields used by process_discord_message_event(), such as:
+message_id
+channel_id
+timestamp
+content (if directly passed)
+No missing or misnamed fields that could cause the ingestion processor to silently skip
+Report whether the ingestion expects any additional fields that the bot isn't supplying
+📦 Output Format
+### 🔍 Discord to Ingestion Event Flow Audit
+
+#### 1. Event Publishing (discord_bot)
+✔ publish_event_async is called and awaited
+✔ Payload structure: {message_id, channel_id, ...}
+
+#### 2. Ingestion Listener Subscription
+✔ listen_for_events(handle_event) registered
+✔ handle_event receives "discord.message.new"
+❌ No logs observed for received events (listener may not be active or receiving)
+
+#### 3. Payload Compatibility
+✔ Payload includes all required fields for process_discord_message_event
+❌ Missing 'timestamp' field (optional but expected by validator.py line 85)
+
+### ⚠ Potential Root Cause:
+Event published correctly but ingestion listener may not be active or subscribed properly.
+
+Return this format even if all checks pass — it helps trace runtime mismatches. Let me know when you have the agent's results and we’ll plan the next steps.
