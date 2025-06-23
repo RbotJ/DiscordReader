@@ -7,6 +7,10 @@ for real-time cross-feature communication.
 IMPORTANT: This is the only approved mechanism for cross-slice events. 
 All components must use publish_event() or listen_for_events() from this file.
 No other event systems should be used in this codebase.
+
+NOTE: The default event channel for inter-slice communication is 'events'.
+Custom channels like 'signals:*' or 'ingestion:*' may be used for localized listeners,
+but all cross-slice events expected by core flows should use 'events'.
 """
 
 import asyncio
