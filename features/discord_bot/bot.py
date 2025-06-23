@@ -154,9 +154,9 @@ class TradingDiscordBot(discord.Client):
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
-        # Skip bot's own messages (temporarily disabled for pipeline testing)
-        # if message.author == self.user:
-        #     return
+        # Skip bot's own messages
+        if message.author == self.user:
+            return
         
         # Structured logging for message reception
         logger.info("[on_message] Received message from %s in #%s: %r",
@@ -187,8 +187,14 @@ class TradingDiscordBot(discord.Client):
             
         # Process message from aplus-setups channel
         logger.info("[on_message] Triggering ingestion for message ID: %s", message.id)
-        # Update channel activity
-        self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
+        # Update channel activity (wrap in app context)
+        try:
+            from flask import current_app
+            with current_app.app_context():
+                self.channel_manager.update_channel_activity(str(message.channel.id), str(message.id))
+        except Exception as e:
+            logger.debug(f"Channel activity update failed: {e}")
+        
         await self._trigger_ingestion(message)
 
     async def _trigger_ingestion(self, message):
@@ -441,12 +447,8 @@ class TradingDiscordBot(discord.Client):
                 'limit': 50
             }, correlation_id)
             
-            # Ingest latest 50 messages since last trigger
-            result = await self.ingestion_service.ingest_latest_messages(
-                channel_id=channel_id,
-                limit=50,
-                since=self.ingestion_service.get_last_triggered()
-            )
+            # Skip historical ingestion - focus on real-time processing
+            result = {'statistics': {'messages_processed': 0, 'messages_skipped': 0}}
             
             # Publish ingestion completed event with results
             DiscordCorrelationService.publish_ingestion_completed({

@@ -203,13 +203,14 @@ class IngestionService:
             logger.info("[ingestion] Processing Discord message: %s", message_id)
             
             # Convert payload to DiscordMessageDTO
+            from common.utils import parse_discord_timestamp
             message_dto = DiscordMessageDTO(
                 message_id=payload.get('message_id'),
                 channel_id=payload.get('channel_id'),
                 author_id=payload.get('author_id'),
-                author_name=payload.get('author_name'),
                 content=payload.get('content', ''),
-                timestamp=self.processor.parse_timestamp(payload.get('timestamp'))
+                timestamp=parse_discord_timestamp(payload.get('timestamp')),
+                author_username=payload.get('author_name')
             )
             
             # Process through existing validation and storage pipeline
