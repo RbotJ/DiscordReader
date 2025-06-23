@@ -30,8 +30,8 @@ def publish_event_direct(event_type: str, channel: str, payload: dict, source: s
         str: Event ID if successful, None if failed
     """
     try:
-        # Generate correlation ID from message ID or create new one
-        correlation_id = payload.get("message_id", str(uuid.uuid4()))
+        # Generate proper UUID correlation ID 
+        correlation_id = str(uuid.uuid4())
         
         # Connect to database
         database_url = os.environ.get("DATABASE_URL")
