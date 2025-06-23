@@ -243,40 +243,37 @@ def initialize_async_services(app):
                 # Start services immediately during initialization
                 start_services()
                 
-                # Initialize ingestion listener as background service
-                def start_ingestion_components():
-                    try:
-                        import asyncio
-                        from features.ingestion.listener import start_ingestion_listener as start_listener
-                        
-                        # Create async wrapper for listener startup
-                        def async_listener_wrapper():
-                            try:
-                                # Create new event loop for listener
-                                listener_loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(listener_loop)
-                                listener_loop.run_until_complete(start_listener())
-                            except Exception as e:
-                                logging.error(f"Error in listener wrapper: {e}")
-                            finally:
-                                try:
-                                    listener_loop.close()
-                                except:
-                                    pass
-                        
-                        socketio.start_background_task(async_listener_wrapper)
-                        logging.info("Ingestion listener startup scheduled")
-                    except Exception as e:
-                        logging.error(f"Failed to start ingestion components: {e}")
-                
-                start_ingestion_components()
-                
             except ImportError as e:
                 logging.error(f"Discord bot import error during initialization: {e}")
                 logging.exception("Full import traceback:")
             except Exception as e:
                 logging.error(f"Unexpected error during Discord bot initialization: {e}")
                 logging.exception("Full initialization traceback:")
+        
+        # Start ingestion listener independently of Discord bot
+        try:
+            from features.ingestion.listener import start_ingestion_listener
+            
+            def ingestion_wrapper():
+                import asyncio
+                try:
+                    # Create event loop for ingestion listener
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(start_ingestion_listener())
+                except Exception as e:
+                    logging.error(f"Error in ingestion listener: {e}")
+                finally:
+                    try:
+                        loop.close()
+                    except:
+                        pass
+            
+            socketio.start_background_task(ingestion_wrapper)
+            logging.info("[init] Ingestion listener startup scheduled")
+        except Exception as e:
+            logging.error(f"Failed to start ingestion listener: {e}")
+            logging.exception("Ingestion listener startup error:")
         
     except Exception as e:
         logging.error(f"Failed to initialize async services: {e}")
