@@ -129,13 +129,13 @@ async def start_ingestion_listener():
         ingestion_service = get_ingestion_service()
         _global_listener = IngestionListener(ingestion_service=ingestion_service)
         
-        # Start listener directly (await, don't create task)
-        logger.info("Starting PostgreSQL ingestion listener...")
-        await _global_listener.start_listening()
+        # Start listener in background task
+        import asyncio
+        asyncio.create_task(_global_listener.start_listening())
+        logger.info("Ingestion listener started successfully")
         
     except Exception as e:
         logger.error(f"Error starting ingestion listener: {e}")
-        logger.exception("Full ingestion listener startup traceback:")
 
 
 def stop_ingestion_listener():

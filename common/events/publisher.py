@@ -7,10 +7,6 @@ for real-time cross-feature communication.
 IMPORTANT: This is the only approved mechanism for cross-slice events. 
 All components must use publish_event() or listen_for_events() from this file.
 No other event systems should be used in this codebase.
-
-NOTE: The default event channel for inter-slice communication is 'events'.
-Custom channels like 'signals:*' or 'ingestion:*' may be used for localized listeners,
-but all cross-slice events expected by core flows should use 'events'.
 """
 
 import asyncio
@@ -90,7 +86,7 @@ async def publish_event_async(
             await conn.execute("""
                 INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6)
-            """, event_type, channel, json.dumps(data), source, correlation_id, datetime.utcnow())
+            """, event_type, channel, data, source, correlation_id, datetime.utcnow())
             
             # Send NOTIFY for real-time listeners
             await conn.execute(f"NOTIFY {channel}, $1", json.dumps(event_payload))
@@ -140,7 +136,7 @@ def publish_event(
             """), {
                 'event_type': event_type,
                 'channel': channel,
-                'data': json.dumps(data),
+                'data': data,
                 'source': source or 'unknown',
                 'correlation_id': correlation_id,
                 'created_at': datetime.utcnow()
