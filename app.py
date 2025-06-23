@@ -432,7 +432,50 @@ def create_app():
     register_web_routes(app)
     register_socketio_events()
     
-    # Ingestion listener will be started with unified async services
+    # Start ingestion listener directly during app creation
+    logging.info("🔄 Attempting to start ingestion listener during app creation...")
+    
+    try:
+        import threading
+        import asyncio
+        from features.ingestion.listener import start_ingestion_listener
+        
+        logging.info("✅ Ingestion listener imports successful")
+        
+        def start_ingestion_background():
+            """Start ingestion listener in background thread."""
+            logging.info("🚀 Starting ingestion listener background thread execution...")
+            try:
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                logging.info("📡 Event loop created for ingestion listener")
+                
+                # Start the ingestion listener
+                loop.run_until_complete(start_ingestion_listener())
+                logging.info("✅ PostgreSQL ingestion listener started successfully")
+                
+                # Keep the listener running
+                loop.run_forever()
+            except Exception as e:
+                logging.error(f"❌ Error in ingestion listener background thread: {e}")
+                import traceback
+                logging.error(f"Traceback: {traceback.format_exc()}")
+            finally:
+                try:
+                    loop.close()
+                except:
+                    pass
+        
+        # Start in daemon thread to avoid blocking app startup
+        ingestion_thread = threading.Thread(target=start_ingestion_background, daemon=True)
+        ingestion_thread.start()
+        logging.info("✅ Ingestion listener background thread started successfully")
+        
+    except Exception as e:
+        logging.error(f"❌ Failed to start ingestion listener: {e}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
     
     # Note: Feature dashboard blueprints are already registered through register_all_blueprints
 
