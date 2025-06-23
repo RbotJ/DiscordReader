@@ -1,0 +1,92 @@
+✅ What Direct Event Publishing Needs to Work
+1. Database Session Access (SessionLocal)
+Must be correctly imported from your app’s SQLAlchemy config.
+
+Must use session = SessionLocal() inside the function (not globally).
+
+Each session must be:
+
+Committed on success.
+
+Rolled back on exception.
+
+Closed in a finally block.
+
+2. Valid Event Model
+The Event model must include:
+
+id (UUID or string)
+
+event_type (string)
+
+channel (string)
+
+payload (dict/JSON-serializable)
+
+created_at (datetime)
+
+correlation_id (optional but helpful)
+
+source (string)
+
+✅ Pitfall: JSON field (payload) must be accepted as a JSON type column in the database model — if it's a Text, implicit coercion may fail silently.
+
+3. Correct Data Types
+payload must be serializable JSON.
+
+datetime.utcnow() for created_at must not be None.
+
+uuid.uuid4() (or str(uuid4())) for id and correlation_id.
+
+✅ Pitfall: UUIDs need to be strings if your DB column is a string type.
+
+4. Correct Database Connection Scope
+If used outside a Flask app context (like in a Discord bot):
+
+Ensure SessionLocal() is created independently and not tied to Flask’s scoped session.
+
+If you're using an async ORM or context manager, direct session.commit() may be disallowed.
+
+✅ Pitfall: Using Flask-bound db.session or relying on Flask-SQLAlchemy in a worker thread or background async task will often fail silently.
+
+5. No Async Code in Sync Context
+If you're in an async function:
+
+python
+Copy
+Edit
+async def on_message(message):
+    publish_event_direct(...)  # This is okay only if direct function is sync
+✅ Pitfall: Calling sync functions in an async context without using await is okay only if the function is completely blocking. If the sync function internally uses asyncio.run() or calls awaitables, it'll raise “attached to a different loop” errors.
+
+🔍 Common Misses (Textbook Issues)
+Issue	Symptom	Fix
+Session not committed	No event appears in DB	Call session.commit()
+JSON field not serializable	Silent failure or stack trace	Use json.dumps(payload) or ensure dict-only
+Scoped session used in thread	RuntimeError: working outside of application context	Use SessionLocal() not db.session
+UUID not a string	Postgres error	Wrap UUID with str()
+Timestamp missing	DB constraint error	Always use datetime.utcnow()
+Exception not logged	Silent failure	Add logger.exception("Failed to publish event")
+
+✅ Test Checklist
+To test your publish_event_direct():
+
+Temporarily add:
+
+python
+Copy
+Edit
+print("📤 Publishing event with payload:", payload)
+Then run this test code:
+
+python
+Copy
+Edit
+publish_event_direct("test.event", "events", {"hello": "world"}, source="test")
+Then verify:
+
+sql
+Copy
+Edit
+SELECT * FROM events ORDER BY created_at DESC LIMIT 1;
+Let me know if you'd like me to re-check your Event model or database structure for compatibility.
