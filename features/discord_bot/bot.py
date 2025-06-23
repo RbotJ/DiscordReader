@@ -154,9 +154,9 @@ class TradingDiscordBot(discord.Client):
 
     async def on_message(self, message):
         """Handle incoming messages from monitored channels."""
-        # Skip bot's own messages
-        if message.author == self.user:
-            return
+        # Skip bot's own messages (temporarily disabled for pipeline testing)
+        # if message.author == self.user:
+        #     return
         
         # Structured logging for message reception
         logger.info("[on_message] Received message from %s in #%s: %r",

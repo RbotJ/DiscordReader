@@ -1,0 +1,96 @@
+the event is clearly leaving the bot, but not completing ingestion. Here's a structured audit path to help you pinpoint exactly where it failed and why, without making assumptions or unnecessary changes.
+
+🧠 Live Message Audit Flow: Discord → Ingestion
+Let’s inspect each link in the chain, with specific commands/logs to check.
+
+✅ 1. Did the Bot Trigger Ingestion?
+Check console logs for:
+
+csharp
+Copy
+Edit
+[on_message] Triggering ingestion for message ID: ...
+[discord_bot] Published ingestion event: ...
+[discord_bot] Full payload: { ... }
+If present → event left the bot ✅
+
+✅ 2. Did the Listener Receive the Event?
+Expected log:
+
+csharp
+Copy
+Edit
+[listener] Received event: discord.message.new with payload ID: ...
+🔍 If this is not present, it likely means the listener didn’t receive the NOTIFY message. Double-check:
+
+Is ingestion process running?
+
+Is listener using listen_for_events(...)?
+
+Is channel="events" hardcoded or implied?
+
+✅ 3. Did the Service Process the Payload?
+Look for:
+
+csharp
+Copy
+Edit
+[ingestion] Processing Discord message: ...
+[ingestion] Validated message: ...
+[ingestion] Stored message ID: ...
+Or:
+
+css
+Copy
+Edit
+[ingestion] Failed to process message: ...
+🔍 If these are missing, it means:
+
+handle_event() may be ignoring the event type
+
+process_discord_message_event() not called or crashing silently
+
+✅ 4. Are Metrics Updating?
+Check:
+
+bash
+Copy
+Edit
+curl http://localhost:5000/dashboard/ingestion/enhanced-metrics.json | python -m json.tool
+messages_ingested_today should increment
+
+last_ingestion timestamp should update
+
+duplicates_skipped may help if message was already seen
+
+✅ 5. Is the Message Stored in the DB?
+Query the discord_messages or ingested_messages table (example):
+
+sql
+Copy
+Edit
+SELECT * FROM discord_messages ORDER BY created_at DESC LIMIT 5;
+Check for:
+
+Matching message_id
+
+Correct channel_id, author_id, etc.
+
+Row timestamp near current time
+
+🚨 If Something Failed: Key Logs to Search
+Run filtered log queries:
+
+bash
+Copy
+Edit
+grep "discord.message.new" /tmp/gunicorn.log
+grep "Stored message ID" /tmp/gunicorn.log
+grep "Failed to process" /tmp/gunicorn.log
+These can help detect:
+
+Parsing/validation errors
+
+DB insert failures
+
+Silent skips or exceptions
