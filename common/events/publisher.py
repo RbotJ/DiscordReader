@@ -90,7 +90,7 @@ async def publish_event_async(
             await conn.execute("""
                 INSERT INTO events (event_type, channel, data, source, correlation_id, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6)
-            """, event_type, channel, data, source, correlation_id, datetime.utcnow())
+            """, event_type, channel, json.dumps(data), source, correlation_id, datetime.utcnow())
             
             # Send NOTIFY for real-time listeners
             await conn.execute(f"NOTIFY {channel}, $1", json.dumps(event_payload))
@@ -140,7 +140,7 @@ def publish_event(
             """), {
                 'event_type': event_type,
                 'channel': channel,
-                'data': data,
+                'data': json.dumps(data),
                 'source': source or 'unknown',
                 'correlation_id': correlation_id,
                 'created_at': datetime.utcnow()
