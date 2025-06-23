@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 def publish_event_direct(event_type: str, channel: str, payload: dict, source: str = "unknown"):
     """
-    Direct database event publishing bypassing Flask context.
-    Used by Discord bot running in separate async context.
+    ⚠️ FALLBACK/DIAGNOSTIC ONLY - Direct database event publishing bypassing event bus.
+    This bypasses the intended PostgreSQL event architecture and should only be used
+    for testing or emergency fallback scenarios.
     
     Args:
         event_type: Type of event (e.g. 'discord.message.new')
@@ -29,7 +30,9 @@ def publish_event_direct(event_type: str, channel: str, payload: dict, source: s
     Returns:
         str: Event ID if successful, None if failed
     """
-    print(f"📤 Publishing event with payload: {payload}")
+    logger.warning(f"⚠️ EVENT BUS BYPASSED: Using direct publishing for {event_type} from {source}")
+    logger.warning(f"⚠️ This indicates event bus failure - investigate async publishing issues")
+    print(f"📤 FALLBACK: Publishing event with payload: {payload}")
     logger.info(f"📤 Starting direct event publishing: {event_type}")
     
     try:

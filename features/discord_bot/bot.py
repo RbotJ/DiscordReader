@@ -198,7 +198,7 @@ class TradingDiscordBot(discord.Client):
         await self._trigger_ingestion(message)
 
     async def _trigger_ingestion(self, message):
-        """Trigger ingestion event for new Discord message."""
+        """Trigger ingestion event for new Discord message via proper event bus."""
         logger.info("[discord_bot] Starting _trigger_ingestion for message: %s", message.id)
         try:
             # Build full metadata payload for ingestion slice
@@ -213,21 +213,43 @@ class TradingDiscordBot(discord.Client):
             
             logger.info("[discord_bot] Built payload for message: %s", payload["message_id"])
             
-            # Use direct database event publishing to bypass Flask context
-            from common.events.direct_publisher import publish_event_direct
-            logger.info("[discord_bot] About to call publish_event_direct")
+            # Use proper async event publishing via event bus
+            from common.events.publisher import publish_event_async
+            logger.info("[discord_bot] Publishing event via async event bus")
             
-            event_id = publish_event_direct(
+            success = await publish_event_async(
                 event_type="discord.message.new",
+                data=payload,
                 channel="events",
-                payload=payload,
                 source="discord_bot"
             )
-            logger.info("[discord_bot] Published ingestion event directly: %s", event_id)
+            
+            if success:
+                logger.info("[discord_bot] Successfully published ingestion event for message: %s", message.id)
+            else:
+                logger.error("[discord_bot] Failed to publish ingestion event for message: %s", message.id)
+                
         except Exception as e:
             logger.error(f"Error publishing ingestion event: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Fallback to direct publishing only in case of critical error
+            logger.warning("[discord_bot] Attempting fallback to direct publishing")
+            try:
+                from common.events.direct_publisher import publish_event_direct
+                event_id = publish_event_direct(
+                    event_type="discord.message.new",
+                    channel="events",
+                    payload=payload,
+                    source="discord_bot_fallback"
+                )
+                logger.warning("[discord_bot] FALLBACK: Event bus bypassed, used direct publishing: %s", event_id)
+            except Exception as fallback_error:
+                logger.error(f"[discord_bot] Fallback publishing also failed: {fallback_error}")
+                # Update storage error counter
+                self._storage_errors_today += 1
+                self._last_storage_error = datetime.utcnow()
 
     async def _startup_catchup_ingestion(self):
         """Trigger startup catchup ingestion using ingestion service."""

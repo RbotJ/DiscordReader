@@ -486,60 +486,57 @@ def create_app():
     register_web_routes(app)
     register_socketio_events()
     
-    # Setup ingestion listener startup on first request
-    ingestion_started = {'value': False}
-    
-    @app.before_request
-    def start_ingestion_listener_once():
-        """Start ingestion listener on first request if not already started."""
-        if not ingestion_started['value'] and os.getenv("DISCORD_BOT_TOKEN"):
-            ingestion_started['value'] = True
-            print("[FIRST_REQUEST] Starting ingestion listener...")
-            logging.info("[FIRST_REQUEST] Starting ingestion listener...")
+    # Start ingestion listener automatically during app creation (no curl dependency)
+    if os.getenv("DISCORD_BOT_TOKEN"):
+        print("[STARTUP] Starting PostgreSQL ingestion listener automatically...")
+        logging.info("[STARTUP] Starting PostgreSQL ingestion listener automatically...")
+        
+        try:
+            import threading
+            import asyncio
+            from features.ingestion.listener import start_ingestion_listener
             
-            try:
-                import threading
-                import asyncio
-                from features.ingestion.listener import start_ingestion_listener
-                
-                def start_ingestion_background():
-                    """Start ingestion listener in background thread."""
-                    print("[FIRST_REQUEST] Starting ingestion listener background thread...")
-                    logging.info("[FIRST_REQUEST] Starting ingestion listener background thread...")
+            def start_ingestion_background():
+                """Start ingestion listener in background thread at app startup."""
+                print("[STARTUP] Starting ingestion listener background thread...")
+                logging.info("[STARTUP] Starting ingestion listener background thread...")
+                try:
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # Start the ingestion listener
+                    loop.run_until_complete(start_ingestion_listener())
+                    print("✅ PostgreSQL ingestion listener started at app startup")
+                    logging.info("✅ PostgreSQL ingestion listener started at app startup")
+                    
+                    # Keep the listener running
+                    loop.run_forever()
+                except Exception as e:
+                    print(f"Error in ingestion listener at startup: {e}")
+                    logging.error(f"Error in ingestion listener at startup: {e}")
+                    import traceback
+                    logging.error(f"Traceback: {traceback.format_exc()}")
+                finally:
                     try:
-                        # Create new event loop for this thread
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        
-                        # Start the ingestion listener
-                        loop.run_until_complete(start_ingestion_listener())
-                        print("✅ PostgreSQL ingestion listener started")
-                        logging.info("✅ PostgreSQL ingestion listener started")
-                        
-                        # Keep the listener running
-                        loop.run_forever()
-                    except Exception as e:
-                        print(f"Error in ingestion listener: {e}")
-                        logging.error(f"Error in ingestion listener: {e}")
-                        import traceback
-                        logging.error(f"Traceback: {traceback.format_exc()}")
-                    finally:
-                        try:
-                            loop.close()
-                        except:
-                            pass
-                
-                # Start in daemon thread
-                ingestion_thread = threading.Thread(target=start_ingestion_background, daemon=True)
-                ingestion_thread.start()
-                print("[FIRST_REQUEST] Ingestion listener thread started")
-                logging.info("[FIRST_REQUEST] Ingestion listener thread started")
-                
-            except Exception as e:
-                print(f"Failed to start ingestion listener: {e}")
-                logging.error(f"Failed to start ingestion listener: {e}")
-                import traceback
-                logging.error(f"Traceback: {traceback.format_exc()}")
+                        loop.close()
+                    except:
+                        pass
+            
+            # Start in daemon thread immediately during app creation
+            ingestion_thread = threading.Thread(target=start_ingestion_background, daemon=True)
+            ingestion_thread.start()
+            print("[STARTUP] Ingestion listener thread started automatically")
+            logging.info("[STARTUP] Ingestion listener thread started automatically")
+            
+        except Exception as e:
+            print(f"Failed to start ingestion listener at startup: {e}")
+            logging.error(f"Failed to start ingestion listener at startup: {e}")
+            import traceback
+            logging.error(f"Traceback: {traceback.format_exc()}")
+    else:
+        print("[STARTUP] Discord bot disabled - ingestion listener not started")
+        logging.info("[STARTUP] Discord bot disabled - ingestion listener not started")
 
     
     # Note: Feature dashboard blueprints are already registered through register_all_blueprints
