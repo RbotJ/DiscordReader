@@ -84,7 +84,7 @@ Discord Message → Bot.on_message() → PostgreSQL NOTIFY → Ingestion Listene
 
 ### Recovery Commands
 ```bash
-python restart_ingestion_listener.py  # Restore PostgreSQL LISTEN
-python event_recovery_system.py       # Fix orphaned events
-python full_pipeline_diagnostic.py    # Comprehensive health check
+python scripts/watchdog_listener.py           # Continuous monitoring with auto-restart
+python diagnostics/full_pipeline_diagnostic.py --summary  # Quick health check
+python scripts/test_pipeline.py               # Comprehensive pipeline testing
 ```
