@@ -234,22 +234,11 @@ class TradingDiscordBot(discord.Client):
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             
-            # Fallback to direct publishing only in case of critical error
-            logger.warning("[discord_bot] Attempting fallback to direct publishing")
-            try:
-                from common.events.direct_publisher import publish_event_direct
-                event_id = publish_event_direct(
-                    event_type="discord.message.new",
-                    channel="events",
-                    payload=payload,
-                    source="discord_bot_fallback"
-                )
-                logger.warning("[discord_bot] FALLBACK: Event bus bypassed, used direct publishing: %s", event_id)
-            except Exception as fallback_error:
-                logger.error(f"[discord_bot] Fallback publishing also failed: {fallback_error}")
-                # Update storage error counter
-                self._storage_errors_today += 1
-                self._last_storage_error = datetime.utcnow()
+            # Log critical failure - no fallback to direct publishing
+            logger.critical(f"[discord_bot] CRITICAL: Event publishing failed for message {message.id}")
+            # Update storage error counter
+            self._storage_errors_today += 1
+            self._last_storage_error = datetime.utcnow()
 
     async def _startup_catchup_ingestion(self):
         """Trigger startup catchup ingestion using ingestion service."""
