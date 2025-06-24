@@ -4,11 +4,13 @@
 Advanced Discord bot for processing A+ trading setups using event-driven architecture with PostgreSQL LISTEN/NOTIFY for robust inter-service communication.
 
 ## Recent Changes
-- **2025-06-24**: Restored event-driven architecture with comprehensive failure detection and recovery
-  - Fixed PostgreSQL LISTEN connection drops
-  - Implemented automatic ingestion listener restart capability
-  - Added comprehensive diagnostic tools for system health monitoring
-  - Enhanced error handling with retry logic and fallback mechanisms
+- **2025-06-24**: Fortified Discord-to-Ingestion pipeline with vertical slice architecture alignment
+  - Enforced proper event publishing boundaries (Discord bot uses only async event publishing)
+  - Removed direct publisher fallback to maintain architectural integrity
+  - Created event listener watchdog for automatic recovery
+  - Built comprehensive test suite with valid/malformed/duplicate/delayed message scenarios
+  - Added alert system for trading hours monitoring and stale processing detection
+  - Implemented diagnostics with summary mode for dev/staging environments
 
 ## Project Architecture
 
@@ -46,14 +48,14 @@ Discord Message → Bot.on_message() → PostgreSQL NOTIFY → Ingestion Listene
 ## Diagnostic Tools
 
 ### System Health Monitoring
-- `event_system_diagnostic.py`: Direct database analysis without Flask overhead
-- `full_pipeline_diagnostic.py`: Comprehensive pipeline health check
-- `restart_ingestion_listener.py`: Automatic listener recovery
+- `diagnostics/full_pipeline_diagnostic.py`: Comprehensive pipeline health check with `--summary` mode
+- `scripts/watchdog_listener.py`: Continuous monitoring and automatic listener restart
+- `scripts/test_pipeline.py`: Comprehensive test suite for all message scenarios
 
-### Event Publishing Failure Detection
-- `audit_event_publishing_system.py`: In-depth failure analysis
-- `event_recovery_system.py`: Automatic recovery for orphaned events
-- Built-in instrumentation for real-time monitoring
+### Alert System
+- `features/ingestion/alerts.py`: Trading hours monitoring and stale processing detection
+- Enhanced metrics endpoint includes alert notifications and counts
+- Automatic logging of critical conditions (zero messages, listener down, processing delays)
 
 ## Critical System Requirements
 

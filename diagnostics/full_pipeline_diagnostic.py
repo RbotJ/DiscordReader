@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""
+Full Discord-to-Ingestion Pipeline Diagnostic
+
+Comprehensive diagnostic tool for the event-driven pipeline with summary mode support.
+"""
+import os
+import sys
+import psycopg2
+import json
+import datetime
+import argparse
+from pprint import pprint
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://username:password@localhost:5432/dbname")
+
+def check_pg_listeners():
+    print("🔍 Checking active PostgreSQL LISTEN connections...")
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT pid, application_name, state, query_start, query
+                FROM pg_stat_activity
+                WHERE query ILIKE '%LISTEN%'
+            """)
+            listeners = cur.fetchall()
+            if listeners:
+                print("✅ LISTEN connections found:")
+                for row in listeners:
+                    pprint(row)
+            else:
+                print("❌ No active LISTEN connections. Ingestion listener may not be running.")
+
+def check_recent_events():
+    print("\n🔍 Checking recent events in events table...")
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT event_type, channel, correlation_id, source, data->>'message_id', created_at
+                FROM events
+                WHERE created_at > now() - interval '1 hour'
+                ORDER BY created_at DESC
+                LIMIT 5
+            """)
+            events = cur.fetchall()
+            if events:
+                print("✅ Recent events:")
+                for e in events:
+                    pprint(e)
+            else:
+                print("❌ No recent events found in the last hour.")
+
+def check_discord_messages():
+    print("\n🔍 Checking recent messages in discord_messages table...")
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT message_id, author_id, content, created_at
+                FROM discord_messages
+                ORDER BY created_at DESC
+                LIMIT 3
+            """)
+            messages = cur.fetchall()
+            if messages:
+                print("✅ Recent stored messages:")
+                for msg in messages:
+                    pprint(msg)
+            else:
+                print("❌ No messages stored recently.")
+
+def check_ingestion_metrics():
+    print("\n🔍 Checking ingestion metrics endpoint...")
+    import requests
+    try:
+        res = requests.get("http://localhost:5000/dashboard/ingestion/enhanced-metrics.json", timeout=5)
+        if res.ok:
+            data = res.json()
+            print("✅ Ingestion Metrics:")
+            print(json.dumps(data["core_metrics"], indent=2))
+            print(json.dumps(data["daily_metrics"], indent=2))
+        else:
+            print("❌ Failed to fetch metrics:", res.status_code)
+    except Exception as e:
+        print("❌ Exception accessing metrics:", str(e))
+
+def main():
+    parser = argparse.ArgumentParser(description="Discord-to-Ingestion Pipeline Diagnostic")
+    parser.add_argument("--summary", action="store_true", help="Run lightweight summary checks only")
+    args = parser.parse_args()
+    
+    if args.summary:
+        print("📋 Pipeline Summary Check")
+        # Lightweight checks for dev/staging
+        check_pg_listeners()
+        check_recent_events()
+    else:
+        print("📋 Full Discord-to-Ingestion Pipeline Diagnostic")
+        check_pg_listeners()
+        check_recent_events()
+        check_discord_messages()
+        check_ingestion_metrics()
+
+if __name__ == "__main__":
+    main()

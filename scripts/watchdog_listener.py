@@ -61,7 +61,7 @@ class ListenerWatchdog:
             app = create_app()
             
             with app.app_context():
-                from features.ingestion.listener import restart_listener
+                from features.ingestion.restart_helper import restart_listener
                 success = restart_listener()
                 
                 if success:

@@ -56,6 +56,8 @@ class PipelineTestSuite:
         
         for i, message in enumerate(valid_messages, 1):
             try:
+                import sys
+                sys.path.append('/home/runner/workspace')
                 from common.events.direct_publisher import publish_event_direct
                 
                 event_id = publish_event_direct(

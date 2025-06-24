@@ -130,13 +130,17 @@ def enhanced_metrics():
         if service:
             metrics = service.get_metrics()
             
+            # Check for alerts and log warnings
+            from .alerts import check_ingestion_alerts, check_listener_status_alert
+            
             # Extract enhanced metrics
             enhanced_data = {
                 'core_metrics': {
                     'messages_ingested': metrics.get('messages_ingested', 0),
                     'ingestion_errors': metrics.get('ingestion_errors', 0),
                     'validation_success_rate': metrics.get('validation_success_rate', 100.0),
-                    'service_status': metrics.get('service_status', 'unknown')
+                    'service_status': metrics.get('service_status', 'unknown'),
+                    'last_message_processed': metrics.get('last_message_processed')
                 },
                 'uptime_tracking': {
                     'uptime_seconds': metrics.get('uptime_seconds', 0),
@@ -155,6 +159,17 @@ def enhanced_metrics():
                 },
                 'timestamp': utc_now().isoformat()
             }
+            
+            # Run alert checks and add to response
+            ingestion_alerts = check_ingestion_alerts(enhanced_data)
+            listener_alert = check_listener_status_alert()
+            
+            alerts = ingestion_alerts[:]
+            if listener_alert:
+                alerts.append(listener_alert)
+            
+            enhanced_data['alerts'] = alerts
+            enhanced_data['alert_count'] = len(alerts)
             
             return jsonify(enhanced_data)
         else:
