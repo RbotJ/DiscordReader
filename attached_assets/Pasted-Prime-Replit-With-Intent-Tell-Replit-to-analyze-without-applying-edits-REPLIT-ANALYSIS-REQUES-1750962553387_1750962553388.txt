@@ -1,0 +1,73 @@
+Prime Replit With Intent
+Tell Replit to analyze without applying edits:
+
+# 📍 REPLIT ANALYSIS REQUEST (No changes yet)
+"""
+You are an AI agent assessing a vertically sliced, event-driven trading application.
+
+Your task is to review the current architecture and implementation for the following:
+
+1. Adherence to vertical-slice isolation principles
+2. Redundancy or cross-feature dependencies that could be refactored
+3. Potential for plugin-style extensibility (like Red-DiscordBot cogs)
+4. Opportunities for administrative dashboards or command-handling improvements
+5. Suggestions for message export tooling (like DiscordChatExporter)
+6. Use of PostgreSQL event bus — validate that events are well-isolated and well-documented
+
+⚠️ Do NOT make any edits yet. Only return structured observations and actionable suggestions for improvement.
+"""
+✅ Step 2: Inject Replit Context
+After the prompt, run the following in Replit:
+
+from pathlib import Path
+
+# Limit analysis to features/ and common/
+paths_to_read = [
+    *Path("features").rglob("*.py"),
+    *Path("common").rglob("*.py"),
+    Path("README.md"),
+]
+
+for path in paths_to_read:
+    print(f"=== {path} ===\n")
+    print(path.read_text())
+This gives Replit the core architectural context while being token-efficient (as recommended by IDD).
+
+✅ Step 3: Get Specific Feedback from Replit
+Here’s a structured checklist to include in your prompt to elicit high-value, slice-aware responses:
+
+# 📋 FEEDBACK REQUEST CHECKLIST
+
+Please evaluate the following:
+
+1. 🔍 Vertical Slice Isolation
+   - Are slices truly self-contained (API, model, service)?
+   - Are any utils bleeding across slices?
+
+2. 🧩 Plugin-Like Extensibility
+   - Could each slice expose a `register()` or `setup()` function for dynamic loading?
+   - What’s the minimal interface for a plugin?
+
+3. 📊 Dashboard Extensibility
+   - Could the dashboard support plugin modules or config-based slice toggling?
+   - Are metrics observable per event (via correlation IDs)?
+
+4. 🧾 Message Exporting Tools
+   - How would you implement message history export (e.g., JSON download)?
+   - What slice would it belong to—ingestion, a new export slice, or admin?
+
+5. 🧠 AI Navigability
+   - Are any slices too large for agents to reason about in isolation?
+   - Can any be split or trimmed for better promptability?
+
+6. 🛠️ Event Bus Sanity
+   - Do all events originate from publisher.py?
+   - Are any custom pub/sub flows bypassing PostgreSQL LISTEN/NOTIFY?
+
+Return your assessment in a format like:
+
+[✓] Finding: Vertical Slice Violation in parsing/
+
+File: features/parsing/parser.py
+Issue: Imports from features/ingestion/service.py detected.
+Recommendation: Move shared logic to common/, or duplicate logic intentionally per vertical-slice principles.
