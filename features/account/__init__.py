@@ -1,9 +1,10 @@
-"""Options feature plugin."""
+"""Account feature plugin"""
 from importlib import import_module
 from features.blueprint_registry import BLUEPRINT_REGISTRY, SPECIAL_BLUEPRINTS
 from common.interfaces.plugin import FeaturePlugin
 
-class OptionsPlugin(FeaturePlugin):
+class AccountPlugin(FeaturePlugin):
+    """Plugin for the account feature."""
     def register(self, app):
         prefix = __name__
         for name, module_path, attr in BLUEPRINT_REGISTRY + SPECIAL_BLUEPRINTS:
@@ -17,4 +18,4 @@ class OptionsPlugin(FeaturePlugin):
                     pass
 
 def get_plugin():
-    return OptionsPlugin()
+    return AccountPlugin()
