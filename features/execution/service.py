@@ -151,7 +151,7 @@ class ExecutionService:
                 reason=f"Risk check failed: {str(e)}"
             )
     
-    def execute_market_order(self, order_request: OrderRequest) -> Optional[OrderResult]:
+    def execute_market_order(self, order_request: OrderRequest, correlation_id: Optional[str] = None) -> Optional[OrderResult]:
         """
         Execute a market order.
         
@@ -204,7 +204,8 @@ class ExecutionService:
                     'timestamp': result.created_at.isoformat()
                 },
                 channel='execution:orders',
-                source='execution_service'
+                source='execution_service',
+                correlation_id=correlation_id
             )
             
             return result
@@ -213,7 +214,7 @@ class ExecutionService:
             logger.error(f"Error executing market order for {order_request.symbol}: {e}")
             return None
     
-    def execute_limit_order(self, order_request: OrderRequest) -> Optional[OrderResult]:
+    def execute_limit_order(self, order_request: OrderRequest, correlation_id: Optional[str] = None) -> Optional[OrderResult]:
         """
         Execute a limit order.
         
@@ -273,7 +274,8 @@ class ExecutionService:
                     'timestamp': result.created_at.isoformat()
                 },
                 channel='execution:orders',
-                source='execution_service'
+                source='execution_service',
+                correlation_id=correlation_id
             )
             
             return result
@@ -282,7 +284,7 @@ class ExecutionService:
             logger.error(f"Error executing limit order for {order_request.symbol}: {e}")
             return None
     
-    def cancel_order(self, order_id: str) -> bool:
+    def cancel_order(self, order_id: str, correlation_id: Optional[str] = None) -> bool:
         """
         Cancel an open order.
         
@@ -304,7 +306,8 @@ class ExecutionService:
                         'timestamp': datetime.now().isoformat()
                     },
                     channel='execution:orders',
-                    source='execution_service'
+                    source='execution_service',
+                    correlation_id=correlation_id
                 )
             
             return success

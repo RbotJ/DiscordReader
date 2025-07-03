@@ -67,6 +67,8 @@ def execute_market_order():
             
         # Get execution service
         execution_service = get_execution_service()
+        from uuid import uuid4
+        correlation_id = data.get('correlation_id') or str(uuid4())
         
         # Check position risk if provided
         price = data.get('price')
@@ -90,7 +92,7 @@ def execute_market_order():
         )
                 
         # Execute order
-        order = execution_service.execute_market_order(order_request)
+        order = execution_service.execute_market_order(order_request, correlation_id=correlation_id)
         
         if not order:
             return jsonify({

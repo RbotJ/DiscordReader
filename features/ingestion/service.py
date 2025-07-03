@@ -83,9 +83,13 @@ class IngestionService:
             
             # Structured logging after successful storage
             logger.info("[ingestion] Stored message ID: %s (event: message.stored)", message_dto.message_id)
-            
+
             # Publish message stored event for parsing listener
+            from uuid import uuid4
             from common.events.publisher import publish_event_async
+
+            correlation_id = str(uuid4())
+
             await publish_event_async(
                 "message.stored",
                 {
@@ -96,7 +100,8 @@ class IngestionService:
                     "processed_at": datetime.now().isoformat()
                 },
                 channel="events",
-                source="ingestion"
+                source="ingestion",
+                correlation_id=correlation_id
             )
             
             logger.debug(f"Successfully processed message {message_dto.message_id}")
@@ -238,11 +243,16 @@ class IngestionService:
             # Simply publish the event for the parsing slice to handle
             # Ingestion slice only handles storage, parsing handles analysis
             from common.events.publisher import publish_event_async
+
+            payload = event.get('payload', {})
+            correlation_id = payload.get('correlation_id')
+
             await publish_event_async(
                 "parsing.message_available",
-                event.get('payload', {}),
+                payload,
                 channel="events",
-                source="ingestion"
+                source="ingestion",
+                correlation_id=correlation_id
             )
             return True
         except Exception as e:
