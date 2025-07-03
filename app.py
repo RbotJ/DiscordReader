@@ -127,12 +127,18 @@ async def start_unified_async_services(app):
 
             # Build your vertical slices
             try:
-                from features.ingestion.service import IngestionService
+                from common.plugin_loader import discover_class
                 from features.discord_channels.channel_manager import ChannelManager
                 from common.events.publisher import publish_event
                 from common.db import db
 
-                # Ingestion slice
+                # Ingestion slice via plugin discovery
+                IngestionService = discover_class(
+                    "IngestionService", ["features.ingestion.service"]
+                )
+                if not IngestionService:
+                    logging.error("IngestionService plugin not found")
+                    return
                 ingestion_svc = IngestionService()
 
                 # Channel slice
@@ -201,9 +207,15 @@ def initialize_async_services(app):
                 logging.info("Creating Discord bot services...")
                 
                 # Create services
-                from features.ingestion.service import IngestionService
+                from common.plugin_loader import discover_class
                 from features.discord_channels.channel_manager import ChannelManager
                 
+                IngestionService = discover_class(
+                    "IngestionService", ["features.ingestion.service"]
+                )
+                if not IngestionService:
+                    logging.error("IngestionService plugin not found")
+                    return
                 ingestion_svc = IngestionService()
                 channel_svc = ChannelManager()
                 logging.info("Discord bot services created successfully")
