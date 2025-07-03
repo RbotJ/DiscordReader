@@ -1,10 +1,20 @@
-"""
-Discord Channels Feature Module
+"""Discord channels feature plugin."""
+from importlib import import_module
+from features.blueprint_registry import BLUEPRINT_REGISTRY, SPECIAL_BLUEPRINTS
+from common.interfaces.plugin import FeaturePlugin
 
-Vertical slice for Discord channel management functionality including:
-- Channel discovery and metadata storage
-- Channel name ↔ ID mapping
-- Persistent channel state management
-"""
+class DiscordChannelsPlugin(FeaturePlugin):
+    def register(self, app):
+        prefix = __name__
+        for name, module_path, attr in BLUEPRINT_REGISTRY + SPECIAL_BLUEPRINTS:
+            if module_path.startswith(prefix):
+                try:
+                    module = import_module(module_path)
+                    blueprint = getattr(module, attr, None)
+                    if blueprint:
+                        app.register_blueprint(blueprint)
+                except Exception:
+                    pass
 
-__version__ = '1.0.0'
+def get_plugin():
+    return DiscordChannelsPlugin()

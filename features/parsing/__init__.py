@@ -1,23 +1,20 @@
-"""
-Parsing Feature Module
+"""Parsing feature plugin."""
+from importlib import import_module
+from features.blueprint_registry import BLUEPRINT_REGISTRY, SPECIAL_BLUEPRINTS
+from common.interfaces.plugin import FeaturePlugin
 
-Vertical slice for parsing Discord messages into trade setups.
-Provides a complete, self-contained parsing system.
-"""
+class ParsingPlugin(FeaturePlugin):
+    def register(self, app):
+        prefix = __name__
+        for name, module_path, attr in BLUEPRINT_REGISTRY + SPECIAL_BLUEPRINTS:
+            if module_path.startswith(prefix):
+                try:
+                    module = import_module(module_path)
+                    blueprint = getattr(module, attr, None)
+                    if blueprint:
+                        app.register_blueprint(blueprint)
+                except Exception:
+                    pass
 
-from .service import get_parsing_service, start_parsing_service, stop_parsing_service
-from .parser import MessageParser
-from .models import TradeSetup, ParsedLevel
-from .store import get_parsing_store
-from .listener import get_parsing_listener
-
-__all__ = [
-    'get_parsing_service',
-    'start_parsing_service', 
-    'stop_parsing_service',
-    'MessageParser',
-    'TradeSetup',
-    'ParsedLevel',
-    'get_parsing_store',
-    'get_parsing_listener'
-]
+def get_plugin():
+    return ParsingPlugin()

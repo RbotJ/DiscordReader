@@ -15,6 +15,8 @@ from flask import Flask, jsonify, render_template
 from flask_socketio import SocketIO, emit
 from common.db import db, initialize_db
 from common.utils import format_timestamp_local, to_local
+import importlib
+import pkgutil
 
 # Configure logging
 logging.basicConfig(
@@ -49,6 +51,21 @@ def register_all_blueprints(app):
             logging.warning(f"Failed to register {name} blueprint: {e}")
         except Exception as e:
             logging.error(f"Unexpected error registering {name} blueprint: {e}")
+
+def discover_plugins():
+    """Yield all feature plugins discovered in the features package."""
+    for _, name, _ in pkgutil.iter_modules(['features']):
+        module = importlib.import_module(f'features.{name}')
+        if hasattr(module, 'get_plugin'):
+            yield module.get_plugin()
+
+def register_plugins(app):
+    """Register plugins with the Flask application."""
+    for plugin in discover_plugins():
+        try:
+            plugin.register(app)
+        except Exception as e:
+            logging.warning(f"Failed to register plugin {plugin}: {e}")
 
 def register_feature_routes(app):
     """Legacy function - now redirects to centralized blueprint registration"""
@@ -482,7 +499,7 @@ def create_app():
             return str(utc_dt) if utc_dt else "N/A"
 
     socketio.init_app(app, cors_allowed_origins="*")
-    register_feature_routes(app)
+    register_plugins(app)
     register_web_routes(app)
     register_socketio_events()
     

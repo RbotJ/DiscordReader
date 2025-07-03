@@ -1,66 +1,20 @@
-"""
-Dashboard Feature
+"""Dashboard feature plugin."""
+from importlib import import_module
+from features.blueprint_registry import BLUEPRINT_REGISTRY, SPECIAL_BLUEPRINTS
+from common.interfaces.plugin import FeaturePlugin
 
-This module provides a unified dashboard system for the A+ Trading application.
-"""
+class DashboardPlugin(FeaturePlugin):
+    def register(self, app):
+        prefix = __name__
+        for name, module_path, attr in BLUEPRINT_REGISTRY + SPECIAL_BLUEPRINTS:
+            if module_path.startswith(prefix):
+                try:
+                    module = import_module(module_path)
+                    blueprint = getattr(module, attr, None)
+                    if blueprint:
+                        app.register_blueprint(blueprint)
+                except Exception:
+                    pass
 
-from flask import Blueprint
-
-# Create a Blueprint for the dashboard feature
-dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
-
-# Import routes to register them with the Blueprint
-from . import api_routes
-
-# Add root dashboard route
-@dashboard_bp.route('/')
-def dashboard_home():
-    """Main dashboard home page."""
-    from flask import render_template
-    from .services.data_service import get_system_status
-    
-    try:
-        # Get system status data for the main dashboard
-        status_data = get_system_status()
-        
-        # Render the main dashboard template
-        return render_template('dashboard/status.html', **status_data)
-        
-    except Exception as e:
-        # Render template with error state
-        from .services.data_service import get_service_status
-        return render_template('dashboard/status.html', 
-                             error=str(e),
-                             total_messages_count=0,
-                             todays_messages_count=0,
-                             todays_setups=[],
-                             tickers_summary=[],
-                             service_status=get_service_status())
-
-# Add basic status route
-@dashboard_bp.route('/status')
-def status():
-    """Main status dashboard with HTML interface."""
-    from flask import render_template
-    from .services.data_service import get_system_status
-    
-    try:
-        # Get system status data
-        status_data = get_system_status()
-        
-        # Render the HTML template with the data
-        return render_template('dashboard/status.html', **status_data)
-        
-    except Exception as e:
-        # Render template with error state
-        from .services.data_service import get_service_status
-        return render_template('dashboard/status.html', 
-                             error=str(e),
-                             total_messages_count=0,
-                             todays_messages_count=0,
-                             todays_setups=[],
-                             tickers_summary=[],
-                             service_status=get_service_status())
-
-# Version information
-__version__ = '0.1.0'
+def get_plugin():
+    return DashboardPlugin()
