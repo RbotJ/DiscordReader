@@ -46,11 +46,12 @@ async def get_connection_pool():
 
 
 async def publish_event_async(
-    event_type: str, 
-    data: Dict[str, Any], 
-    channel: str = "events", 
-    source: str = None, 
-    correlation_id: str = None
+    event_type: str,
+    data: Dict[str, Any],
+    channel: str = "events",
+    source: str = None,
+    correlation_id: str = None,
+    **meta: Any,
 ) -> bool:
     """
     Publish event using PostgreSQL NOTIFY with comprehensive error handling and recovery.
@@ -74,6 +75,11 @@ async def publish_event_async(
         # Generate correlation ID if not provided
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
+
+        # Attach correlation ID to payload for downstream consumers
+        data["correlation_id"] = correlation_id
+        if meta:
+            data.update(meta)
         
         logger.debug(f"[publisher] Publishing {event_type} for message {message_id}")
         
@@ -119,11 +125,12 @@ async def publish_event_async(
 
 
 def publish_event(
-    event_type: str, 
-    data: dict, 
-    channel: str = "events", 
-    source: str = None, 
-    correlation_id: str = None
+    event_type: str,
+    data: dict,
+    channel: str = "events",
+    source: str = None,
+    correlation_id: str = None,
+    **meta: Any
 ) -> bool:
     """
     Synchronous wrapper for event publishing that works in Flask context.
@@ -147,6 +154,11 @@ def publish_event(
             # Generate correlation ID if not provided
             if not correlation_id:
                 correlation_id = str(uuid.uuid4())
+
+            # Attach correlation ID and extra metadata to payload
+            data["correlation_id"] = correlation_id
+            if meta:
+                data.update(meta)
             
             # Insert into events table
             db.session.execute(text("""
@@ -256,11 +268,12 @@ async def _handle_notification(handler: Callable, payload: str):
 
 
 def publish_event_safe(
-    event_type: str, 
-    data: dict, 
-    channel: str = "events", 
-    source: str = None, 
-    correlation_id: str = None
+    event_type: str,
+    data: dict,
+    channel: str = "events",
+    source: str = None,
+    correlation_id: str = None,
+    **meta: Any
 ) -> bool:
     """
     Safe event publishing that works both inside and outside Flask context.
@@ -277,18 +290,19 @@ def publish_event_safe(
         bool: True if published successfully
     """
     if has_app_context():
-        return publish_event(event_type, data, channel, source, correlation_id)
+        return publish_event(event_type, data, channel, source, correlation_id, **meta)
     else:
         # Use direct database connection when Flask context not available
-        return _publish_event_direct(event_type, data, channel, source, correlation_id)
+        return _publish_event_direct(event_type, data, channel, source, correlation_id, **meta)
 
 
 def _publish_event_direct(
-    event_type: str, 
-    data: dict, 
-    channel: str = "events", 
-    source: str = None, 
-    correlation_id: str = None
+    event_type: str,
+    data: dict,
+    channel: str = "events",
+    source: str = None,
+    correlation_id: str = None,
+    **meta: Any
 ) -> bool:
     """
     Direct database event publishing without Flask context.
@@ -303,6 +317,11 @@ def _publish_event_direct(
         # Generate correlation ID if not provided
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
+
+        # Attach correlation ID and metadata to payload
+        data["correlation_id"] = correlation_id
+        if meta:
+            data.update(meta)
         
         # Create event payload
         event_payload = {
@@ -360,11 +379,12 @@ def flush_event_buffer():
 
 
 def publish_event_safe(
-    event_type: str, 
-    data: dict, 
-    channel: str = "default", 
-    source: str = None, 
-    correlation_id: str = None
+    event_type: str,
+    data: dict,
+    channel: str = "default",
+    source: str = None,
+    correlation_id: str = None,
+    **meta: Any
 ) -> bool:
     """
     Safe event publishing that works both inside and outside Flask context.
@@ -381,7 +401,7 @@ def publish_event_safe(
         bool: True if published or logged successfully
     """
     if has_app_context():
-        return publish_event(event_type, data, channel, source, correlation_id)
+        return publish_event(event_type, data, channel, source, correlation_id, **meta)
     else:
         # Log the event when Flask context is not available
         logger.info(f"Event [{event_type}] on channel [{channel}] from [{source}]: {data}")
